@@ -58,6 +58,8 @@ pub enum Expression {
         map: AHashMap<String, Spanned<Expression>>,
     },
     String(String),
+    Borrow(Box<Spanned<Expression>>),
+    None,
 }
 
 #[derive(Debug, Clone)]
@@ -192,9 +194,18 @@ fn parse_multiplicitive(tokens: &mut TokenStream) -> Result<Spanned<Expression>,
 fn parse_primary(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseError> {
     let mut expr = match tokens.next() {
         Some(Ok(Token::LeftParen)) => {
-            let expr = parse_expression(tokens)?;
-            expect!(tokens, Token::RightParen, Token::RightParen);
-            Ok(expr)
+            if let Some(Ok(Token::RightParen)) = tokens.peek() {
+                let start = tokens.span().start;
+                tokens.next();
+                Ok(Spanned {
+                    span: start..tokens.span().end,
+                    value: Expression::None,
+                })
+            } else {
+                let expr = parse_expression(tokens)?;
+                expect!(tokens, Token::RightParen, Token::RightParen);
+                Ok(expr)
+            }
         }
         Some(Ok(Token::Identifer)) => match tokens.peek() {
             Some(Ok(Token::LeftBracket)) => {
@@ -217,6 +228,10 @@ fn parse_primary(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseE
         Some(Ok(Token::Minus)) => {
             let expr = parse_primary(tokens)?;
             Ok(tokens.wrap_span(Expression::UnaryOp(Box::new(expr))))
+        }
+        Some(Ok(Token::Ampersand)) => {
+            let expr = parse_primary(tokens)?;
+            Ok(tokens.wrap_span(Expression::Borrow(Box::new(expr))))
         }
         Some(Ok(Token::Asterisk)) => {
             let expr = parse_primary(tokens)?;

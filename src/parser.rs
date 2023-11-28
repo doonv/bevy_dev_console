@@ -9,7 +9,7 @@ mod lexer;
 mod parser;
 mod runner;
 
-pub use runner::Environment;
+pub use runner::environment::Environment;
 
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {

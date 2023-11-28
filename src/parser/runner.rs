@@ -1,5 +1,9 @@
+use std::borrow::BorrowMut;
 use std::fmt::Debug as DebugTrait;
+use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
+
+use self::environment::Environment;
 
 use super::{
     parser::{Expression, Operator, AST},
@@ -15,6 +19,9 @@ use bevy::{
 };
 use logos::Span;
 
+pub mod environment;
+pub mod stdlib;
+
 /// A runtime value
 #[derive(Debug)]
 pub enum Value {
@@ -24,59 +31,91 @@ pub enum Value {
     Number(f64),
     /// A string... there isn't much to say about this one.
     String(String),
-    /// A reference, optimally I would've used rust's
-    /// ownership and borrowing model for references.
+    /// A reference.
     ///
-    /// However, I am lazy. So I decided to use reference
-    /// counters. This means when you assign a value to a
-    /// variable, that variable can only give you references
-    /// to its value.
+    /// References are very similar to rust's ownership and borrowing.
+    /// We achieve this by storing every variable as a [`Rc<RefCell<Value>>`],
+    /// and having only the owner of the value have a strong reference,
+    /// while every other value has a weak reference. This causes
+    /// [`Rc::try_unwrap`] to succeed every time.
     ///
-    /// The only way around this is to use the dereference/delete
-    /// operator, which deletes the variable and gives you an owned
-    /// version of it.
-    Reference(Rc<Value>),
+    /// This isn't partically efficent, so:
+    /// TODO: Create a custom type this!
+    Reference(Weak<RefCell<Value>>),
     StructObject {
         name: String,
-        map: AHashMap<String, Rc<Value>>,
+        map: AHashMap<String, Rc<RefCell<Value>>>,
     },
     /// A reference to a dynamic value. (aka a reference.)
     DynamicValue(Box<dyn Reflect>),
 }
 
-// impl Clone for Value {
-//     fn clone(&self) -> Self {
-//         match self {
-//             Value::None => Value::None,
-//             Value::Number(number) => Value::Number(*number),
-//             Value::Reference(reference) => Value::Reference(reference.clone()),
-//             Value::StructObject { name, map } => Value::StructObject { name: name.clone(), map: map.clone() },
-//             Value::String(string) => Value::String(string.clone()),
-//             Value::DynamicValue(value) => Value::DynamicValue(value.clone_value()),
-//         }
-//     }
-// }
-
-impl std::fmt::Display for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Value {
+    pub fn try_format(&self, span: Span) -> Result<String, RunError> {
         match self {
-            Value::None => write!(f, "()")?,
-            Value::Number(number) => write!(f, "{number}")?,
-            Value::String(string) => write!(f, "\"{string}\"")?,
-            Value::Reference(value) => write!(f, "&{value}")?,
+            Value::None => Ok(format!("()")),
+            Value::Number(number) => Ok(format!("{number}")),
+            Value::String(string) => Ok(format!("\"{string}\"")),
+            Value::Reference(reference) => {
+                if let Some(rc) = reference.upgrade() {
+                    Ok(rc.borrow().try_format(span)?)
+                } else {
+                    Err(RunError::ReferenceToMovedData(span))
+                }
+            }
             Value::StructObject { name, map } => {
-                write!(f, "{name} {{")?;
+                let mut string = String::new();
+                string += &format!("{name} {{");
                 for (key, value) in map {
-                    write!(f, "\n\t{key}: {value},")?;
+                    string += &format!("\n\t{key}: {},", value.borrow().try_format(span.clone())?);
                 }
                 if map.len() > 0 {
-                    writeln!(f)?;
+                    string.push('\n');
                 }
-                write!(f, "}}")?;
+                string.push('}');
+                Ok(string)
             }
-            Value::DynamicValue(value) => value.fmt(f)?,
+            Value::DynamicValue(value) => Ok(format!("{value:#?}")),
         }
-        Ok(())
+    }
+}
+
+impl From<()> for Value {
+    fn from((): ()) -> Self {
+        Value::None
+    }
+}
+impl From<f64> for Value {
+    fn from(number: f64) -> Self {
+        Value::Number(number)
+    }
+}
+impl From<String> for Value {
+    fn from(string: String) -> Self {
+        Value::String(string)
+    }
+}
+
+impl TryFrom<Value> for f64 {
+    type Error = RunError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        if let Value::Number(number) = value {
+            Ok(number)
+        } else {
+            todo!()
+        }
+    }
+}
+impl TryFrom<Value> for String {
+    type Error = RunError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        if let Value::String(string) = value {
+            Ok(string)
+        } else {
+            todo!()
+        }
     }
 }
 
@@ -89,57 +128,8 @@ pub enum RunError {
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
     CouldntDereferenceValue(std::ops::Range<usize>),
-}
-
-#[derive(Default)]
-pub struct Environment {
-    parent: Option<Box<Environment>>,
-    variables: AHashMap<String, RefCell<Rc<Value>>>,
-}
-
-impl Environment {
-    pub fn set(&mut self, name: String, value: Rc<Value>) -> Result<(), RunError> {
-        self.variables.insert(name, RefCell::new(value));
-
-        Ok(())
-    }
-    pub fn get(&self, name: &str, span: Span) -> Result<&RefCell<Rc<Value>>, RunError> {
-        let (env, span) = self.resolve(name, span)?;
-
-        match env.variables.get(name) {
-            Some(value) => Ok(value),
-            None => Err(RunError::VariableNotFound(span)),
-        }
-    }
-    pub fn remove(&mut self, name: &str, span: Span) -> Result<RefCell<Rc<Value>>, RunError> {
-        let (env, span) = self.resolve_mut(name, span)?;
-
-        match env.variables.remove(name) {
-            Some(value) => Ok(value),
-            None => Err(RunError::VariableNotFound(span)),
-        }
-    }
-
-    fn resolve(&self, name: &str, span: Span) -> Result<(&Self, Span), RunError> {
-        if self.variables.contains_key(name) {
-            return Ok((self, span));
-        }
-
-        match &self.parent {
-            Some(parent) => parent.resolve(name, span),
-            None => Err(RunError::VariableNotFound(span)),
-        }
-    }
-    fn resolve_mut(&mut self, name: &str, span: Span) -> Result<(&mut Self, Span), RunError> {
-        if self.variables.contains_key(name) {
-            return Ok((self, span));
-        }
-
-        match &mut self.parent {
-            Some(parent) => parent.resolve_mut(name, span),
-            None => Err(RunError::VariableNotFound(span)),
-        }
-    }
+    ReferenceToMovedData(std::ops::Range<usize>),
+    VariableMoved(std::ops::Range<usize>),
 }
 
 pub fn run(ast: AST, world: &mut World) {
@@ -169,12 +159,25 @@ pub fn run(ast: AST, world: &mut World) {
             })
             .collect();
 
-        for statement in ast {
+        for mut statement in ast {
+            // Automatically borrow variables
+            statement.value = match statement.value {
+                Expression::Variable(variable) => Expression::Borrow(Box::new(Spanned {
+                    span: statement.span.clone(),
+                    value: Expression::Variable(variable),
+                })),
+                expr => expr,
+            };
+
+            let span = statement.span.clone();
             let value = eval_expression(statement, world, &mut environment, &registrations);
 
             match value {
                 Ok(Value::None) => {}
-                Ok(value) => info!(name: "console_result", "> {value}"),
+                Ok(value) => match value.try_format(span) {
+                    Ok(value) => info!(name: "console_result", "> {value}"),
+                    Err(err) => error!("{err:?}"),
+                },
                 Err(err) => error!("{err:?}"),
             }
         }
@@ -201,10 +204,12 @@ fn eval_expression(
                     set_resource(world, registration, environment, registrations, value, var)
                 } else {
                     let value = eval_expression(*value, world, environment, registrations)?;
-                    let rc = Rc::new(value);
+                    let rc = Rc::new(RefCell::new(value));
+                    let weak = Rc::downgrade(&rc);
 
-                    environment.set(var, rc.clone())?;
-                    Ok(Value::Reference(rc))
+                    environment.set(var, rc)?;
+
+                    Ok(Value::Reference(weak))
                 }
             }
             _ => todo!(),
@@ -220,10 +225,17 @@ fn eval_expression(
                 info!(name: "console_result", "> {}", fancy_debug_print(registration, world));
                 Ok(Value::None)
             } else {
-                Ok(Value::Reference(
-                    environment.get(&variable, expr.span)?.borrow().clone(),
-                ))
-                // todo!()
+                // let value = &*;
+                match &*environment.get(&variable, expr.span.clone())?.borrow() {
+                    Value::Number(number) => return Ok(Value::Number(*number)),
+                    _ => {}
+                }
+
+                // Unwrapping will always succeed due to only the owner of the variable having
+                // a strong reference. All other references are weak.
+                let value = Rc::try_unwrap(environment.move_var(&variable, expr.span)?).unwrap();
+
+                Ok(value.into_inner())
             }
         }
         Expression::BinaryOp {
@@ -266,31 +278,43 @@ fn eval_expression(
             Ok(Value::StructObject { name, map: hashmap })
         }
         Expression::Dereference(inner) => {
+            // if let Expression::Variable(variable) = inner.value {
+            //     let cell = environment.get(&variable, inner.span.clone())?;
+            //     // This line of code is stupid. However I believe that
+            //     // Ref::leak (unstable) will give a less-shitty approach to this.
+            //     if Rc::strong_count(&*cell.borrow()) == 1 {
+            //         Ok(Rc::try_unwrap(
+            //             environment
+            //                 .remove(&variable, inner.span.clone())?
+            //                 .into_inner(),
+            //         )
+            //         .unwrap())
+            //     } else {
+            //         Err(RunError::CouldntDereferenceValue(expr.span))
+            //     }
+            //     // let value = environment.get(&variable, inner.span)?.get_mut().;
+            //     // if let Ok(value) = Rc::try_unwrap(value) {
+            //     //     Ok(value)
+            //     // } else {
+            //     //     Err(RunError::CouldntDereferenceValue(expr.span))
+            //     // }
+            // } else {
+            //     // Err()
+            //     todo!()
+            // }
+            todo!()
+        }
+        Expression::Borrow(inner) => {
             if let Expression::Variable(variable) = inner.value {
-                let cell = environment.get(&variable, inner.span.clone())?;
-                // This line of code is stupid. However I believe that
-                // Ref::leak (unstable) will give a less-shitty approach to this.
-                if Rc::strong_count(&*cell.borrow()) == 1 {
-                    Ok(Rc::try_unwrap(
-                        environment
-                            .remove(&variable, inner.span.clone())?
-                            .into_inner(),
-                    )
-                    .unwrap())
-                } else {
-                    Err(RunError::CouldntDereferenceValue(expr.span))
-                }
-                // let value = environment.get(&variable, inner.span)?.get_mut().;
-                // if let Ok(value) = Rc::try_unwrap(value) {
-                //     Ok(value)
-                // } else {
-                //     Err(RunError::CouldntDereferenceValue(expr.span))
-                // }
+                let rc = environment.get(&variable, inner.span)?;
+                let weak = Rc::downgrade(rc);
+
+                Ok(Value::Reference(weak))
             } else {
-                // Err()
                 todo!()
             }
         }
+        Expression::None => Ok(Value::None),
     }
 }
 
@@ -333,6 +357,16 @@ fn eval_member_expression(
                 }
             } else {
                 todo!()
+                // match &*environment.get(&variable, expr.span.clone())?.borrow() {
+                //     Value::Number(number) => return Ok(Value::Number(*number)),
+                //     _ => {}
+                // }
+
+                // // Unwrapping will always succeed due to only the owner of the variable having
+                // // a strong reference. All other references are weak.
+                // let value = Rc::try_unwrap(environment.move_var(&variable, expr.span)?).unwrap();
+
+                // Ok(value.into_inner())
             }
         }
         _ => {
@@ -341,7 +375,7 @@ fn eval_member_expression(
             match left {
                 Value::StructObject { map, .. } => {
                     if let Some(value) = map.get(&right) {
-                        Ok(Value::Reference(value.clone()))
+                        Ok(Value::Reference(Rc::downgrade(value)))
                     } else {
                         Err(RunError::FieldNotFoundInStruct(left_span))
                     }
@@ -401,7 +435,7 @@ fn set_resource(
                     let map = eval_object(map, world, environment, registrations)?;
                     let mut dyn_struct = DynamicStruct::default();
                     for (key, value) in map.into_iter() {
-                        match Rc::try_unwrap(value).unwrap() {
+                        match Rc::try_unwrap(value).unwrap().into_inner() {
                             Value::None => {}
                             Value::Number(number) => dyn_struct.insert(&key, number),
                             Value::String(string) => dyn_struct.insert(&key, string.clone()),
@@ -445,15 +479,22 @@ fn eval_object(
     world: &mut World,
     environment: &mut Environment,
     registrations: &[&TypeRegistration],
-) -> Result<AHashMap<String, Rc<Value>>, RunError> {
+) -> Result<AHashMap<String, Rc<RefCell<Value>>>, RunError> {
     let map = map
         .into_iter()
-        .map(|(key, expr)| -> Result<(String, Rc<Value>), RunError> {
-            Ok((
-                key,
-                Rc::new(eval_expression(expr, world, environment, registrations)?),
-            ))
-        })
+        .map(
+            |(key, expr)| -> Result<(String, Rc<RefCell<Value>>), RunError> {
+                Ok((
+                    key,
+                    Rc::new(RefCell::new(eval_expression(
+                        expr,
+                        world,
+                        environment,
+                        registrations,
+                    )?)),
+                ))
+            },
+        )
         .collect::<Result<_, _>>()?;
     Ok(map)
 }
@@ -474,16 +515,16 @@ fn get_mut_reflect<'a>(
     }
 }
 
-fn eval_variable_name(
-    name: Box<Spanned<Expression>>,
-    environment: &Environment,
-) -> Result<&RefCell<Rc<Value>>, RunError> {
-    match name.value {
-        Expression::Variable(variable) => Ok(environment.get(&variable, name.span)?),
-        Expression::MemberExpression { left, right } => Ok(todo!()),
-        _ => Ok(todo!()),
-    }
-}
+// fn eval_variable_name(
+//     name: Box<Spanned<Expression>>,
+//     environment: &Environment,
+// ) -> Result<&Rc<RefCell<Value>>, RunError> {
+//     match name.value {
+//         Expression::Variable(variable) => Ok(environment.get(&variable, name.span)?),
+//         Expression::MemberExpression { left, right } => Ok(todo!()),
+//         _ => Ok(todo!()),
+//     }
+// }
 
 /// A massive function that takes in a type registration and the world and then
 /// does all the hard work of printing out the type nicely.

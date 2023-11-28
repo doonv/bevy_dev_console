@@ -38,6 +38,8 @@ pub enum Token {
 
     #[token(".")]
     Dot,
+    #[token("&")]
+    Ampersand,
 
     #[token("for")]
     For,
