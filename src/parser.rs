@@ -22,7 +22,9 @@ impl Command for ExecuteConsoleCommand {
     fn apply(self, world: &mut World) {
         let mut tokens = TokenStream::new(&self.0);
 
-        let ast = parse(&mut tokens);
+        let environment = world.remove_non_send_resource::<Environment>().unwrap();
+        let ast = parse(&mut tokens, &environment);
+        world.insert_non_send_resource(environment);
 
         match ast {
             Ok(ast) => {

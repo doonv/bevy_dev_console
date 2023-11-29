@@ -1,9 +1,7 @@
-use std::borrow::BorrowMut;
-use std::fmt::Debug as DebugTrait;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use self::environment::Environment;
+use self::environment::{Environment, Function, ResultContainer, Variable};
 
 use super::{
     parser::{Expression, Operator, AST},
@@ -21,6 +19,13 @@ use logos::Span;
 
 pub mod environment;
 pub mod stdlib;
+
+/// Container for every value needed by evaluation functions.
+pub struct EvalParams<'a, 'b, 'c> {
+    world: &'a mut World,
+    environment: &'b mut Environment,
+    registrations: &'c [&'c TypeRegistration],
+}
 
 /// A runtime value
 #[derive(Debug)]
@@ -48,6 +53,7 @@ pub enum Value {
     },
     /// A reference to a dynamic value. (aka a reference.)
     DynamicValue(Box<dyn Reflect>),
+    Object(AHashMap<String, Rc<RefCell<Value>>>),
 }
 
 impl Value {
@@ -62,6 +68,18 @@ impl Value {
                 } else {
                     Err(RunError::ReferenceToMovedData(span))
                 }
+            }
+            Value::Object(map) => {
+                let mut string = String::new();
+                string.push('{');
+                for (key, value) in map {
+                    string += &format!("\n\t{key}: {},", value.borrow().try_format(span.clone())?);
+                }
+                if map.len() > 0 {
+                    string.push('\n');
+                }
+                string.push('}');
+                Ok(string)
             }
             Value::StructObject { name, map } => {
                 let mut string = String::new();
@@ -80,14 +98,29 @@ impl Value {
     }
 }
 
+impl From<Value> for ResultContainer<Value, RunError> {
+    fn from(value: Value) -> Self {
+        ResultContainer(Ok(value))
+    }
+}
 impl From<()> for Value {
     fn from((): ()) -> Self {
         Value::None
     }
 }
+impl From<()> for ResultContainer<Value, RunError> {
+    fn from((): ()) -> Self {
+        ResultContainer(Ok(Value::None))
+    }
+}
 impl From<f64> for Value {
     fn from(number: f64) -> Self {
         Value::Number(number)
+    }
+}
+impl From<f64> for ResultContainer<Value, RunError> {
+    fn from(number: f64) -> Self {
+        ResultContainer(Ok(Value::Number(number)))
     }
 }
 impl From<String> for Value {
@@ -96,22 +129,29 @@ impl From<String> for Value {
     }
 }
 
-impl TryFrom<Value> for f64 {
+impl TryFrom<Spanned<Value>> for Value {
     type Error = RunError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        if let Value::Number(number) = value {
+    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+        Ok(value.value)
+    }
+}
+impl TryFrom<Spanned<Value>> for f64 {
+    type Error = RunError;
+
+    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+        if let Value::Number(number) = value.value {
             Ok(number)
         } else {
             todo!()
         }
     }
 }
-impl TryFrom<Value> for String {
+impl TryFrom<Spanned<Value>> for String {
     type Error = RunError;
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        if let Value::String(string) = value {
+    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+        if let Value::String(string) = value.value {
             Ok(string)
         } else {
             todo!()
@@ -130,6 +170,7 @@ pub enum RunError {
     CouldntDereferenceValue(std::ops::Range<usize>),
     ReferenceToMovedData(std::ops::Range<usize>),
     VariableMoved(std::ops::Range<usize>),
+    CannotBorrowValue(std::ops::Range<usize>),
 }
 
 pub fn run(ast: AST, world: &mut World) {
@@ -170,7 +211,14 @@ pub fn run(ast: AST, world: &mut World) {
             };
 
             let span = statement.span.clone();
-            let value = eval_expression(statement, world, &mut environment, &registrations);
+            let value = eval_expression(
+                statement,
+                EvalParams {
+                    world,
+                    environment: &mut environment,
+                    registrations: &registrations,
+                },
+            );
 
             match value {
                 Ok(Value::None) => {}
@@ -188,12 +236,12 @@ pub fn run(ast: AST, world: &mut World) {
     world.insert_non_send_resource(environment);
 }
 
-fn eval_expression(
-    expr: Spanned<Expression>,
-    world: &mut World,
-    environment: &mut Environment,
-    registrations: &[&TypeRegistration],
-) -> Result<Value, RunError> {
+fn eval_expression(expr: Spanned<Expression>, params: EvalParams) -> Result<Value, RunError> {
+    let EvalParams {
+        world,
+        environment,
+        registrations,
+    } = params;
     match expr.value {
         Expression::VarAssign { name, value } => match name.value {
             Expression::Variable(var) => {
@@ -201,9 +249,25 @@ fn eval_expression(
                     .iter()
                     .find(|v| v.type_info().type_path_table().short_path() == &var)
                 {
-                    set_resource(world, registration, environment, registrations, value, var)
+                    set_resource(
+                        value,
+                        EvalParams {
+                            world,
+                            environment,
+                            registrations,
+                        },
+                        var,
+                        registration,
+                    )
                 } else {
-                    let value = eval_expression(*value, world, environment, registrations)?;
+                    let value = eval_expression(
+                        *value,
+                        EvalParams {
+                            world,
+                            environment,
+                            registrations,
+                        },
+                    )?;
                     let rc = Rc::new(RefCell::new(value));
                     let weak = Rc::downgrade(&rc);
 
@@ -243,8 +307,22 @@ fn eval_expression(
             operator,
             right,
         } => {
-            let left = eval_expression(*left, world, environment, registrations)?;
-            let right = eval_expression(*right, world, environment, registrations)?;
+            let left = eval_expression(
+                *left,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            let right = eval_expression(
+                *right,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
 
             match (left, right) {
                 (Value::Number(left), Value::Number(right)) => Ok(Value::Number(match operator {
@@ -262,11 +340,24 @@ fn eval_expression(
             loop_count,
             block,
         } => todo!("for loop {index_name}, {loop_count}, {block:#?}"),
-        Expression::MemberExpression { left, right } => {
-            eval_member_expression(*left, right, world, environment, registrations)
-        }
+        Expression::MemberExpression { left, right } => eval_member_expression(
+            *left,
+            right,
+            EvalParams {
+                world,
+                environment,
+                registrations,
+            },
+        ),
         Expression::UnaryOp(expr) => {
-            let expr = eval_expression(*expr, world, environment, registrations)?;
+            let expr = eval_expression(
+                *expr,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
 
             match expr {
                 Value::Number(number) => Ok(Value::Number(-number)),
@@ -274,8 +365,26 @@ fn eval_expression(
             }
         }
         Expression::StructObject { name, map } => {
-            let hashmap = eval_object(map, world, environment, registrations)?;
+            let hashmap = eval_object(
+                map,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
             Ok(Value::StructObject { name, map: hashmap })
+        }
+        Expression::Object(map) => {
+            let hashmap = eval_object(
+                map,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            Ok(Value::Object(hashmap))
         }
         Expression::Dereference(inner) => {
             // if let Expression::Variable(variable) = inner.value {
@@ -311,26 +420,34 @@ fn eval_expression(
 
                 Ok(Value::Reference(weak))
             } else {
-                todo!()
+                Err(RunError::CannotBorrowValue(expr.span))
             }
         }
         Expression::None => Ok(Value::None),
+        Expression::Function { name, arguments } => {
+            environment.function_scope(&name, move |environment, function| {
+                (function.body)(arguments, EvalParams { world, environment, registrations })
+            })
+        }
     }
 }
 
 fn eval_member_expression(
     left: Spanned<Expression>,
     right: String,
-    world: &mut World,
-    environment: &mut Environment,
-    registrations: &[&TypeRegistration],
+    params: EvalParams,
 ) -> Result<Value, RunError> {
     let left_span = left.span.clone();
+    let EvalParams {
+        world,
+        environment,
+        registrations,
+    } = params;
     match left.value {
-        Expression::Variable(ident) => {
+        Expression::Variable(variable) => {
             if let Some(registration) = registrations
                 .iter()
-                .find(|v| v.type_info().type_path_table().short_path() == &ident)
+                .find(|v| v.type_info().type_path_table().short_path() == &variable)
             {
                 let Some(mut var) = mut_dyn_reflect(world, registration) else {
                     return Ok(Value::None);
@@ -356,21 +473,30 @@ fn eval_member_expression(
                     ReflectMut::Value(_) => todo!(),
                 }
             } else {
-                todo!()
-                // match &*environment.get(&variable, expr.span.clone())?.borrow() {
-                //     Value::Number(number) => return Ok(Value::Number(*number)),
-                //     _ => {}
-                // }
+                let reference = environment.get(&variable, left_span)?.borrow();
+                let map = match &*reference {
+                    Value::Number(number) => return Ok(Value::Number(*number)),
+                    Value::StructObject { map, .. } | Value::Object(map) => map,
+                    value => todo!("{value:?}"),
+                };
 
-                // // Unwrapping will always succeed due to only the owner of the variable having
-                // // a strong reference. All other references are weak.
-                // let value = Rc::try_unwrap(environment.move_var(&variable, expr.span)?).unwrap();
-
-                // Ok(value.into_inner())
+                if let Some(value) = map.get(&right) {
+                    let weak = Rc::downgrade(value);
+                    Ok(Value::Reference(weak))
+                } else {
+                    todo!()
+                }
             }
         }
         _ => {
-            let left = eval_expression(left, world, environment, registrations)?;
+            let left = eval_expression(
+                left,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
 
             match left {
                 Value::StructObject { map, .. } => {
@@ -387,13 +513,16 @@ fn eval_member_expression(
 }
 
 fn set_resource(
-    world: &mut World,
-    registration: &TypeRegistration,
-    environment: &mut Environment,
-    registrations: &[&TypeRegistration],
     expr: Box<Spanned<Expression>>,
+    params: EvalParams,
     var: String,
+    registration: &TypeRegistration,
 ) -> Result<Value, RunError> {
+    let EvalParams {
+        world,
+        environment,
+        registrations,
+    } = params;
     match registration.type_info() {
         // TypeInfo::Struct(_) => todo!(),
         // TypeInfo::TupleStruct(_) => todo!(),
@@ -432,7 +561,14 @@ fn set_resource(
                     span: expr.span,
                 }),
                 Some(VariantInfo::Struct(_)) => {
-                    let map = eval_object(map, world, environment, registrations)?;
+                    let map = eval_object(
+                        map,
+                        EvalParams {
+                            world,
+                            environment,
+                            registrations,
+                        },
+                    )?;
                     let mut dyn_struct = DynamicStruct::default();
                     for (key, value) in map.into_iter() {
                         match Rc::try_unwrap(value).unwrap().into_inner() {
@@ -441,6 +577,7 @@ fn set_resource(
                             Value::String(string) => dyn_struct.insert(&key, string.clone()),
                             Value::Reference(..) => todo!("todo reference"),
                             Value::StructObject { .. } => todo!("todo structobject"),
+                            Value::Object(..) => todo!("todo object"),
                             Value::DynamicValue(..) => todo!("todo dynamicvalue"),
                         }
                     }
@@ -476,9 +613,11 @@ fn set_resource(
 }
 fn eval_object(
     map: AHashMap<String, Spanned<Expression>>,
-    world: &mut World,
-    environment: &mut Environment,
-    registrations: &[&TypeRegistration],
+    EvalParams {
+        world,
+        environment,
+        registrations,
+    }: EvalParams,
 ) -> Result<AHashMap<String, Rc<RefCell<Value>>>, RunError> {
     let map = map
         .into_iter()
@@ -488,9 +627,11 @@ fn eval_object(
                     key,
                     Rc::new(RefCell::new(eval_expression(
                         expr,
-                        world,
-                        environment,
-                        registrations,
+                        EvalParams {
+                            world,
+                            environment,
+                            registrations,
+                        },
                     )?)),
                 ))
             },

@@ -1,6 +1,6 @@
 use logos::{Lexer, Logos, Span};
 
-use super::{parser::ParseError, Spanned};
+use super::Spanned;
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FailedToLexCharacter;
@@ -100,20 +100,20 @@ impl<'a> TokenStream<'a> {
         val
     }
 
-    pub fn next_pe(&mut self) -> Result<Token, ParseError> {
-        let token = self.next();
+    // pub fn next_pe(&mut self) -> Result<Token, ParseError> {
+    //     let token = self.next();
 
-        self.to_parse_error(token)
-    }
+    //     self.to_parse_error(token)
+    // }
 
-    pub fn to_parse_error(
-        &mut self,
-        token: Option<Result<Token, FailedToLexCharacter>>,
-    ) -> Result<Token, ParseError> {
-        Ok(token
-            .ok_or(ParseError::ExpectedMoreTokens(self.span()))?
-            .map_err(|FailedToLexCharacter| ParseError::FailedToLexCharacter(self.span()))?)
-    }
+    // pub fn to_parse_error(
+    //     &mut self,
+    //     token: Option<Result<Token, FailedToLexCharacter>>,
+    // ) -> Result<Token, ParseError> {
+    //     Ok(token
+    //         .ok_or(ParseError::ExpectedMoreTokens(self.span()))?
+    //         .map_err(|FailedToLexCharacter| ParseError::FailedToLexCharacter(self.span()))?)
+    // }
 
     /// Returns a reference to next [`Token`] without advancing the iterator
     pub fn peek(&self) -> &Option<Result<Token, FailedToLexCharacter>> {

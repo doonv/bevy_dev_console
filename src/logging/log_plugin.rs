@@ -39,10 +39,7 @@ use bevy::ecs::{
     system::{Res, Resource},
 };
 use bevy::utils::tracing::Subscriber;
-pub use bevy::utils::tracing::{
-    debug, debug_span, error, error_span, info, info_span, trace, trace_span, warn, warn_span,
-    Level,
-};
+pub use bevy::utils::tracing::{warn, Level};
 
 use bevy::app::{App, Plugin, Update};
 use tracing_log::LogTracer;

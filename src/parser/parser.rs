@@ -5,7 +5,8 @@ use logos::Span;
 
 use super::{
     lexer::{FailedToLexCharacter, Token, TokenStream},
-    Spanned,
+    runner::environment::Function,
+    Environment, Spanned,
 };
 
 pub type AST = Vec<Spanned<Expression>>;
@@ -60,6 +61,11 @@ pub enum Expression {
     String(String),
     Borrow(Box<Spanned<Expression>>),
     None,
+    Function {
+        name: String,
+        arguments: Vec<Spanned<Expression>>,
+    },
+    Object(AHashMap<String, Spanned<Expression>>),
 }
 
 #[derive(Debug, Clone)]
@@ -83,17 +89,20 @@ pub enum ParseError {
     UnexpectedToken(Spanned<Token>),
 }
 
-pub fn parse(tokens: &mut TokenStream) -> Result<AST, ParseError> {
+pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<AST, ParseError> {
     let mut ast = Vec::new();
     while let Some(_) = tokens.peek() {
-        ast.push(parse_expression(tokens)?);
+        ast.push(parse_expression(tokens, environment)?);
     }
     Ok(ast)
 }
 
-fn parse_expression(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseError> {
-    Ok(match tokens.peek().as_ref().unwrap() {
-        Ok(Token::For) => {
+fn parse_expression(
+    tokens: &mut TokenStream,
+    environment: &Environment,
+) -> Result<Spanned<Expression>, ParseError> {
+    Ok(match tokens.peek() {
+        Some(Ok(Token::For)) => {
             let start = tokens.span().start;
             tokens.next();
 
@@ -106,12 +115,12 @@ fn parse_expression(tokens: &mut TokenStream) -> Result<Spanned<Expression>, Par
                 _ => todo!(),
             }
 
-            let loop_count = match parse_additive(tokens)?.value {
+            let loop_count = match parse_additive(tokens, environment)?.value {
                 Expression::Number(number) => number as u64,
                 t => todo!("{t:?}"),
             };
 
-            let block = parse_block(tokens)?;
+            let block = parse_block(tokens, environment)?;
             let end = tokens.span().end;
 
             Spanned {
@@ -123,27 +132,31 @@ fn parse_expression(tokens: &mut TokenStream) -> Result<Spanned<Expression>, Par
                 span: start..end,
             }
         }
-        Ok(_) => {
-            let expr = parse_additive(tokens)?;
+        Some(Ok(_)) => {
+            let expr = parse_additive(tokens, environment)?;
 
             match tokens.peek() {
-                Some(Ok(Token::Equals)) => parse_var_assign(expr, tokens)?,
+                Some(Ok(Token::Equals)) => parse_var_assign(expr, tokens, environment)?,
                 _ => expr,
             }
         }
-        Err(FailedToLexCharacter) => {
+        Some(Err(FailedToLexCharacter)) => {
             return Err(ParseError::FailedToLexCharacter(tokens.peek_span()))
         }
+        None => return Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
     })
 }
-fn parse_block(tokens: &mut TokenStream) -> Result<AST, ParseError> {
+fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<AST, ParseError> {
     expect!(tokens, Token::LeftBracket, Token::LeftBracket);
-    let ast = parse(tokens)?;
+    let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket, Token::RightBracket);
     Ok(ast)
 }
-fn parse_additive(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseError> {
-    let mut node = parse_multiplicitive(tokens)?;
+fn parse_additive(
+    tokens: &mut TokenStream,
+    environment: &Environment,
+) -> Result<Spanned<Expression>, ParseError> {
+    let mut node = parse_multiplicitive(tokens, environment)?;
 
     while let Some(Ok(Token::Plus | Token::Minus)) = tokens.peek() {
         let operator = match tokens.next() {
@@ -152,7 +165,7 @@ fn parse_additive(tokens: &mut TokenStream) -> Result<Spanned<Expression>, Parse
             _ => unreachable!(),
         };
 
-        let right = parse_multiplicitive(tokens)?;
+        let right = parse_multiplicitive(tokens, environment)?;
 
         node = Spanned {
             span: node.span.start..right.span.end,
@@ -166,8 +179,11 @@ fn parse_additive(tokens: &mut TokenStream) -> Result<Spanned<Expression>, Parse
 
     Ok(node)
 }
-fn parse_multiplicitive(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseError> {
-    let mut node = parse_primary(tokens)?;
+fn parse_multiplicitive(
+    tokens: &mut TokenStream,
+    environment: &Environment,
+) -> Result<Spanned<Expression>, ParseError> {
+    let mut node = parse_primary(tokens, environment)?;
 
     while let Some(Ok(Token::Asterisk | Token::Slash | Token::Modulo)) = tokens.peek() {
         let operator = match tokens.next() {
@@ -177,7 +193,7 @@ fn parse_multiplicitive(tokens: &mut TokenStream) -> Result<Spanned<Expression>,
             _ => unreachable!(),
         };
 
-        let right = parse_primary(tokens)?;
+        let right = parse_primary(tokens, environment)?;
 
         node = Spanned {
             span: node.span.start..right.span.end,
@@ -191,7 +207,10 @@ fn parse_multiplicitive(tokens: &mut TokenStream) -> Result<Spanned<Expression>,
 
     Ok(node)
 }
-fn parse_primary(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseError> {
+fn parse_primary(
+    tokens: &mut TokenStream,
+    environment: &Environment,
+) -> Result<Spanned<Expression>, ParseError> {
     let mut expr = match tokens.next() {
         Some(Ok(Token::LeftParen)) => {
             if let Some(Ok(Token::RightParen)) = tokens.peek() {
@@ -202,7 +221,7 @@ fn parse_primary(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseE
                     value: Expression::None,
                 })
             } else {
-                let expr = parse_expression(tokens)?;
+                let expr = parse_expression(tokens, environment)?;
                 expect!(tokens, Token::RightParen, Token::RightParen);
                 Ok(expr)
             }
@@ -210,31 +229,58 @@ fn parse_primary(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseE
         Some(Ok(Token::Identifer)) => match tokens.peek() {
             Some(Ok(Token::LeftBracket)) => {
                 let name = tokens.slice().to_string();
-                // let object =
-                let map = parse_object(tokens)?;
+
+                expect!(tokens, Token::LeftBracket, Token::LeftBracket);
+                let map = parse_object(tokens, environment)?;
 
                 Ok(Spanned {
                     span: tokens.span(),
                     value: Expression::StructObject { name, map },
                 })
             }
-            _ => Ok(tokens.wrap_span(Expression::Variable(tokens.slice().to_string()))),
+            _ => {
+                if let Some(Function { argument_count, .. }) =
+                    environment.get_function(tokens.slice())
+                {
+                    let name = tokens.slice().to_string();
+                    let start = tokens.span().start;
+                    let mut arguments = Vec::new();
+                    for _ in 0..(*argument_count) {
+                        let expr = parse_expression(tokens, environment)?;
+                        arguments.push(expr);
+                    }
+                    Ok(Spanned {
+                        span: start..tokens.span().end,
+                        value: Expression::Function { name, arguments },
+                    })
+                } else {
+                    Ok(tokens.wrap_span(Expression::Variable(tokens.slice().to_string())))
+                }
+            }
         },
+        Some(Ok(Token::LeftBracket)) => {
+            let map = parse_object(tokens, environment)?;
+
+            Ok(Spanned {
+                span: tokens.span(),
+                value: Expression::Object(map),
+            })
+        }
         Some(Ok(Token::String)) => {
             let slice = tokens.slice();
             let string = slice[1..slice.len() - 1].to_string();
             Ok(tokens.wrap_span(Expression::String(string)))
         }
         Some(Ok(Token::Minus)) => {
-            let expr = parse_primary(tokens)?;
+            let expr = parse_primary(tokens, environment)?;
             Ok(tokens.wrap_span(Expression::UnaryOp(Box::new(expr))))
         }
         Some(Ok(Token::Ampersand)) => {
-            let expr = parse_primary(tokens)?;
+            let expr = parse_primary(tokens, environment)?;
             Ok(tokens.wrap_span(Expression::Borrow(Box::new(expr))))
         }
         Some(Ok(Token::Asterisk)) => {
-            let expr = parse_primary(tokens)?;
+            let expr = parse_primary(tokens, environment)?;
             Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
         }
         Some(Ok(Token::Number)) => {
@@ -263,10 +309,11 @@ fn parse_primary(tokens: &mut TokenStream) -> Result<Spanned<Expression>, ParseE
 fn parse_var_assign(
     name: Spanned<Expression>,
     tokens: &mut TokenStream<'_>,
+    environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
     tokens.next(); // We already know that the next token is an equals
 
-    let value = parse_additive(tokens)?;
+    let value = parse_additive(tokens, environment)?;
 
     Ok(Spanned {
         span: name.span.start..value.span.end,
@@ -284,14 +331,14 @@ fn parse_var_assign(
 /// - `{str: "sup!", num: -6.2}`
 fn parse_object(
     tokens: &mut TokenStream,
+    environment: &Environment,
 ) -> Result<AHashMap<String, Spanned<Expression>>, ParseError> {
-    expect!(tokens, Token::LeftBracket, Token::LeftBracket);
     let mut map = AHashMap::new();
     while let Some(Ok(Token::Identifer)) = tokens.peek() {
         tokens.next();
         let ident = tokens.slice().to_string();
         expect!(tokens, Token::Colon, Token::Colon);
-        let expr = parse_expression(tokens)?;
+        let expr = parse_expression(tokens, environment)?;
         map.insert(ident, expr);
         match tokens.peek() {
             Some(Ok(Token::RightBracket)) => break,
@@ -307,13 +354,16 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
+    use crate::parser::Environment;
+
     use super::{super::lexer::TokenStream, parse};
 
     #[test]
     fn var_assign() {
         let mut lexer = TokenStream::new("x = 1 + 2 - 30 + y");
+        let environment = Environment::default();
 
-        let ast = parse(&mut lexer);
+        let ast = parse(&mut lexer, &environment);
 
         assert!(ast.is_ok());
 
