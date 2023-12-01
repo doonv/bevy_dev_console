@@ -1,4 +1,7 @@
-use bevy::{log::LogPlugin, prelude::*};
+use bevy::{
+    log::{Level, LogPlugin},
+    prelude::*,
+};
 use bevy_dev_console::prelude::*;
 
 #[derive(Resource, Reflect, Default, Debug)]
@@ -17,6 +20,7 @@ enum MyEnum {
 struct MyStruct {
     number1: f64,
     number2: f64,
+    number3: f32,
     string: String,
 }
 
@@ -28,6 +32,7 @@ fn main() {
         .insert_resource(MyStruct {
             number1: 52138.0,
             number2: -123.8,
+            number3: 0.0,
             string: "hi there :)".to_string(),
         })
         .add_plugins((

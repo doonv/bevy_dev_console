@@ -26,20 +26,15 @@ mod android_tracing;
 static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
-pub mod prelude {
-    //! The Bevy Log Prelude.
-    #[doc(hidden)]
-    pub use bevy::utils::tracing::{
-        debug, debug_span, error, error_span, info, info_span, trace, trace_span, warn, warn_span,
-    };
-}
-
-use bevy::ecs::{
-    event::{Event, EventWriter},
-    system::{Res, Resource},
-};
 use bevy::utils::tracing::Subscriber;
 pub use bevy::utils::tracing::{warn, Level};
+use bevy::{
+    ecs::{
+        event::{Event, EventWriter},
+        system::{Res, Resource},
+    },
+    log::trace,
+};
 
 use bevy::app::{App, Plugin, Update};
 use tracing_log::LogTracer;
@@ -107,7 +102,7 @@ pub struct LogPlugin {
 impl Default for LogPlugin {
     fn default() -> Self {
         Self {
-            filter: "wgpu=error,naga=warn".to_string(),
+            filter: "wgpu=error,naga=warn,bevy_dev_console=trace".to_string(),
             level: Level::INFO,
         }
     }
@@ -124,6 +119,7 @@ impl Plugin for LogPlugin {
                 old_handler(infos);
             }));
         }
+        trace!("a");
 
         let finished_subscriber;
         let default_filter = { format!("{},{}", self.level, self.filter) };

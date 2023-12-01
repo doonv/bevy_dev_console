@@ -1,9 +1,8 @@
 use std::cell::Ref;
 
 use bevy::log::info;
-use logos::Span;
 
-use crate::parser::{Environment, Spanned};
+use crate::command::{Environment, Spanned};
 
 use super::{RunError, Value};
 
@@ -31,7 +30,7 @@ fn ref_depth(value: Value) -> f64 {
             _ => 0.0,
         }
     }
-    
+
     match value {
         Value::Reference(reference) => {
             ref_depth_reference(reference.upgrade().unwrap().borrow()) + 1.0

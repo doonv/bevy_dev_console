@@ -1,13 +1,14 @@
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use self::environment::{Environment, Function, ResultContainer, Variable};
+use self::environment::{Environment, ResultContainer};
 
 use super::{
-    parser::{Expression, Operator, AST},
+    parser::{Ast, Expression, Operator},
     Spanned,
 };
 use ahash::AHashMap;
+use bevy::reflect::ReflectRef;
 use bevy::{
     prelude::*,
     reflect::{
@@ -19,144 +20,15 @@ use logos::Span;
 
 pub mod environment;
 pub mod stdlib;
+pub mod value;
+
+pub use value::Value;
 
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'a, 'b, 'c> {
     world: &'a mut World,
     environment: &'b mut Environment,
     registrations: &'c [&'c TypeRegistration],
-}
-
-/// A runtime value
-#[derive(Debug)]
-pub enum Value {
-    /// Nothing at all
-    None,
-    /// A number, for simplicity only f64s are used.
-    Number(f64),
-    /// A string... there isn't much to say about this one.
-    String(String),
-    /// A reference.
-    ///
-    /// References are very similar to rust's ownership and borrowing.
-    /// We achieve this by storing every variable as a [`Rc<RefCell<Value>>`],
-    /// and having only the owner of the value have a strong reference,
-    /// while every other value has a weak reference. This causes
-    /// [`Rc::try_unwrap`] to succeed every time.
-    ///
-    /// This isn't partically efficent, so:
-    /// TODO: Create a custom type this!
-    Reference(Weak<RefCell<Value>>),
-    StructObject {
-        name: String,
-        map: AHashMap<String, Rc<RefCell<Value>>>,
-    },
-    /// A reference to a dynamic value. (aka a reference.)
-    DynamicValue(Box<dyn Reflect>),
-    Object(AHashMap<String, Rc<RefCell<Value>>>),
-}
-
-impl Value {
-    pub fn try_format(&self, span: Span) -> Result<String, RunError> {
-        match self {
-            Value::None => Ok(format!("()")),
-            Value::Number(number) => Ok(format!("{number}")),
-            Value::String(string) => Ok(format!("\"{string}\"")),
-            Value::Reference(reference) => {
-                if let Some(rc) = reference.upgrade() {
-                    Ok(rc.borrow().try_format(span)?)
-                } else {
-                    Err(RunError::ReferenceToMovedData(span))
-                }
-            }
-            Value::Object(map) => {
-                let mut string = String::new();
-                string.push('{');
-                for (key, value) in map {
-                    string += &format!("\n\t{key}: {},", value.borrow().try_format(span.clone())?);
-                }
-                if map.len() > 0 {
-                    string.push('\n');
-                }
-                string.push('}');
-                Ok(string)
-            }
-            Value::StructObject { name, map } => {
-                let mut string = String::new();
-                string += &format!("{name} {{");
-                for (key, value) in map {
-                    string += &format!("\n\t{key}: {},", value.borrow().try_format(span.clone())?);
-                }
-                if map.len() > 0 {
-                    string.push('\n');
-                }
-                string.push('}');
-                Ok(string)
-            }
-            Value::DynamicValue(value) => Ok(format!("{value:#?}")),
-        }
-    }
-}
-
-impl From<Value> for ResultContainer<Value, RunError> {
-    fn from(value: Value) -> Self {
-        ResultContainer(Ok(value))
-    }
-}
-impl From<()> for Value {
-    fn from((): ()) -> Self {
-        Value::None
-    }
-}
-impl From<()> for ResultContainer<Value, RunError> {
-    fn from((): ()) -> Self {
-        ResultContainer(Ok(Value::None))
-    }
-}
-impl From<f64> for Value {
-    fn from(number: f64) -> Self {
-        Value::Number(number)
-    }
-}
-impl From<f64> for ResultContainer<Value, RunError> {
-    fn from(number: f64) -> Self {
-        ResultContainer(Ok(Value::Number(number)))
-    }
-}
-impl From<String> for Value {
-    fn from(string: String) -> Self {
-        Value::String(string)
-    }
-}
-
-impl TryFrom<Spanned<Value>> for Value {
-    type Error = RunError;
-
-    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
-        Ok(value.value)
-    }
-}
-impl TryFrom<Spanned<Value>> for f64 {
-    type Error = RunError;
-
-    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
-        if let Value::Number(number) = value.value {
-            Ok(number)
-        } else {
-            todo!()
-        }
-    }
-}
-impl TryFrom<Spanned<Value>> for String {
-    type Error = RunError;
-
-    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
-        if let Value::String(string) = value.value {
-            Ok(string)
-        } else {
-            todo!()
-        }
-    }
 }
 
 #[derive(Debug)]
@@ -173,7 +45,7 @@ pub enum RunError {
     CannotBorrowValue(std::ops::Range<usize>),
 }
 
-pub fn run(ast: AST, world: &mut World) {
+pub fn run(ast: Ast, world: &mut World) {
     // Temporarily remove the [`Environment`] resource to gain
     // mutability without needing a mutable reference.
     let Some(mut environment) = world.remove_non_send_resource::<Environment>() else {
@@ -236,21 +108,23 @@ pub fn run(ast: AST, world: &mut World) {
     world.insert_non_send_resource(environment);
 }
 
-fn eval_expression(expr: Spanned<Expression>, params: EvalParams) -> Result<Value, RunError> {
-    let EvalParams {
+fn eval_expression(
+    expr: Spanned<Expression>,
+    EvalParams {
         world,
         environment,
         registrations,
-    } = params;
+    }: EvalParams,
+) -> Result<Value, RunError> {
     match expr.value {
         Expression::VarAssign { name, value } => match name.value {
             Expression::Variable(var) => {
                 if let Some(registration) = registrations
                     .iter()
-                    .find(|v| v.type_info().type_path_table().short_path() == &var)
+                    .find(|v| v.type_info().type_path_table().short_path() == var)
                 {
                     set_resource(
-                        value,
+                        *value,
                         EvalParams {
                             world,
                             environment,
@@ -284,7 +158,7 @@ fn eval_expression(expr: Spanned<Expression>, params: EvalParams) -> Result<Valu
             dbg!(&variable);
             if let Some(registration) = registrations
                 .iter()
-                .find(|v| v.type_info().type_path_table().short_path() == &variable)
+                .find(|v| v.type_info().type_path_table().short_path() == variable)
             {
                 info!(name: "console_result", "> {}", fancy_debug_print(registration, world));
                 Ok(Value::None)
@@ -340,15 +214,37 @@ fn eval_expression(expr: Spanned<Expression>, params: EvalParams) -> Result<Valu
             loop_count,
             block,
         } => todo!("for loop {index_name}, {loop_count}, {block:#?}"),
-        Expression::MemberExpression { left, right } => eval_member_expression(
-            *left,
-            right,
-            EvalParams {
-                world,
-                environment,
-                registrations,
-            },
-        ),
+        Expression::Member { left, right } => {
+            let result = eval_member_expression(
+                *left,
+                right,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            match result {
+                Reflectable::Value(value) => Ok(value),
+                Reflectable::StructField(mut field) => {
+                    let field = field.unwrap();
+                    let field_ref = field.reflect_ref();
+                    match field_ref {
+                        ReflectRef::Struct(_) => todo!(),
+                        ReflectRef::TupleStruct(_) => todo!(),
+                        ReflectRef::Tuple(_) => todo!(),
+                        ReflectRef::List(_) => todo!(),
+                        ReflectRef::Array(_) => todo!(),
+                        ReflectRef::Map(_) => todo!(),
+                        ReflectRef::Enum(_) => todo!(),
+                        ReflectRef::Value(value) => {
+                            debug!("{value:?}");
+                        }
+                    }
+                    Ok(Value::None)
+                }
+            }
+        }
         Expression::UnaryOp(expr) => {
             let expr = eval_expression(
                 *expr,
@@ -426,17 +322,44 @@ fn eval_expression(expr: Spanned<Expression>, params: EvalParams) -> Result<Valu
         Expression::None => Ok(Value::None),
         Expression::Function { name, arguments } => {
             environment.function_scope(&name, move |environment, function| {
-                (function.body)(arguments, EvalParams { world, environment, registrations })
+                (function.body)(
+                    arguments,
+                    EvalParams {
+                        world,
+                        environment,
+                        registrations,
+                    },
+                )
             })
         }
     }
 }
 
-fn eval_member_expression(
+enum Reflectable<'a> {
+    Value(Value),
+    StructField(ReflectStructField<'a>),
+}
+struct ReflectStructField<'a> {
+    string: String,
+    mut_reflect: Mut<'a, dyn Reflect>,
+}
+impl<'a> ReflectStructField<'a> {
+    fn unwrap(&'a mut self) -> &'a mut dyn Reflect {
+        let ReflectMut::Struct(dyn_struct) = self.mut_reflect.reflect_mut() else {
+            unreachable!()
+        };
+        let field = dyn_struct
+            .field_mut(&self.string)
+            .expect("no field on struct");
+
+        field
+    }
+}
+fn eval_member_expression<'a>(
     left: Spanned<Expression>,
     right: String,
-    params: EvalParams,
-) -> Result<Value, RunError> {
+    params: EvalParams<'a, 'a, 'a>,
+) -> Result<Reflectable<'a>, RunError> {
     let left_span = left.span.clone();
     let EvalParams {
         world,
@@ -447,44 +370,42 @@ fn eval_member_expression(
         Expression::Variable(variable) => {
             if let Some(registration) = registrations
                 .iter()
-                .find(|v| v.type_info().type_path_table().short_path() == &variable)
+                .find(|v| v.type_info().type_path_table().short_path() == variable)
             {
-                let Some(mut var) = mut_dyn_reflect(world, registration) else {
-                    return Ok(Value::None);
+                let Some(var): Option<Mut<'a, dyn Reflect>> = mut_dyn_reflect(world, registration)
+                else {
+                    todo!()
                 };
-                let reflect_mut = var.reflect_mut();
+                let reflect = var.reflect_ref();
 
-                match reflect_mut {
-                    ReflectMut::Struct(dyn_struct) => {
-                        let field = dyn_struct.field(&right).expect("no field on struct");
-
-                        if let Some(number) = field.downcast_ref::<f64>() {
-                            Ok(Value::Number(*number))
-                        } else {
-                            Ok(Value::DynamicValue(field.clone_value()))
-                        }
+                match reflect {
+                    ReflectRef::Struct(_) => {
+                        Ok(Reflectable::StructField(ReflectStructField {
+                            string: right,
+                            mut_reflect: var,
+                        }))
                     }
-                    ReflectMut::TupleStruct(_) => todo!(),
-                    ReflectMut::Tuple(_) => todo!(),
-                    ReflectMut::List(_) => todo!(),
-                    ReflectMut::Array(_) => todo!(),
-                    ReflectMut::Map(_) => todo!(),
-                    ReflectMut::Enum(_) => todo!(),
-                    ReflectMut::Value(_) => todo!(),
+                    _ => todo!(),
                 }
             } else {
                 let reference = environment.get(&variable, left_span)?.borrow();
-                let map = match &*reference {
-                    Value::Number(number) => return Ok(Value::Number(*number)),
-                    Value::StructObject { map, .. } | Value::Object(map) => map,
+                match &*reference {
+                    Value::Number(number) => {
+                        return Ok(Reflectable::Value(Value::Number(*number)))
+                    }
+                    Value::Dynamic(value) => {
+                        dbg!(value);
+                        Ok(Reflectable::Value(Value::None))
+                    }
+                    Value::StructObject { map, .. } | Value::Object(map) => {
+                        if let Some(value) = map.get(&right) {
+                            let weak = Rc::downgrade(value);
+                            Ok(Reflectable::Value(Value::Reference(weak)))
+                        } else {
+                            todo!()
+                        }
+                    }
                     value => todo!("{value:?}"),
-                };
-
-                if let Some(value) = map.get(&right) {
-                    let weak = Rc::downgrade(value);
-                    Ok(Value::Reference(weak))
-                } else {
-                    todo!()
                 }
             }
         }
@@ -501,7 +422,9 @@ fn eval_member_expression(
             match left {
                 Value::StructObject { map, .. } => {
                     if let Some(value) = map.get(&right) {
-                        Ok(Value::Reference(Rc::downgrade(value)))
+                        Ok(Reflectable::Value(Value::Reference(
+                            Rc::downgrade(value),
+                        )))
                     } else {
                         Err(RunError::FieldNotFoundInStruct(left_span))
                     }
@@ -513,7 +436,7 @@ fn eval_member_expression(
 }
 
 fn set_resource(
-    expr: Box<Spanned<Expression>>,
+    expr: Spanned<Expression>,
     params: EvalParams,
     var: String,
     registration: &TypeRegistration,
@@ -534,7 +457,7 @@ fn set_resource(
             Expression::Variable(value) => match enum_info.variant(&value) {
                 Some(VariantInfo::Unit(_)) => {
                     let mut reflect: Mut<'_, dyn Reflect> =
-                        get_mut_reflect(world, registration).unwrap();
+                        mut_dyn_reflect(world, registration).unwrap();
                     let ReflectMut::Enum(enum_reflect) = reflect.reflect_mut() else {
                         unreachable!()
                     };
@@ -578,14 +501,14 @@ fn set_resource(
                             Value::Reference(..) => todo!("todo reference"),
                             Value::StructObject { .. } => todo!("todo structobject"),
                             Value::Object(..) => todo!("todo object"),
-                            Value::DynamicValue(..) => todo!("todo dynamicvalue"),
+                            Value::Dynamic(..) => todo!("todo dynamicvalue"),
                         }
                     }
 
                     dbg!("what");
 
                     let mut reflect: Mut<'_, dyn Reflect> =
-                        get_mut_reflect(world, registration).unwrap();
+                        mut_dyn_reflect(world, registration).unwrap();
                     let ReflectMut::Enum(enum_reflect) = reflect.reflect_mut() else {
                         unreachable!()
                     };
@@ -639,33 +562,6 @@ fn eval_object(
         .collect::<Result<_, _>>()?;
     Ok(map)
 }
-
-fn get_mut_reflect<'a>(
-    world: &'a mut World,
-    registration: &TypeRegistration,
-) -> Option<Mut<'a, dyn Reflect>> {
-    if let Some(component_id) = world.components().get_resource_id(registration.type_id()) {
-        let res = world.get_resource_mut_by_id(component_id).unwrap();
-        let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
-        let val: Mut<'a, dyn Reflect> =
-            res.map_unchanged(|ptr| unsafe { reflect_from_ptr.as_reflect_mut(ptr) });
-        Some(val)
-    } else {
-        error!("Couldn't find component for resource registration");
-        None
-    }
-}
-
-// fn eval_variable_name(
-//     name: Box<Spanned<Expression>>,
-//     environment: &Environment,
-// ) -> Result<&Rc<RefCell<Value>>, RunError> {
-//     match name.value {
-//         Expression::Variable(variable) => Ok(environment.get(&variable, name.span)?),
-//         Expression::MemberExpression { left, right } => Ok(todo!()),
-//         _ => Ok(todo!()),
-//     }
-// }
 
 /// A massive function that takes in a type registration and the world and then
 /// does all the hard work of printing out the type nicely.
@@ -754,7 +650,7 @@ fn fancy_debug_print(registration: &TypeRegistration, world: &mut World) -> Stri
 
 fn mut_dyn_reflect<'a>(
     world: &'a mut World,
-    registration: &TypeRegistration,
+    registration: &'a TypeRegistration,
 ) -> Option<Mut<'a, dyn Reflect>> {
     let Some(component_id) = world.components().get_resource_id(registration.type_id()) else {
         error!(
@@ -765,6 +661,7 @@ fn mut_dyn_reflect<'a>(
     };
     let resource = world.get_resource_mut_by_id(component_id).unwrap();
     let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
+    // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
     let val: Mut<dyn Reflect> =
         resource.map_unchanged(|ptr| unsafe { reflect_from_ptr.as_reflect_mut(ptr) });
     Some(val)

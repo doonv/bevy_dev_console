@@ -9,7 +9,7 @@ use super::{
     Environment, Spanned,
 };
 
-pub type AST = Vec<Spanned<Expression>>;
+pub type Ast = Vec<Spanned<Expression>>;
 
 macro_rules! expect {
     ($tokens:ident, $token:pat, $tokenexpr:expr) => {
@@ -46,9 +46,9 @@ pub enum Expression {
     ForLoop {
         index_name: String,
         loop_count: u64,
-        block: AST,
+        block: Ast,
     },
-    MemberExpression {
+    Member {
         left: Box<Spanned<Expression>>,
         right: String,
     },
@@ -86,13 +86,22 @@ pub enum ParseError {
         got: Token,
         span: Span,
     },
+    ExpectedEndline(Spanned<Token>),
     UnexpectedToken(Spanned<Token>),
 }
 
-pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<AST, ParseError> {
+pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     let mut ast = Vec::new();
-    while let Some(_) = tokens.peek() {
+    while tokens.peek().is_some() {
         ast.push(parse_expression(tokens, environment)?);
+        match tokens.next() {
+            Some(Ok(Token::SemiColon)) => continue,
+            Some(Ok(token)) => return Err(ParseError::ExpectedEndline(tokens.wrap_span(token))),
+            Some(Err(FailedToLexCharacter)) => {
+                return Err(ParseError::FailedToLexCharacter(tokens.span()))
+            }
+            None => break,
+        }
     }
     Ok(ast)
 }
@@ -146,7 +155,7 @@ fn parse_expression(
         None => return Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
     })
 }
-fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<AST, ParseError> {
+fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     expect!(tokens, Token::LeftBracket, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket, Token::RightBracket);
@@ -297,7 +306,7 @@ fn parse_primary(
         let right = tokens.slice().to_string();
         expr = Spanned {
             span: expr.span.start..tokens.span().end,
-            value: Expression::MemberExpression {
+            value: Expression::Member {
                 left: Box::new(expr),
                 right,
             },
@@ -354,7 +363,7 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::Environment;
+    use crate::command::Environment;
 
     use super::{super::lexer::TokenStream, parse};
 

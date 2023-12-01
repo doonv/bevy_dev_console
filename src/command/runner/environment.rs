@@ -4,7 +4,7 @@ use ahash::AHashMap;
 use logos::Span;
 
 use super::{eval_expression, stdlib, EvalParams, RunError, Value};
-use crate::parser::{parser::Expression, Spanned};
+use crate::command::{parser::Expression, Spanned};
 
 /// Get around implementation of Result causing stupid errors
 pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
@@ -19,10 +19,10 @@ impl<T: Into<Value>, E> From<Result<T, E>> for ResultContainer<Value, E> {
         ResultContainer(result.map(|v| v.into()))
     }
 }
-
+pub type FunctionType = dyn Fn(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, RunError>;
 pub struct Function {
     pub argument_count: usize,
-    pub body: Box<dyn Fn(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, RunError>>,
+    pub body: Box<FunctionType>,
 }
 
 /// Trait that represents a [`Fn`] that can be turned into a [`Function`].

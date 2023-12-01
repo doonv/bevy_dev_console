@@ -32,19 +32,5 @@ impl Command for ExecuteConsoleCommand {
             }
             Err(err) => error!("{err:#?}"),
         }
-
-        // let mut engine = rhai::Engine::new();
-
-        // engine.on_print(|str| info!("{str}"));
-
-        // let res = engine.eval_with_scope::<rhai::Dynamic>(&mut scope.0, command);
-
-        // match res {
-        //     Ok(val) => match val.0 {
-        //         Dynamci
-        //         _ => info!("{val}")
-        //     },
-        //     Err(err) => error!("{err}"),
-        // }
     }
 }

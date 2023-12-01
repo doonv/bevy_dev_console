@@ -1,17 +1,17 @@
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
-use parser::Environment;
+use command::Environment;
 use ui::ConsoleUiState;
 
 mod logging;
-mod parser;
+mod command;
 pub mod prelude;
 mod ui;
 
 pub struct DevConsolePlugin;
 impl Plugin for DevConsolePlugin {
     fn build(&self, app: &mut App) {
-        if app.is_plugin_added::<EguiPlugin>() == false {
+        if !app.is_plugin_added::<EguiPlugin>() {
             app.add_plugins(EguiPlugin);
         }
 

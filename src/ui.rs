@@ -3,12 +3,9 @@
 //! Made with [`bevy_egui`]
 use bevy::prelude::*;
 use bevy::utils::tracing::Level;
-use bevy_egui::{
-    egui::{Color32, Margin},
-    *,
-};
+use bevy_egui::*;
 
-use crate::{logging::log_plugin::LogMessage, parser::ExecuteConsoleCommand};
+use crate::{logging::log_plugin::LogMessage, command::ExecuteConsoleCommand};
 
 #[derive(Default, Resource)]
 pub struct ConsoleUiState {
@@ -35,7 +32,7 @@ pub fn ui(
     if key.just_pressed(KeyCode::Return) && !state.command.trim().is_empty() {
         info!(name: "console_command", "$ {}", state.command.trim());
         // Get the owned command by replacing it with an empty string
-        let command = std::mem::replace(&mut state.command, String::new());
+        let command = std::mem::take(&mut state.command);
         commands.add(ExecuteConsoleCommand(command));
     }
 
@@ -49,7 +46,7 @@ pub fn ui(
 
                 // Thus we create a bottom panel first, where our text edit and submit button resides.
                 egui::TopBottomPanel::bottom("bottom panel")
-                    .frame(egui::Frame::none().outer_margin(Margin {
+                    .frame(egui::Frame::none().outer_margin(egui::Margin {
                         left: 0.0,
                         right: 5.0,
                         top: 5. + 6.,
@@ -73,10 +70,8 @@ pub fn ui(
                     .auto_shrink([false, true])
                     .show(ui, |ui| {
                         ui.vertical(|ui| {
-                            let mut id = 0;
-                            for (message, is_new) in &mut state.log {
+                            for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
                                 add_log(ui, id, message, is_new);
-                                id += 1;
                             }
                         });
                     });
@@ -86,7 +81,7 @@ pub fn ui(
 
 fn add_log(
     ui: &mut egui::Ui,
-    id: i32,
+    id: usize,
     LogMessage {
         message,
         name,
@@ -103,7 +98,8 @@ fn add_log(
     const FONT_ID: egui::FontId = egui::FontId::monospace(CONSOLE_FONT_SIZE);
 
     ui.push_id(id, |ui| {
-        let time = chrono::DateTime::<chrono::Utc>::from(*time);
+        let time_utc = chrono::DateTime::<chrono::Utc>::from(*time);
+        let time = chrono::DateTime::<chrono::Local>::from(*time);
         let res = ui
             .horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(time.format("%H:%M").to_string()).font(FONT_ID));
@@ -116,8 +112,8 @@ fn add_log(
                     return;
                 }
                 let level_color = match *level {
-                    Level::TRACE => egui::Color32::from_rgb(74, 165, 240),
-                    Level::DEBUG => egui::Color32::from_rgb(200, 114, 226),
+                    Level::TRACE => egui::Color32::from_rgb(200, 114, 226),
+                    Level::DEBUG => egui::Color32::from_rgb(74, 165, 240),
                     Level::INFO => egui::Color32::from_rgb(140, 194, 101),
                     Level::WARN => egui::Color32::from_rgb(209, 143, 82),
                     Level::ERROR => egui::Color32::from_rgb(231, 118, 128),
@@ -142,8 +138,17 @@ fn add_log(
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Time:").color(egui::Color32::WHITE));
                 ui.label(
-                    egui::RichText::new(time.to_rfc3339_opts(chrono::SecondsFormat::Micros, true))
+                    egui::RichText::new(time.format("%x %X %:z").to_string())
                         .color(egui::Color32::GRAY),
+                );
+            });
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Time (UTC):").color(egui::Color32::WHITE));
+                ui.label(
+                    egui::RichText::new(
+                        time_utc.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
+                    )
+                    .color(egui::Color32::GRAY),
                 );
             });
             ui.horizontal(|ui| {
