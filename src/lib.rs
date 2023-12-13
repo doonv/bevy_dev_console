@@ -11,15 +11,13 @@
 //! use bevy::prelude::*;
 //! use bevy_dev_console::prelude::*;
 //!
-//! fn main() {
-//!     App::new()
-//!         .add_plugins((
-//!             ConsoleLogPlugin::default(),
-//!             DefaultPlugins.build().disable::<bevy::log::LogPlugin>(),
-//!             DevConsolePlugin,
-//!         ))
-//!         .run();
-//! }
+//! App::new()
+//!     .add_plugins((
+//!         ConsoleLogPlugin::default(),
+//!         DefaultPlugins.build().disable::<bevy::log::LogPlugin>(),
+//!         DevConsolePlugin,
+//!     ))
+//!     .run();
 //! ```
 
 use bevy::prelude::*;
