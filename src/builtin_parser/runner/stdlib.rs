@@ -2,7 +2,7 @@ use std::{cell::Ref, ops::Range};
 
 use bevy::log::info;
 
-use super::{RunError, Value, Environment, Spanned};
+use super::{Environment, RunError, Spanned, Value};
 
 fn print(value: Spanned<Value>) -> Result<(), RunError> {
     match value.value {
@@ -49,6 +49,9 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
     })
 }
 
+/// Disposes of a [`Value`].
+fn drop(_v: Value) {}
+
 /// Macro for mass registering functions.
 ///
 /// ```
@@ -85,10 +88,12 @@ macro_rules! register {
         )*
     };
 }
+
 pub fn register(environment: &mut Environment) {
     register!(environment => {
         fn print;
         fn dbg;
         fn ref_depth;
+        fn drop;
     });
 }

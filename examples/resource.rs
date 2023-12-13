@@ -1,5 +1,5 @@
 //! Example of modifying resources via the console via reflection.
-//! 
+//!
 //! **Warning:** This is very experimental, might not work.
 
 use bevy::{log::LogPlugin, prelude::*};

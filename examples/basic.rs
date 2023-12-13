@@ -1,4 +1,4 @@
-//! A simple exmaple
+//! A simple example
 
 use bevy::{
     log::{Level, LogPlugin},
@@ -16,6 +16,7 @@ fn main() {
             // Not removing the LogPlugin will cause a panic!
             DefaultPlugins.build().disable::<LogPlugin>(),
             // Add the dev console plugin itself.
+            DevConsolePlugin,
         ))
         .add_systems(Startup, test)
         .run();

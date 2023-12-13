@@ -19,7 +19,7 @@ pub struct ConsoleUiState {
 fn system_time_to_chorno_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
     let dur = t.duration_since(instant::SystemTime::UNIX_EPOCH).unwrap();
     let (sec, nsec) = (dur.as_secs() as i64, dur.subsec_nanos());
-    
+
     chrono::Utc.timestamp_opt(sec, nsec).unwrap()
 }
 
@@ -108,7 +108,7 @@ fn add_log(
 
     ui.push_id(id, |ui| {
         let time_utc = system_time_to_chorno_utc(*time);
-        let time: chrono::DateTime::<chrono::Local> = time_utc.into();
+        let time: chrono::DateTime<chrono::Local> = time_utc.into();
         let res = ui
             .horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(time.format("%H:%M").to_string()).font(FONT_ID));

@@ -3,7 +3,7 @@ use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
 use super::environment::{FunctionParameterData, ResultContainer};
-use super::{RunError, super::Spanned};
+use super::{super::Spanned, RunError};
 
 use bevy::ecs::world::World;
 use bevy::reflect::Reflect;
@@ -30,16 +30,23 @@ pub enum Value {
     /// This isn't partically efficent, so:
     /// TODO: Create a custom type this!
     Reference(Weak<RefCell<Value>>),
+    /// A dynamic [`HashMap].
+    Object(HashMap<String, Rc<RefCell<Value>>>),
+    /// An [`Object`](Value::Object) with a name attached to it.
     StructObject {
+        /// The name of the struct
         name: String,
+        /// The [`Object`](Value::Object) [`HashMap`].
         map: HashMap<String, Rc<RefCell<Value>>>,
     },
-    /// A reference to a dynamic value. (aka a reference.)
+    /// A reference to a dynamic value. (aka a reference)
     Dynamic(Box<dyn Reflect>),
-    Object(HashMap<String, Rc<RefCell<Value>>>),
 }
 
 impl Value {
+    /// Attempts to format this [`Value`].
+    ///
+    /// Returns an error if the [`Value`] is a reference to moved data.
     pub fn try_format(&self, span: Span) -> Result<String, RunError> {
         match self {
             Value::None => Ok(format!("()")),

@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use bevy::{ecs::world::World, reflect::TypeRegistration};
+use bevy::{ecs::world::World, log::warn, reflect::TypeRegistration};
 use logos::Span;
 
 use super::{
@@ -254,8 +254,12 @@ impl Environment {
         name: impl Into<String>,
         function: impl IntoFunction<T>,
     ) -> &mut Self {
+        let name = name.into();
+        if self.variables.contains_key(&name) {
+            warn!("Function {name} declared twice.")
+        }
         self.variables
-            .insert(name.into(), Variable::Function(function.into_function()));
+            .insert(name, Variable::Function(function.into_function()));
 
         self
     }

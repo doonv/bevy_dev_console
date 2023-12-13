@@ -1,6 +1,6 @@
 //! Command execution functionality.
 
-use bevy::{prelude::*, ecs::system::Command};
+use bevy::{ecs::system::Command, prelude::*};
 
 /// The command parser currrently being used by the dev console.
 #[derive(Resource)]
@@ -15,12 +15,12 @@ impl DefaultCommandParser {
 
 /// The trait that all [`CommandParser`]s implement.
 /// You can take a look at the [builtin parser](crate::builtin_parser) for an example.
-/// 
+///
 /// ```
 /// # use bevy::ecs::world::World;
 /// # use bevy_dev_console::command::CommandParser;
 /// # use bevy::log::info;
-/// 
+///
 /// pub struct MyCustomParser;
 /// impl CommandParser for MyCustomParser {
 ///     fn parse(&self, command: &str, world: &mut World) {
