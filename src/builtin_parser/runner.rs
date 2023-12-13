@@ -294,6 +294,7 @@ fn eval_expression(
             }
         }
         Expression::None => Ok(Value::None),
+        Expression::Boolean(bool) => Ok(Value::Boolean(bool)),
         Expression::Function { name, arguments } => {
             environment.function_scope(&name, move |environment, function| {
                 (function.body)(
@@ -463,7 +464,8 @@ fn set_resource(
                     let mut dyn_struct = DynamicStruct::default();
                     for (key, value) in map.into_iter() {
                         match Rc::try_unwrap(value).unwrap().into_inner() {
-                            Value::None => {}
+                            Value::None => dyn_struct.insert(&key, ()),
+                            Value::Boolean(boolean) => dyn_struct.insert(&key, boolean),
                             Value::Number(number) => dyn_struct.insert(&key, number),
                             Value::String(string) => dyn_struct.insert(&key, string.clone()),
                             Value::Reference(..) => todo!("todo reference"),

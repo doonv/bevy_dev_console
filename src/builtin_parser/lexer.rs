@@ -54,6 +54,11 @@ pub enum Token {
     #[token(",")]
     Comma,
 
+    #[token("true")]
+    True,
+    #[token("false")]
+    False,
+
     #[regex(r#""(\\[\\"]|[^"])*""#)]
     String,
 

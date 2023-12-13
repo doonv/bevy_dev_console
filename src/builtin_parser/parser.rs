@@ -64,6 +64,7 @@ pub enum Expression {
         arguments: Vec<Spanned<Expression>>,
     },
     Object(HashMap<String, Spanned<Expression>>),
+    Boolean(bool),
 }
 
 #[derive(Debug, Clone)]
@@ -293,6 +294,8 @@ fn parse_primary(
         Some(Ok(Token::Number)) => {
             Ok(tokens.wrap_span(Expression::Number(tokens.slice().parse().unwrap())))
         }
+        Some(Ok(Token::True)) => Ok(tokens.wrap_span(Expression::Boolean(true))),
+        Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
         Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
         Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
         None => unreachable!("oh fuck what have i done to cause this to happen"),

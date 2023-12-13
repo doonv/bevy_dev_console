@@ -17,6 +17,8 @@ pub enum Value {
     None,
     /// A number, for simplicity only f64s are used. (However this will probably change in the future)
     Number(f64),
+    /// `true` or `false`. Thats it...
+    Boolean(bool),
     /// A string... there isn't much to say about this one.
     String(String),
     /// A reference.
@@ -51,6 +53,7 @@ impl Value {
         match self {
             Value::None => Ok(format!("()")),
             Value::Number(number) => Ok(format!("{number}")),
+            Value::Boolean(bool) => Ok(format!("{bool}")),
             Value::String(string) => Ok(format!("\"{string}\"")),
             Value::Reference(reference) => {
                 if let Some(rc) = reference.upgrade() {
