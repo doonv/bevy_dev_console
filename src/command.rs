@@ -1,36 +1,48 @@
-//! Command parser
+//! Command execution functionality.
 
-use bevy::{ecs::system::Command, prelude::*};
-use logos::Span;
+use bevy::{prelude::*, ecs::system::Command};
 
-use self::{lexer::TokenStream, parser::parse};
+/// The command parser currrently being used by the dev console.
+#[derive(Resource)]
+pub struct DefaultCommandParser(pub Box<dyn CommandParser>);
 
-mod lexer;
-mod parser;
-mod runner;
-
-pub use runner::environment::Environment;
-
-#[derive(Debug, Clone)]
-pub struct Spanned<T> {
-    pub span: Span,
-    pub value: T,
+impl DefaultCommandParser {
+    /// Shortcut method for calling `parser.0.parse(command, world)`.
+    pub fn parse(&self, command: &str, world: &mut World) {
+        self.0.parse(command, world)
+    }
 }
 
-pub struct ExecuteConsoleCommand(pub String);
-impl Command for ExecuteConsoleCommand {
+/// The trait that all [`CommandParser`]s implement.
+/// You can take a look at the [builtin parser](crate::builtin_parser) for an example.
+/// 
+/// ```
+/// # use bevy::ecs::world::World;
+/// # use bevy_dev_console::command::CommandParser;
+/// # use bevy::log::info;
+/// 
+/// pub struct MyCustomParser;
+/// impl CommandParser for MyCustomParser {
+///     fn parse(&self, command: &str, world: &mut World) {
+///         // The `name: "console_result"` tells the console this is a result from
+///         // the parser and then formats it accordingly.
+///         info!(name: "console_result", "You just entered the command {command}")
+///     }
+/// }
+/// ```
+pub trait CommandParser: Send + Sync {
+    /// The method called by the developer console when a command is ran.
+    fn parse(&self, command: &str, world: &mut World);
+}
+
+pub(crate) struct ExecuteCommand(pub String);
+impl Command for ExecuteCommand {
     fn apply(self, world: &mut World) {
-        let mut tokens = TokenStream::new(&self.0);
-
-        let environment = world.remove_non_send_resource::<Environment>().unwrap();
-        let ast = parse(&mut tokens, &environment);
-        world.insert_non_send_resource(environment);
-
-        match ast {
-            Ok(ast) => {
-                runner::run(ast, world);
-            }
-            Err(err) => error!("{err:#?}"),
+        if let Some(parser) = world.remove_resource::<DefaultCommandParser>() {
+            parser.parse(&self.0, world);
+            world.insert_resource(parser);
+        } else {
+            error!("Default command parser doesn't exist, cannot execute command.");
         }
     }
 }

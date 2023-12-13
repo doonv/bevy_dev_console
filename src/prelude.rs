@@ -1,3 +1,4 @@
-pub use crate::logging::log_plugin::LogPlugin;
+//! `use bevy_dev_console::prelude::*` to quickly import the required plugins for `bevy_dev_console`.
+
+pub use crate::logging::log_plugin::ConsoleLogPlugin;
 pub use crate::DevConsolePlugin;
-pub use crate::command::Environment;

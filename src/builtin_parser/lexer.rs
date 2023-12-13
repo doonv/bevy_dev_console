@@ -131,7 +131,7 @@ impl<'a> TokenStream<'a> {
     }
 
     /// Get a [`str`] slice of the next [`Token`].
-    pub fn peek_slice(&self) -> &str {
+    pub fn _peek_slice(&self) -> &str {
         self.lexer.slice()
     }
 

@@ -1,7 +1,5 @@
-// use std::collections::HashMap as AHashMap;
-
-use ahash::AHashMap;
 use logos::Span;
+use std::collections::HashMap;
 
 use super::{
     lexer::{FailedToLexCharacter, Token, TokenStream},
@@ -56,7 +54,7 @@ pub enum Expression {
     Dereference(Box<Spanned<Expression>>),
     StructObject {
         name: String,
-        map: AHashMap<String, Spanned<Expression>>,
+        map: HashMap<String, Spanned<Expression>>,
     },
     String(String),
     Borrow(Box<Spanned<Expression>>),
@@ -65,7 +63,7 @@ pub enum Expression {
         name: String,
         arguments: Vec<Spanned<Expression>>,
     },
-    Object(AHashMap<String, Spanned<Expression>>),
+    Object(HashMap<String, Spanned<Expression>>),
 }
 
 #[derive(Debug, Clone)]
@@ -341,8 +339,8 @@ fn parse_var_assign(
 fn parse_object(
     tokens: &mut TokenStream,
     environment: &Environment,
-) -> Result<AHashMap<String, Spanned<Expression>>, ParseError> {
-    let mut map = AHashMap::new();
+) -> Result<HashMap<String, Spanned<Expression>>, ParseError> {
+    let mut map = HashMap::new();
     while let Some(Ok(Token::Identifer)) = tokens.peek() {
         tokens.next();
         let ident = tokens.slice().to_string();
@@ -363,9 +361,10 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
-    use crate::command::Environment;
-
-    use super::{super::lexer::TokenStream, parse};
+    use super::{
+        super::{lexer::TokenStream, Environment},
+        parse,
+    };
 
     #[test]
     fn var_assign() {

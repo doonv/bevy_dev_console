@@ -5,19 +5,16 @@
 //! The macros provided for logging are reexported from [`tracing`](https://docs.rs/tracing),
 //! and behave identically to it.
 //!
-//! By default, the [`LogPlugin`] from this crate is included in Bevy's `DefaultPlugins`
+//! By default, the [`ConsoleLogPlugin`] from this crate is included in Bevy's `DefaultPlugins`
 //! and the logging macros can be used out of the box, if used.
 //!
-//! For more fine-tuned control over logging behavior, set up the [`LogPlugin`] or
+//! For more fine-tuned control over logging behavior, set up the [`ConsoleLogPlugin`] or
 //! `DefaultPlugins` during app initialization.
 
+use instant::SystemTime;
 #[cfg(feature = "trace")]
 use std::panic;
-use std::{
-    sync::{Arc, Mutex},
-    time::SystemTime,
-};
-
+use std::sync::{Arc, Mutex};
 #[cfg(target_os = "android")]
 mod android_tracing;
 
@@ -42,55 +39,18 @@ use tracing_log::LogTracer;
 use tracing_subscriber::fmt::{format::DefaultFields, FormattedFields};
 use tracing_subscriber::{field::Visit, layer::Layer, prelude::*, registry::Registry, EnvFilter};
 
-/// Adds logging to Apps. This plugin is part of the `DefaultPlugins`. Adding
-/// this plugin will setup a collector appropriate to your target platform:
-/// * Using [`tracing-subscriber`](https://crates.io/crates/tracing-subscriber) by default,
-/// logging to `stdout`.
-/// * Using [`android_log-sys`](https://crates.io/crates/android_log-sys) on Android,
-/// logging to Android logs.
-/// * Using [`tracing-wasm`](https://crates.io/crates/tracing-wasm) in WASM, logging
-/// to the browser console.
-///
-/// You can configure this plugin.
-/// ```no_run
-/// # use bevy_app::{App, NoopPluginGroup as DefaultPlugins, PluginGroup};
-/// # use bevy_log::LogPlugin;
-/// # use bevy::utils::tracing::Level;
-/// fn main() {
-///     App::new()
-///         .add_plugins(DefaultPlugins.set(LogPlugin {
-///             level: Level::DEBUG,
-///             filter: "wgpu=error,bevy_render=info,bevy::ecs=trace".to_string(),
-///         }))
-///         .run();
-/// }
-/// ```
-///
-/// Log level can also be changed using the `RUST_LOG` environment variable.
-/// For example, using `RUST_LOG=wgpu=error,bevy_render=info,bevy::ecs=trace cargo run ..`
-///
-/// It has the same syntax as the field [`LogPlugin::filter`], see [`EnvFilter`].
-/// If you define the `RUST_LOG` environment variable, the [`LogPlugin`] settings
-/// will be ignored.
-///
-/// If you want to setup your own tracing collector, you should disable this
-/// plugin from `DefaultPlugins`:
-/// ```no_run
-/// # use bevy_app::{App, NoopPluginGroup as DefaultPlugins, PluginGroup};
-/// # use bevy_log::LogPlugin;
-/// fn main() {
-///     App::new()
-///         .add_plugins(DefaultPlugins.build().disable::<LogPlugin>())
-///         .run();
-/// }
-/// ```
+/// [`bevy_dev_console`](crate)'s custom [LogPlugin](bevy::log::LogPlugin).
+/// This plugin allows [`bevy_dev_console`](crate) to access Bevy logs
+/// and display them in the developer console.
 ///
 /// # Panics
 ///
 /// This plugin should not be added multiple times in the same process. This plugin
 /// sets up global logging configuration for **all** Apps in a given process, and
 /// rerunning the same initialization multiple times will lead to a panic.
-pub struct LogPlugin {
+///
+/// **This means you have to remove Bevy's built-in [`LogPlugin`](bevy::log::LogPlugin) for this to work!**
+pub struct ConsoleLogPlugin {
     /// Filters logs using the [`EnvFilter`] format
     pub filter: String,
 
@@ -99,7 +59,30 @@ pub struct LogPlugin {
     pub level: Level,
 }
 
-impl Default for LogPlugin {
+impl ConsoleLogPlugin {
+    /// Appends a filter to the [`ConsoleLogPlugin`], allowing you to change the
+    /// log level of a specific module/crate.
+    ///
+    /// ## Examples
+    ///
+    /// Changing the log level of the current module to `TRACE`.
+    /// ```
+    /// # use bevy_dev_console::prelude::ConsoleLogPlugin;
+    /// # use bevy::log::Level;
+    /// ConsoleLogPlugin::default()
+    ///     .append_filter(module_path!(), Level::TRACE)
+    /// # ;
+    /// ```
+    pub fn append_filter(mut self, target: &str, level: Level) -> Self {
+        self.filter.push(',');
+        self.filter += target;
+        self.filter.push('=');
+        self.filter += level.as_str();
+        self
+    }
+}
+
+impl Default for ConsoleLogPlugin {
     fn default() -> Self {
         Self {
             filter: "wgpu=error,naga=warn,bevy_dev_console=trace".to_string(),
@@ -108,7 +91,7 @@ impl Default for LogPlugin {
     }
 }
 
-impl Plugin for LogPlugin {
+impl Plugin for ConsoleLogPlugin {
     #[cfg_attr(not(feature = "tracing-chrome"), allow(unused_variables))]
     fn build(&self, app: &mut App) {
         #[cfg(feature = "trace")]
@@ -212,10 +195,10 @@ impl Plugin for LogPlugin {
 
         match (logger_already_set, subscriber_already_set) {
             (true, true) => warn!(
-                "Could not set global logger and tracing subscriber as they are already set. Consider disabling LogPlugin."
+                "Could not set global logger and tracing subscriber as they are already set. Consider disabling ConsoleLogPlugin."
             ),
-            (true, _) => warn!("Could not set global logger as it is already set. Consider disabling LogPlugin."),
-            (_, true) => warn!("Could not set global tracing subscriber as it is already set. Consider disabling LogPlugin."),
+            (true, _) => warn!("Could not set global logger as it is already set. Consider disabling ConsoleLogPlugin."),
+            (_, true) => warn!("Could not set global tracing subscriber as it is already set. Consider disabling ConsoleLogPlugin."),
             _ => (),
         }
     }

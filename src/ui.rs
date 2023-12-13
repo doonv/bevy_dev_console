@@ -4,14 +4,23 @@
 use bevy::prelude::*;
 use bevy::utils::tracing::Level;
 use bevy_egui::*;
+use chrono::TimeZone;
+use instant::SystemTime;
 
-use crate::{logging::log_plugin::LogMessage, command::ExecuteConsoleCommand};
+use crate::{command::ExecuteCommand, logging::log_plugin::LogMessage};
 
 #[derive(Default, Resource)]
 pub struct ConsoleUiState {
     open: bool,
     log: Vec<(LogMessage, bool)>,
     command: String,
+}
+
+fn system_time_to_chorno_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
+    let dur = t.duration_since(instant::SystemTime::UNIX_EPOCH).unwrap();
+    let (sec, nsec) = (dur.as_secs() as i64, dur.subsec_nanos());
+    
+    chrono::Utc.timestamp_opt(sec, nsec).unwrap()
 }
 
 pub fn ui(
@@ -33,7 +42,7 @@ pub fn ui(
         info!(name: "console_command", "$ {}", state.command.trim());
         // Get the owned command by replacing it with an empty string
         let command = std::mem::take(&mut state.command);
-        commands.add(ExecuteConsoleCommand(command));
+        commands.add(ExecuteCommand(command));
     }
 
     if state.open {
@@ -98,8 +107,8 @@ fn add_log(
     const FONT_ID: egui::FontId = egui::FontId::monospace(CONSOLE_FONT_SIZE);
 
     ui.push_id(id, |ui| {
-        let time_utc = chrono::DateTime::<chrono::Utc>::from(*time);
-        let time = chrono::DateTime::<chrono::Local>::from(*time);
+        let time_utc = system_time_to_chorno_utc(*time);
+        let time: chrono::DateTime::<chrono::Local> = time_utc.into();
         let res = ui
             .horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new(time.format("%H:%M").to_string()).font(FONT_ID));

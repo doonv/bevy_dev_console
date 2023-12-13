@@ -1,7 +1,8 @@
-use bevy::{
-    log::{Level, LogPlugin},
-    prelude::*,
-};
+//! Example of modifying resources via the console via reflection.
+//! 
+//! **Warning:** This is very experimental, might not work.
+
+use bevy::{log::LogPlugin, prelude::*};
 use bevy_dev_console::prelude::*;
 
 #[derive(Resource, Reflect, Default, Debug)]
@@ -36,7 +37,7 @@ fn main() {
             string: "hi there :)".to_string(),
         })
         .add_plugins((
-            bevy_dev_console::prelude::LogPlugin::default(),
+            ConsoleLogPlugin::default(),
             DefaultPlugins.build().disable::<LogPlugin>(),
             DevConsolePlugin,
         ))

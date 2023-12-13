@@ -1,13 +1,11 @@
-use std::rc::Weak;
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use self::environment::{Environment, ResultContainer};
+use self::environment::Environment;
 
 use super::{
     parser::{Ast, Expression, Operator},
     Spanned,
 };
-use ahash::AHashMap;
 use bevy::reflect::ReflectRef;
 use bevy::{
     prelude::*,
@@ -55,7 +53,7 @@ pub fn run(ast: Ast, world: &mut World) {
 
     // Same thing here (this time we are doing it because we are passing a `&mut World` to `eval_expression`)
     let Some(registry) = world.remove_resource::<AppTypeRegistry>() else {
-        error!("The AppTypeRegistry doesn't exist, not executing command. (What have you done to cause this?)");
+        error!("The AppTypeRegistry doesn't exist, not executing command. (What have you done to cause this? o_O)");
         return;
     };
 
@@ -145,7 +143,7 @@ fn eval_expression(
                     let rc = Rc::new(RefCell::new(value));
                     let weak = Rc::downgrade(&rc);
 
-                    environment.set(var, rc)?;
+                    environment.set(var, rc);
 
                     Ok(Value::Reference(weak))
                 }
@@ -163,7 +161,7 @@ fn eval_expression(
                 info!(name: "console_result", "> {}", fancy_debug_print(registration, world));
                 Ok(Value::None)
             } else {
-                // let value = &*;
+                #[allow(clippy::single_match)]
                 match &*environment.get(&variable, expr.span.clone())?.borrow() {
                     Value::Number(number) => return Ok(Value::Number(*number)),
                     _ => {}
@@ -282,31 +280,7 @@ fn eval_expression(
             )?;
             Ok(Value::Object(hashmap))
         }
-        Expression::Dereference(inner) => {
-            // if let Expression::Variable(variable) = inner.value {
-            //     let cell = environment.get(&variable, inner.span.clone())?;
-            //     // This line of code is stupid. However I believe that
-            //     // Ref::leak (unstable) will give a less-shitty approach to this.
-            //     if Rc::strong_count(&*cell.borrow()) == 1 {
-            //         Ok(Rc::try_unwrap(
-            //             environment
-            //                 .remove(&variable, inner.span.clone())?
-            //                 .into_inner(),
-            //         )
-            //         .unwrap())
-            //     } else {
-            //         Err(RunError::CouldntDereferenceValue(expr.span))
-            //     }
-            //     // let value = environment.get(&variable, inner.span)?.get_mut().;
-            //     // if let Ok(value) = Rc::try_unwrap(value) {
-            //     //     Ok(value)
-            //     // } else {
-            //     //     Err(RunError::CouldntDereferenceValue(expr.span))
-            //     // }
-            // } else {
-            //     // Err()
-            //     todo!()
-            // }
+        Expression::Dereference(_inner) => {
             todo!()
         }
         Expression::Borrow(inner) => {
@@ -379,20 +353,16 @@ fn eval_member_expression<'a>(
                 let reflect = var.reflect_ref();
 
                 match reflect {
-                    ReflectRef::Struct(_) => {
-                        Ok(Reflectable::StructField(ReflectStructField {
-                            string: right,
-                            mut_reflect: var,
-                        }))
-                    }
+                    ReflectRef::Struct(_) => Ok(Reflectable::StructField(ReflectStructField {
+                        string: right,
+                        mut_reflect: var,
+                    })),
                     _ => todo!(),
                 }
             } else {
                 let reference = environment.get(&variable, left_span)?.borrow();
                 match &*reference {
-                    Value::Number(number) => {
-                        return Ok(Reflectable::Value(Value::Number(*number)))
-                    }
+                    Value::Number(number) => return Ok(Reflectable::Value(Value::Number(*number))),
                     Value::Dynamic(value) => {
                         dbg!(value);
                         Ok(Reflectable::Value(Value::None))
@@ -422,9 +392,7 @@ fn eval_member_expression<'a>(
             match left {
                 Value::StructObject { map, .. } => {
                     if let Some(value) = map.get(&right) {
-                        Ok(Reflectable::Value(Value::Reference(
-                            Rc::downgrade(value),
-                        )))
+                        Ok(Reflectable::Value(Value::Reference(Rc::downgrade(value))))
                     } else {
                         Err(RunError::FieldNotFoundInStruct(left_span))
                     }
@@ -535,13 +503,13 @@ fn set_resource(
     }
 }
 fn eval_object(
-    map: AHashMap<String, Spanned<Expression>>,
+    map: HashMap<String, Spanned<Expression>>,
     EvalParams {
         world,
         environment,
         registrations,
     }: EvalParams,
-) -> Result<AHashMap<String, Rc<RefCell<Value>>>, RunError> {
+) -> Result<HashMap<String, Rc<RefCell<Value>>>, RunError> {
     let map = map
         .into_iter()
         .map(

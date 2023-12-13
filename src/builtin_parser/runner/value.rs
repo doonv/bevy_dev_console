@@ -1,11 +1,11 @@
+use std::collections::HashMap;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use super::environment::ResultContainer;
-use super::RunError;
+use super::environment::{FunctionParameterData, ResultContainer};
+use super::{RunError, super::Spanned};
 
-use super::super::Spanned;
-use ahash::AHashMap;
+use bevy::ecs::world::World;
 use bevy::reflect::Reflect;
 
 use logos::Span;
@@ -15,7 +15,7 @@ use logos::Span;
 pub enum Value {
     /// Nothing at all
     None,
-    /// A number, for simplicity only f64s are used.
+    /// A number, for simplicity only f64s are used. (However this will probably change in the future)
     Number(f64),
     /// A string... there isn't much to say about this one.
     String(String),
@@ -32,11 +32,11 @@ pub enum Value {
     Reference(Weak<RefCell<Value>>),
     StructObject {
         name: String,
-        map: AHashMap<String, Rc<RefCell<Value>>>,
+        map: HashMap<String, Rc<RefCell<Value>>>,
     },
     /// A reference to a dynamic value. (aka a reference.)
     Dynamic(Box<dyn Reflect>),
-    Object(AHashMap<String, Rc<RefCell<Value>>>),
+    Object(HashMap<String, Rc<RefCell<Value>>>),
 }
 
 impl Value {
@@ -58,7 +58,7 @@ impl Value {
                 for (key, value) in map {
                     string += &format!("\n\t{key}: {},", value.borrow().try_format(span.clone())?);
                 }
-                if map.len() > 0 {
+                if !map.is_empty() {
                     string.push('\n');
                 }
                 string.push('}');
@@ -70,7 +70,7 @@ impl Value {
                 for (key, value) in map {
                     string += &format!("\n\t{key}: {},", value.borrow().try_format(span.clone())?);
                 }
-                if map.len() > 0 {
+                if !map.is_empty() {
                     string.push('\n');
                 }
                 string.push('}');
@@ -112,17 +112,36 @@ impl From<String> for Value {
     }
 }
 
-impl TryFrom<Spanned<Value>> for Value {
+impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
+    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for Spanned<Value>
+{
     type Error = RunError;
 
-    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+    fn try_from(
+        FunctionParameterData { value, .. }: FunctionParameterData,
+    ) -> Result<Self, Self::Error> {
+        Ok(value)
+    }
+}
+impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
+    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for Value
+{
+    type Error = RunError;
+
+    fn try_from(
+        FunctionParameterData { value, .. }: FunctionParameterData,
+    ) -> Result<Self, Self::Error> {
         Ok(value.value)
     }
 }
-impl TryFrom<Spanned<Value>> for f64 {
+impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
+    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for f64
+{
     type Error = RunError;
 
-    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+    fn try_from(
+        FunctionParameterData { value, .. }: FunctionParameterData,
+    ) -> Result<Self, Self::Error> {
         if let Value::Number(number) = value.value {
             Ok(number)
         } else {
@@ -130,12 +149,41 @@ impl TryFrom<Spanned<Value>> for f64 {
         }
     }
 }
-impl TryFrom<Spanned<Value>> for String {
+
+impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
+    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for String
+{
     type Error = RunError;
 
-    fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+    fn try_from(
+        FunctionParameterData { value, .. }: FunctionParameterData,
+    ) -> Result<Self, Self::Error> {
         if let Value::String(string) = value.value {
             Ok(string)
+        } else {
+            todo!()
+        }
+    }
+}
+
+impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
+    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>>
+    for &'world mut World
+{
+    type Error = RunError;
+
+    fn try_from(
+        FunctionParameterData { world, .. }: FunctionParameterData<
+            'world,
+            'env,
+            'reg,
+            'world2,
+            'env2,
+            'reg2,
+        >,
+    ) -> Result<Self, Self::Error> {
+        if let Some(world) = world.take() {
+            Ok(world)
         } else {
             todo!()
         }
