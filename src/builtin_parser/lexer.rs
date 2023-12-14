@@ -1,3 +1,5 @@
+//! Generates a stream of tokens from a string.
+
 use logos::{Lexer, Logos, Span};
 
 use super::Spanned;
@@ -69,7 +71,7 @@ pub enum Token {
     Number,
 }
 
-/// A wrapper for the lexer which provides peeking and other helper functions
+/// A wrapper for the lexer which provides token peeking and other helper functions
 #[derive(Debug)]
 pub struct TokenStream<'a> {
     lexer: Lexer<'a, Token>,

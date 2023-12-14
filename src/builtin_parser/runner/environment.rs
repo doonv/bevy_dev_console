@@ -1,3 +1,5 @@
+//! Environment and function registeration
+
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use bevy::{ecs::world::World, log::warn, reflect::TypeRegistration};
@@ -7,6 +9,43 @@ use super::{
     super::{parser::Expression, Spanned},
     eval_expression, stdlib, EvalParams, RunError, Value,
 };
+
+/// Macro for mass registering functions.
+///
+/// ```
+/// fn a() {}
+/// fn b() {}
+/// fn c() {}
+///
+/// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
+/// # use bevy_dev_console::register;
+/// register!(environment => {
+///     fn a;
+///     fn b;
+///     fn c;
+/// });
+/// ```
+#[macro_export]
+macro_rules! register {
+    {
+        $environment:expr => fn $fn_name:ident;
+    } => {
+        $environment
+            .register_fn(stringify!($fn_name), $fn_name)
+    };
+    {
+        $environment:expr => {
+            $(
+                fn $fn_name:ident;
+            )*
+        }
+    } => {
+        $environment
+        $(
+            .register_fn(stringify!($fn_name), $fn_name)
+        )*
+    };
+}
 
 /// Get around implementation of Result causing stupid errors
 pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
@@ -202,8 +241,9 @@ impl Environment {
         }
     }
 
-    /// "moves" a variable, giving you ownership over it. However it will no longer be able to be used.
-    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Rc<RefCell<Value>>, RunError> {
+    /// "moves" a variable, giving you ownership over it. However it will no longer be able to be used unless
+    /// it's a [`Value::None`], [`Value::Boolean`], or [`Value::Number`] in which case it will be copied.  
+    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, RunError> {
         let (env, span) = self.resolve_mut(name, span)?;
 
         match env.variables.get_mut(name) {
@@ -213,8 +253,21 @@ impl Environment {
                 let Variable::Unmoved(value) = std::mem::replace(reference, Variable::Moved) else {
                     unreachable!()
                 };
+                // SAFETY: The reference goes out of scope before it can get borrowed again.
+                let reference = unsafe { value.try_borrow_unguarded().unwrap() };
+                // This is a pretty bad way of handling
+                match reference {
+                    Value::None => Ok(Value::None),
+                    Value::Boolean(bool) => Ok(Value::Boolean(*bool)),
+                    Value::Number(number) => Ok(Value::Number(*number)),
+                    _ => {
+                        // Unwrapping will always succeed due to only the owner of the variable having
+                        // a strong reference. All other references are weak.
+                        let value = Rc::try_unwrap(value).unwrap();
 
-                Ok(value)
+                        Ok(value.into_inner())
+                    }
+                }
             }
             None => Err(RunError::VariableNotFound(span)),
         }

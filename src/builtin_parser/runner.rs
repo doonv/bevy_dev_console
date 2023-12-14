@@ -1,6 +1,8 @@
+//! Executes the abstract syntax tree.
+
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
-use self::environment::Environment;
+use environment::Environment;
 
 use super::{
     parser::{Ast, Expression, Operator},
@@ -31,16 +33,16 @@ pub struct EvalParams<'a, 'b, 'c> {
 
 #[derive(Debug)]
 pub enum RunError {
+    Basic { text: String, span: Span },
     VariableNotFound(Span),
     ExpectedNumberAfterUnaryOperator(Value),
     InvalidVariantForResource(String, String),
-    Basic { text: String, span: Span },
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
-    CouldntDereferenceValue(std::ops::Range<usize>),
-    ReferenceToMovedData(std::ops::Range<usize>),
-    VariableMoved(std::ops::Range<usize>),
-    CannotBorrowValue(std::ops::Range<usize>),
+    CouldntDereferenceValue(Span),
+    ReferenceToMovedData(Span),
+    VariableMoved(Span),
+    CannotBorrowValue(Span),
 }
 
 pub fn run(ast: Ast, world: &mut World) {
@@ -153,25 +155,15 @@ fn eval_expression(
         Expression::String(string) => Ok(Value::String(string)),
         Expression::Number(number) => Ok(Value::Number(number)),
         Expression::Variable(variable) => {
-            dbg!(&variable);
             if let Some(registration) = registrations
                 .iter()
                 .find(|v| v.type_info().type_path_table().short_path() == variable)
             {
                 info!(name: "console_result", "> {}", fancy_debug_print(registration, world));
+
                 Ok(Value::None)
             } else {
-                #[allow(clippy::single_match)]
-                match &*environment.get(&variable, expr.span.clone())?.borrow() {
-                    Value::Number(number) => return Ok(Value::Number(*number)),
-                    _ => {}
-                }
-
-                // Unwrapping will always succeed due to only the owner of the variable having
-                // a strong reference. All other references are weak.
-                let value = Rc::try_unwrap(environment.move_var(&variable, expr.span)?).unwrap();
-
-                Ok(value.into_inner())
+                environment.move_var(&variable, expr.span)
             }
         }
         Expression::BinaryOp {

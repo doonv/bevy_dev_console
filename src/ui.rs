@@ -1,6 +1,7 @@
 //! The module that handles the user interface of the console.
 //!
-//! Made with [`bevy_egui`]
+//! Made with [`bevy_egui`].
+
 use bevy::prelude::*;
 use bevy::utils::tracing::Level;
 use bevy_egui::*;
@@ -16,7 +17,7 @@ pub struct ConsoleUiState {
     command: String,
 }
 
-fn system_time_to_chorno_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
+fn system_time_to_chrono_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
     let dur = t.duration_since(instant::SystemTime::UNIX_EPOCH).unwrap();
     let (sec, nsec) = (dur.as_secs() as i64, dur.subsec_nanos());
 
@@ -107,7 +108,7 @@ fn add_log(
     const FONT_ID: egui::FontId = egui::FontId::monospace(CONSOLE_FONT_SIZE);
 
     ui.push_id(id, |ui| {
-        let time_utc = system_time_to_chorno_utc(*time);
+        let time_utc = system_time_to_chrono_utc(*time);
         let time: chrono::DateTime<chrono::Local> = time_utc.into();
         let res = ui
             .horizontal_wrapped(|ui| {

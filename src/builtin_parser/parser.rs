@@ -1,3 +1,5 @@
+//! Generates an abstract syntax tree from a list of tokens.
+
 use logos::Span;
 use std::collections::HashMap;
 

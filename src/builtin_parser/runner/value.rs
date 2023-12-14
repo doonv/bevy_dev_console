@@ -32,7 +32,7 @@ pub enum Value {
     /// This isn't partically efficent, so:
     /// TODO: Create a custom type this!
     Reference(Weak<RefCell<Value>>),
-    /// A dynamic [`HashMap].
+    /// A dynamic [`HashMap`].
     Object(HashMap<String, Rc<RefCell<Value>>>),
     /// An [`Object`](Value::Object) with a name attached to it.
     StructObject {

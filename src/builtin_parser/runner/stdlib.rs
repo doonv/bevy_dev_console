@@ -1,6 +1,6 @@
-use std::{cell::Ref, ops::Range};
-
+use crate::register;
 use bevy::log::info;
+use std::{cell::Ref, ops::Range};
 
 use super::{Environment, RunError, Spanned, Value};
 
@@ -51,43 +51,6 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
 
 /// Disposes of a [`Value`].
 fn drop(_v: Value) {}
-
-/// Macro for mass registering functions.
-///
-/// ```
-/// fn a() {}
-/// fn b() {}
-/// fn c() {}
-///
-/// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
-/// # use bevy_dev_console::register;
-/// register!(environment => {
-///     fn a;
-///     fn b;
-///     fn c;
-/// });
-/// ```
-#[macro_export]
-macro_rules! register {
-    {
-        $environment:expr => fn $fn_name:ident;
-    } => {
-        $environment
-            .register_fn(stringify!($fn_name), $fn_name)
-    };
-    {
-        $environment:expr => {
-            $(
-                fn $fn_name:ident;
-            )*
-        }
-    } => {
-        $environment
-        $(
-            .register_fn(stringify!($fn_name), $fn_name)
-        )*
-    };
-}
 
 pub fn register(environment: &mut Environment) {
     register!(environment => {
