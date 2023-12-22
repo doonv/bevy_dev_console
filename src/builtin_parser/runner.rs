@@ -4,25 +4,36 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use environment::Environment;
 
+use self::reflection::{object_to_dynamic_struct, IntoRegistration, IntoResource};
+
 use super::{
     parser::{Ast, Expression, Operator},
     Spanned,
 };
-use bevy::reflect::ReflectRef;
 use bevy::{
     prelude::*,
-    reflect::{
-        DynamicEnum, DynamicStruct, DynamicVariant, ReflectFromPtr, ReflectMut, TypeInfo,
-        TypeRegistration, VariantInfo, VariantType,
-    },
+    reflect::{DynamicEnum, Enum, EnumInfo, ReflectMut, TypeInfo, TypeRegistration},
 };
 use logos::Span;
-
 pub mod environment;
+pub mod reflection;
 pub mod stdlib;
 pub mod value;
 
 pub use value::Value;
+
+// enum ReflectMutlect<'a> {
+//     Ref(&'a mut dyn Reflect),
+//     Mut(Mut<'a, dyn Reflect>)
+// }
+// impl<'a> ReflectMutlect<'a> {
+//     pub fn to_ref(&'a mut self) -> &'a mut dyn Reflect {
+//         match self {
+//             ReflectMutlect::Ref(reference) => *reference,
+//             ReflectMutlect::Mut(reference) => reference.as_reflect_mut()
+//         }
+//     }
+// }
 
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'a, 'b, 'c> {
@@ -43,9 +54,12 @@ pub enum RunError {
     ReferenceToMovedData(Span),
     VariableMoved(Span),
     CannotBorrowValue(Span),
+    IncompatibleReflectTypes { expected: String, actual: String },
+    EnumVariantNotFound { name: String },
 }
 
 pub fn run(ast: Ast, world: &mut World) {
+    dbg!(&ast);
     // Temporarily remove the [`Environment`] resource to gain
     // mutability without needing a mutable reference.
     let Some(mut environment) = world.remove_non_send_resource::<Environment>() else {
@@ -94,7 +108,14 @@ pub fn run(ast: Ast, world: &mut World) {
 
             match value {
                 Ok(Value::None) => {}
-                Ok(value) => match value.try_format(span) {
+                Ok(value) => match value.try_format(
+                    span,
+                    EvalParams {
+                        world,
+                        environment: &mut environment,
+                        registrations: &registrations,
+                    },
+                ) {
                     Ok(value) => info!(name: "console_result", "> {value}"),
                     Err(err) => error!("{err:?}"),
                 },
@@ -117,40 +138,134 @@ fn eval_expression(
     }: EvalParams,
 ) -> Result<Value, RunError> {
     match expr.value {
-        Expression::VarAssign { name, value } => match name.value {
-            Expression::Variable(var) => {
-                if let Some(registration) = registrations
-                    .iter()
-                    .find(|v| v.type_info().type_path_table().short_path() == var)
-                {
-                    set_resource(
-                        *value,
-                        EvalParams {
-                            world,
-                            environment,
-                            registrations,
-                        },
-                        var,
-                        registration,
-                    )
-                } else {
-                    let value = eval_expression(
-                        *value,
-                        EvalParams {
-                            world,
-                            environment,
-                            registrations,
-                        },
-                    )?;
-                    let rc = Rc::new(RefCell::new(value));
-                    let weak = Rc::downgrade(&rc);
+        Expression::VarAssign {
+            name,
+            value: value_expr,
+        } => match eval_path(*name, environment, registrations)?.value {
+            Path::Variable(variable) => {
+                let temp = variable.clone();
+                let value = eval_expression(
+                    *value_expr,
+                    EvalParams {
+                        world,
+                        environment,
+                        registrations,
+                    },
+                )?;
+                *temp.borrow_mut() = value;
 
-                    environment.set(var, rc);
-
-                    Ok(Value::Reference(weak))
-                }
+                Ok(Value::Reference(Rc::downgrade(&temp)))
             }
-            _ => todo!(),
+            Path::NewVariable(variable) => {
+                let value = eval_expression(
+                    *value_expr,
+                    EvalParams {
+                        world,
+                        environment,
+                        registrations,
+                    },
+                )?;
+                let rc = Rc::new(RefCell::new(value));
+                let weak = Rc::downgrade(&rc);
+
+                environment.set(variable, rc);
+
+                Ok(Value::Reference(weak))
+            }
+            Path::Resource(resource) => {
+                let registeration = registrations.into_registration(resource.id);
+                let mut dyn_reflect = resource.mut_dyn_reflect(world, registeration);
+
+                let reflect = dyn_reflect
+                    .reflect_path_mut(resource.path.as_str())
+                    .unwrap();
+
+                match reflect.reflect_mut() {
+                    ReflectMut::Enum(dyn_enum) => {
+                        let TypeInfo::Enum(enum_info) = registeration.type_info() else {
+                            unreachable!();
+                        };
+                        match value_expr.value {
+                            Expression::Variable(variable) => {
+                                if enum_info.contains_variant(&variable) {
+                                    let new_enum = DynamicEnum::new(variable, ());
+
+                                    dyn_enum.set(Box::new(new_enum)).map_err(|new_enum| {
+                                        RunError::IncompatibleReflectTypes {
+                                            expected: dyn_enum.variant_name().to_string(),
+                                            actual: new_enum
+                                                .downcast::<DynamicEnum>()
+                                                .unwrap()
+                                                .variant_name()
+                                                .to_string(),
+                                        }
+                                    })
+                                } else {
+                                    Err(RunError::EnumVariantNotFound {
+                                        name: variable
+                                    })
+                                }?
+                            }
+                            Expression::StructObject { name, map } => {
+                                let map: HashMap<String, Value> = map
+                                    .into_iter()
+                                    .map(|(k, v)| {
+                                        Ok((
+                                            k,
+                                            eval_expression(
+                                                v,
+                                                EvalParams {
+                                                    world,
+                                                    environment,
+                                                    registrations,
+                                                },
+                                            )?,
+                                        ))
+                                    })
+                                    .collect::<Result<_, _>>()?;
+                                let new_enum =
+                                    DynamicEnum::new(name, object_to_dynamic_struct(map));
+
+                                let mut dyn_reflect =
+                                    resource.mut_dyn_reflect(world, registrations);
+
+                                let dyn_enum = dyn_reflect
+                                    .reflect_path_mut(resource.path.as_str())
+                                    .unwrap();
+
+                                dyn_enum.apply(&new_enum);
+                            }
+                            _ => todo!(),
+                        }
+                    }
+                    _ => {
+                        let value = eval_expression(
+                            *value_expr,
+                            EvalParams {
+                                world,
+                                environment,
+                                registrations,
+                            },
+                        )?;
+                        let value_reflect = value.reflect();
+
+                        let mut dyn_reflect = resource.mut_dyn_reflect(world, registrations);
+
+                        let reflect = dyn_reflect
+                            .reflect_path_mut(resource.path.as_str())
+                            .unwrap();
+
+                        reflect.set(value_reflect).map_err(|value_reflect| {
+                            RunError::IncompatibleReflectTypes {
+                                expected: reflect.reflect_type_path().to_string(),
+                                actual: value_reflect.reflect_type_path().to_string(),
+                            }
+                        })?;
+                    }
+                }
+
+                Ok(Value::Resource(resource))
+            }
         },
         Expression::String(string) => Ok(Value::String(string)),
         Expression::Number(number) => Ok(Value::Number(number)),
@@ -159,9 +274,7 @@ fn eval_expression(
                 .iter()
                 .find(|v| v.type_info().type_path_table().short_path() == variable)
             {
-                info!(name: "console_result", "> {}", fancy_debug_print(registration, world));
-
-                Ok(Value::None)
+                Ok(Value::Resource(IntoResource::new(registration.type_id())))
             } else {
                 environment.move_var(&variable, expr.span)
             }
@@ -204,37 +317,15 @@ fn eval_expression(
             loop_count,
             block,
         } => todo!("for loop {index_name}, {loop_count}, {block:#?}"),
-        Expression::Member { left, right } => {
-            let result = eval_member_expression(
-                *left,
-                right,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-            match result {
-                Reflectable::Value(value) => Ok(value),
-                Reflectable::StructField(mut field) => {
-                    let field = field.unwrap();
-                    let field_ref = field.reflect_ref();
-                    match field_ref {
-                        ReflectRef::Struct(_) => todo!(),
-                        ReflectRef::TupleStruct(_) => todo!(),
-                        ReflectRef::Tuple(_) => todo!(),
-                        ReflectRef::List(_) => todo!(),
-                        ReflectRef::Array(_) => todo!(),
-                        ReflectRef::Map(_) => todo!(),
-                        ReflectRef::Enum(_) => todo!(),
-                        ReflectRef::Value(value) => {
-                            debug!("{value:?}");
-                        }
-                    }
-                    Ok(Value::None)
-                }
-            }
-        }
+        Expression::Member { left, right } => eval_member_expression(
+            *left,
+            right,
+            EvalParams {
+                world,
+                environment,
+                registrations,
+            },
+        ),
         Expression::UnaryOp(expr) => {
             let expr = eval_expression(
                 *expr,
@@ -277,10 +368,17 @@ fn eval_expression(
         }
         Expression::Borrow(inner) => {
             if let Expression::Variable(variable) = inner.value {
-                let rc = environment.get(&variable, inner.span)?;
-                let weak = Rc::downgrade(rc);
+                if let Some(registration) = registrations
+                    .iter()
+                    .find(|v| v.type_info().type_path_table().short_path() == variable)
+                {
+                    Ok(Value::Resource(IntoResource::new(registration.type_id())))
+                } else {
+                    let rc = environment.get(&variable, inner.span)?;
+                    let weak = Rc::downgrade(rc);
 
-                Ok(Value::Reference(weak))
+                    Ok(Value::Reference(weak))
+                }
             } else {
                 Err(RunError::CannotBorrowValue(expr.span))
             }
@@ -302,200 +400,204 @@ fn eval_expression(
     }
 }
 
-enum Reflectable<'a> {
-    Value(Value),
-    StructField(ReflectStructField<'a>),
-}
-struct ReflectStructField<'a> {
-    string: String,
-    mut_reflect: Mut<'a, dyn Reflect>,
-}
-impl<'a> ReflectStructField<'a> {
-    fn unwrap(&'a mut self) -> &'a mut dyn Reflect {
-        let ReflectMut::Struct(dyn_struct) = self.mut_reflect.reflect_mut() else {
-            unreachable!()
-        };
-        let field = dyn_struct
-            .field_mut(&self.string)
-            .expect("no field on struct");
-
-        field
-    }
-}
-fn eval_member_expression<'a>(
+fn eval_member_expression(
     left: Spanned<Expression>,
     right: String,
-    params: EvalParams<'a, 'a, 'a>,
-) -> Result<Reflectable<'a>, RunError> {
+    params: EvalParams,
+) -> Result<Value, RunError> {
     let left_span = left.span.clone();
     let EvalParams {
         world,
         environment,
         registrations,
     } = params;
-    match left.value {
+    // TODO: Add ability to borrow from a struct.
+    let left = eval_expression(
+        left,
+        EvalParams {
+            world,
+            environment,
+            registrations,
+        },
+    )?;
+
+    match left {
+        Value::Object(mut map) | Value::StructObject { mut map, .. } => {
+            let value = map
+                .remove(&right)
+                .ok_or(RunError::FieldNotFoundInStruct(left_span))?;
+            let value = Rc::try_unwrap(value).unwrap();
+
+            Ok(value.into_inner())
+        }
+        Value::Resource(mut resource) => {
+            resource.path.push('.');
+            resource.path += &right;
+
+            Ok(Value::Resource(resource))
+        }
+        _ => Err(RunError::CannotIndexValue(left_span)),
+    }
+}
+
+enum Path<'a> {
+    Variable(&'a Rc<RefCell<Value>>),
+    NewVariable(String),
+    Resource(IntoResource),
+}
+
+fn eval_path<'a>(
+    expr: Spanned<Expression>,
+    environment: &'a Environment,
+    registrations: &[&TypeRegistration],
+) -> Result<Spanned<Path<'a>>, RunError> {
+    match expr.value {
         Expression::Variable(variable) => {
             if let Some(registration) = registrations
                 .iter()
                 .find(|v| v.type_info().type_path_table().short_path() == variable)
             {
-                let Some(var): Option<Mut<'a, dyn Reflect>> = mut_dyn_reflect(world, registration)
-                else {
-                    todo!()
-                };
-                let reflect = var.reflect_ref();
-
-                match reflect {
-                    ReflectRef::Struct(_) => Ok(Reflectable::StructField(ReflectStructField {
-                        string: right,
-                        mut_reflect: var,
-                    })),
-                    _ => todo!(),
-                }
+                Ok(Spanned {
+                    span: expr.span,
+                    value: Path::Resource(IntoResource::new(registration.type_id())),
+                })
             } else {
-                let reference = environment.get(&variable, left_span)?.borrow();
-                match &*reference {
-                    Value::Number(number) => return Ok(Reflectable::Value(Value::Number(*number))),
-                    Value::Dynamic(value) => {
-                        dbg!(value);
-                        Ok(Reflectable::Value(Value::None))
-                    }
-                    Value::StructObject { map, .. } | Value::Object(map) => {
-                        if let Some(value) = map.get(&right) {
-                            let weak = Rc::downgrade(value);
-                            Ok(Reflectable::Value(Value::Reference(weak)))
-                        } else {
-                            todo!()
-                        }
-                    }
-                    value => todo!("{value:?}"),
+                if let Ok(variable) = environment.get(&variable, expr.span.clone()) {
+                    Ok(Spanned {
+                        span: expr.span,
+                        value: Path::Variable(variable),
+                    })
+                } else {
+                    Ok(Spanned {
+                        span: expr.span,
+                        value: Path::NewVariable(variable),
+                    })
                 }
             }
         }
-        _ => {
-            let left = eval_expression(
-                left,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
+        Expression::Member { left, right } => {
+            let left = eval_path(*left, environment, registrations)?;
 
-            match left {
-                Value::StructObject { map, .. } => {
-                    if let Some(value) = map.get(&right) {
-                        Ok(Reflectable::Value(Value::Reference(Rc::downgrade(value))))
-                    } else {
-                        Err(RunError::FieldNotFoundInStruct(left_span))
-                    }
+            match left.value {
+                Path::Variable(variable) => {
+                    todo!()
                 }
-                _ => Err(RunError::CannotIndexValue(left_span)),
+                Path::Resource(mut resource) => {
+                    resource.path.push('.');
+                    resource.path += &right;
+
+                    Ok(Spanned {
+                        span: left.span,
+                        value: Path::Resource(resource),
+                    })
+                }
+                Path::NewVariable(variable) => Err(RunError::VariableNotFound(left.span)),
             }
         }
+        _ => todo!(),
     }
 }
 
-fn set_resource(
-    expr: Spanned<Expression>,
-    params: EvalParams,
-    var: String,
-    registration: &TypeRegistration,
-) -> Result<Value, RunError> {
-    let EvalParams {
-        world,
-        environment,
-        registrations,
-    } = params;
-    match registration.type_info() {
-        // TypeInfo::Struct(_) => todo!(),
-        // TypeInfo::TupleStruct(_) => todo!(),
-        // TypeInfo::Tuple(_) => todo!(),
-        // TypeInfo::List(_) => todo!(),
-        // TypeInfo::Array(_) => todo!(),
-        // TypeInfo::Map(_) => todo!(),
-        TypeInfo::Enum(enum_info) => match expr.value {
-            Expression::Variable(value) => match enum_info.variant(&value) {
-                Some(VariantInfo::Unit(_)) => {
-                    let mut reflect: Mut<'_, dyn Reflect> =
-                        mut_dyn_reflect(world, registration).unwrap();
-                    let ReflectMut::Enum(enum_reflect) = reflect.reflect_mut() else {
-                        unreachable!()
-                    };
+// fn set_resource(
+//     expr: Spanned<Expression>,
+//     params: EvalParams,
+//     var: String,
+//     registration: &TypeRegistration,
+// ) -> Result<Value, RunError> {
+//     let EvalParams {
+//         world,
+//         environment,
+//         registrations,
+//     } = params;
+//     match registration.type_info() {
+//         // TypeInfo::Struct(_) => todo!(),
+//         // TypeInfo::TupleStruct(_) => todo!(),
+//         // TypeInfo::Tuple(_) => todo!(),
+//         // TypeInfo::List(_) => todo!(),
+//         // TypeInfo::Array(_) => todo!(),
+//         // TypeInfo::Map(_) => todo!(),
+//         TypeInfo::Enum(enum_info) => match expr.value {
+//             Expression::Variable(value) => match enum_info.variant(&value) {
+//                 Some(VariantInfo::Unit(_)) => {
+//                     let mut reflect: Mut<dyn Reflect> =
+//                         mut_dyn_reflect(world, registration).unwrap();
+//                     let ReflectMut::Enum(enum_reflect) = reflect.reflect_mut() else {
+//                         unreachable!()
+//                     };
 
-                    let variant = DynamicEnum::new(value, DynamicVariant::Unit);
+//                     let variant = DynamicEnum::new(value, DynamicVariant::Unit);
 
-                    enum_reflect.apply(&variant);
+//                     enum_reflect.apply(&variant);
 
-                    Ok(Value::None)
-                }
-                Some(VariantInfo::Struct(_)) => Err(RunError::Basic {
-                    text: "Cannot set struct variant with identifier.".to_string(),
-                    span: expr.span,
-                }),
-                Some(VariantInfo::Tuple(_)) => Err(RunError::Basic {
-                    text: "Cannot set tuple variant with identifier.".to_string(),
-                    span: expr.span,
-                }),
-                None => Err(RunError::InvalidVariantForResource(var, value)),
-            },
-            Expression::StructObject { name, map } => match enum_info.variant(&name) {
-                Some(VariantInfo::Unit(_)) => Err(RunError::Basic {
-                    text: "Cannot set unit variant with struct object.".to_string(),
-                    span: expr.span,
-                }),
-                Some(VariantInfo::Struct(_)) => {
-                    let map = eval_object(
-                        map,
-                        EvalParams {
-                            world,
-                            environment,
-                            registrations,
-                        },
-                    )?;
-                    let mut dyn_struct = DynamicStruct::default();
-                    for (key, value) in map.into_iter() {
-                        match Rc::try_unwrap(value).unwrap().into_inner() {
-                            Value::None => dyn_struct.insert(&key, ()),
-                            Value::Boolean(boolean) => dyn_struct.insert(&key, boolean),
-                            Value::Number(number) => dyn_struct.insert(&key, number),
-                            Value::String(string) => dyn_struct.insert(&key, string.clone()),
-                            Value::Reference(..) => todo!("todo reference"),
-                            Value::StructObject { .. } => todo!("todo structobject"),
-                            Value::Object(..) => todo!("todo object"),
-                            Value::Dynamic(..) => todo!("todo dynamicvalue"),
-                        }
-                    }
+//                     Ok(Value::None)
+//                 }
+//                 Some(VariantInfo::Struct(_)) => Err(RunError::Basic {
+//                     text: "Cannot set struct variant with identifier.".to_string(),
+//                     span: expr.span,
+//                 }),
+//                 Some(VariantInfo::Tuple(_)) => Err(RunError::Basic {
+//                     text: "Cannot set tuple variant with identifier.".to_string(),
+//                     span: expr.span,
+//                 }),
+//                 None => Err(RunError::InvalidVariantForResource(var, value)),
+//             },
+//             Expression::StructObject { name, map } => match enum_info.variant(&name) {
+//                 Some(VariantInfo::Unit(_)) => Err(RunError::Basic {
+//                     text: "Cannot set unit variant with struct object.".to_string(),
+//                     span: expr.span,
+//                 }),
+//                 Some(VariantInfo::Struct(_)) => {
+//                     let map = eval_object(
+//                         map,
+//                         EvalParams {
+//                             world,
+//                             environment,
+//                             registrations,
+//                         },
+//                     )?;
+//                     let mut dyn_struct = DynamicStruct::default();
+//                     for (key, value) in map.into_iter() {
+//                         match Rc::try_unwrap(value).unwrap().into_inner() {
+//                             Value::None => dyn_struct.insert(&key, ()),
+//                             Value::Boolean(boolean) => dyn_struct.insert(&key, boolean),
+//                             Value::Number(number) => dyn_struct.insert(&key, number),
+//                             Value::String(string) => dyn_struct.insert(&key, string.clone()),
+//                             Value::Reference(..) => todo!("todo reference"),
+//                             Value::StructObject { .. } => todo!("todo structobject"),
+//                             Value::Object(..) => todo!("todo object"),
+//                             Value::Resource(..) => todo!("todo dynamicvalue"),
+//                         }
+//                     }
 
-                    dbg!("what");
+//                     dbg!("what");
 
-                    let mut reflect: Mut<'_, dyn Reflect> =
-                        mut_dyn_reflect(world, registration).unwrap();
-                    let ReflectMut::Enum(enum_reflect) = reflect.reflect_mut() else {
-                        unreachable!()
-                    };
-                    let variant = DynamicEnum::new(name, DynamicVariant::Struct(dyn_struct));
-                    dbg!("yay");
+//                     let mut reflect: Mut<'_, dyn Reflect> =
+//                         mut_dyn_reflect(world, registration).unwrap();
+//                     let ReflectMut::Enum(enum_reflect) = reflect.reflect_mut() else {
+//                         unreachable!()
+//                     };
+//                     let variant = DynamicEnum::new(name, DynamicVariant::Struct(dyn_struct));
+//                     dbg!("yay");
 
-                    enum_reflect.apply(&variant);
+//                     enum_reflect.apply(&variant);
 
-                    Ok(Value::None)
-                }
-                Some(VariantInfo::Tuple(_)) => Err(RunError::Basic {
-                    text: "Cannot set tuple variant with struct object.".to_string(),
-                    span: expr.span,
-                }),
-                None => Err(RunError::InvalidVariantForResource(var, name)),
-            },
-            _ => todo!(),
-        },
-        // TypeInfo::Value(_) => todo!(),
-        _ => Err(RunError::Basic {
-            text: "Cannot set the value of this type.".to_string(),
-            span: expr.span,
-        }),
-    }
-}
+//                     Ok(Value::None)
+//                 }
+//                 Some(VariantInfo::Tuple(_)) => Err(RunError::Basic {
+//                     text: "Cannot set tuple variant with struct object.".to_string(),
+//                     span: expr.span,
+//                 }),
+//                 None => Err(RunError::InvalidVariantForResource(var, name)),
+//             },
+//             _ => todo!(),
+//         },
+//         // TypeInfo::Value(_) => todo!(),
+//         _ => Err(RunError::Basic {
+//             text: "Cannot set the value of this type.".to_string(),
+//             span: expr.span,
+//         }),
+//     }
+// }
 fn eval_object(
     map: HashMap<String, Spanned<Expression>>,
     EvalParams {
@@ -523,108 +625,4 @@ fn eval_object(
         )
         .collect::<Result<_, _>>()?;
     Ok(map)
-}
-
-/// A massive function that takes in a type registration and the world and then
-/// does all the hard work of printing out the type nicely.
-fn fancy_debug_print(registration: &TypeRegistration, world: &mut World) -> String {
-    let mut f = String::new();
-    let type_info = registration.type_info();
-    let Some(mut reflect) = mut_dyn_reflect(world, registration) else {
-        return String::new();
-    };
-    let reflect = reflect.reflect_mut();
-    match reflect {
-        ReflectMut::Struct(struct_info) => {
-            f += &format!("struct {} {{\n", type_info.type_path_table().short_path());
-            for i in 0..struct_info.field_len() {
-                let field = struct_info.field_at(i).unwrap();
-                let field_name = struct_info.name_at(i).unwrap();
-                f += &format!(
-                    "\t{}: {} = {:?},\n",
-                    field_name,
-                    field.reflect_short_type_path(),
-                    field
-                );
-            }
-            f += "}";
-        }
-        ReflectMut::TupleStruct(_) => todo!(),
-        ReflectMut::Tuple(_) => todo!(),
-        ReflectMut::List(_) => todo!(),
-        ReflectMut::Array(_) => todo!(),
-        ReflectMut::Map(_) => todo!(),
-        ReflectMut::Enum(set_variant_info) => {
-            // Print out the enum types
-            f += &format!("enum {} {{\n", type_info.type_path_table().short_path());
-            let TypeInfo::Enum(enum_info) = registration.type_info() else {
-                unreachable!()
-            };
-            for variant in enum_info.iter() {
-                f += "\t";
-                f += variant.name();
-                match variant {
-                    VariantInfo::Struct(variant) => {
-                        f += " {\n";
-                        for field in variant.iter() {
-                            f += &format!(
-                                "\t\t{}: {},\n",
-                                field.name(),
-                                field.type_path_table().short_path()
-                            );
-                        }
-                        f += "\t}";
-                    }
-                    VariantInfo::Tuple(variant) => {
-                        f += "(";
-                        let mut iter = variant.iter();
-                        if let Some(first) = iter.next() {
-                            f += &format!("{}", first.type_path_table().short_path());
-                            for field in iter {
-                                f += &format!(", {}", field.type_path_table().short_path());
-                            }
-                        }
-                        f += ")";
-                    }
-                    VariantInfo::Unit(_) => {}
-                }
-                f += ",\n";
-            }
-            // Print out the current value
-            f += "} = ";
-            f += set_variant_info.variant_name();
-            match set_variant_info.variant_type() {
-                VariantType::Struct => {
-                    f += " {\n";
-                    for field in set_variant_info.iter_fields() {
-                        f += &format!("\t{}: {:?},\n", field.name().unwrap(), field.value());
-                    }
-                    f += "}";
-                }
-                VariantType::Tuple => todo!(),
-                VariantType::Unit => {}
-            }
-        }
-        ReflectMut::Value(_) => todo!(),
-    }
-    f
-}
-
-fn mut_dyn_reflect<'a>(
-    world: &'a mut World,
-    registration: &'a TypeRegistration,
-) -> Option<Mut<'a, dyn Reflect>> {
-    let Some(component_id) = world.components().get_resource_id(registration.type_id()) else {
-        error!(
-            "Couldn't get the component id of the {} resource.",
-            registration.type_info().type_path()
-        );
-        return None;
-    };
-    let resource = world.get_resource_mut_by_id(component_id).unwrap();
-    let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
-    // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
-    let val: Mut<dyn Reflect> =
-        resource.map_unchanged(|ptr| unsafe { reflect_from_ptr.as_reflect_mut(ptr) });
-    Some(val)
 }

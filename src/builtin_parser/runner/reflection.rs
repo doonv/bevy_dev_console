@@ -1,0 +1,106 @@
+use std::{any::TypeId, rc::Rc, cell::RefCell, collections::HashMap};
+
+use bevy::{
+    prelude::*,
+    reflect::{ParsedPath, ReflectFromPtr, ReflectPathError, TypeRegistration, DynamicStruct},
+};
+
+use super::{EvalParams, Value};
+
+#[derive(Debug)]
+pub struct IntoResource {
+    pub id: TypeId,
+    pub path: String,
+}
+impl IntoResource {
+    pub fn new(id: TypeId) -> Self {
+        Self {
+            id,
+            path: String::new(),
+        }
+    }
+    pub fn ref_dyn_reflect<'a>(
+        &self,
+        world: &'a World,
+        registration: impl IntoRegistration
+    ) -> &'a dyn Reflect {
+        let registration = registration.into_registration(self.id);
+        let ref_dyn_reflect = ref_dyn_reflect(world, registration).unwrap();
+
+        ref_dyn_reflect
+    }
+    pub fn mut_dyn_reflect<'a>(
+        &self,
+        world: &'a mut World,
+        registration: impl IntoRegistration
+    ) -> Mut<'a, dyn Reflect> {
+        let registration = registration.into_registration(self.id);
+        let ref_dyn_reflect = mut_dyn_reflect(world, registration).unwrap();
+
+        ref_dyn_reflect
+    }
+}
+
+pub fn object_to_dynamic_struct(hashmap: HashMap<String, Value>) -> DynamicStruct {
+    let mut dynamic_struct = DynamicStruct::default();
+    for (key, value) in hashmap {
+        dynamic_struct.insert_boxed(&key, value.reflect());
+    } 
+    dynamic_struct
+}
+
+pub fn mut_dyn_reflect<'a>(
+    world: &'a mut World,
+    registration: &TypeRegistration,
+) -> Option<Mut<'a, dyn Reflect>> {
+    let Some(component_id) = world.components().get_resource_id(registration.type_id()) else {
+        error!(
+            "Couldn't get the component id of the {} resource.",
+            registration.type_info().type_path()
+        );
+        return None;
+    };
+    let resource = world.get_resource_mut_by_id(component_id).unwrap();
+    let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
+    // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
+    let val: Mut<dyn Reflect> =
+        resource.map_unchanged(|ptr| unsafe { reflect_from_ptr.as_reflect_mut(ptr) });
+    Some(val)
+}
+
+pub fn ref_dyn_reflect<'a>(
+    world: &'a World,
+    registration: &TypeRegistration,
+) -> Option<&'a dyn Reflect> {
+    let Some(component_id) = world.components().get_resource_id(registration.type_id()) else {
+        error!(
+            "Couldn't get the component id of the {} resource.",
+            registration.type_info().type_path()
+        );
+        return None;
+    };
+    let resource = world.get_resource_by_id(component_id).unwrap();
+    let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
+    // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
+    let val: &'a dyn Reflect = unsafe { reflect_from_ptr.as_reflect(resource) };
+    Some(val)
+}
+
+pub trait IntoRegistration {
+    fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration;
+}
+impl IntoRegistration for &TypeRegistration {
+    fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration {
+        assert!(self.type_id() == type_id);
+
+        &self
+    }
+}
+impl IntoRegistration for &[&TypeRegistration] {
+    fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration {
+        self
+            .iter()
+            .find(|reg| reg.type_id() == type_id)
+            .expect("registration no longer exists")
+    }
+}
