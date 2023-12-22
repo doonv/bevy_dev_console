@@ -3,13 +3,18 @@ use std::fmt::Debug;
 use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use super::environment::{FunctionParameterData, ResultContainer};
-use super::reflection::{mut_dyn_reflect, IntoResource};
+use crate::builtin_parser::Environment;
+
+use super::environment::{FunctionParam, ResultContainer};
+use super::reflection::{mut_dyn_reflect, IntoResource, IntoRegistration};
 use super::EvalParams;
 use super::{super::Spanned, RunError};
 
 use bevy::ecs::world::World;
-use bevy::reflect::{GetPath, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType, Reflect, DynamicStruct};
+use bevy::reflect::{
+    DynamicStruct, GetPath, Reflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo,
+    VariantType,
+};
 
 use logos::Span;
 
@@ -61,20 +66,22 @@ impl Value {
                 let mut dyn_struct = DynamicStruct::default();
 
                 for (name, value) in object {
-                    dyn_struct.insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
+                    dyn_struct
+                        .insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
                 }
 
                 Box::new(dyn_struct)
-            },
-            Value::StructObject { name, map } =>  {
+            }
+            Value::StructObject { name, map } => {
                 let mut dyn_struct = DynamicStruct::default();
 
                 for (name, value) in map {
-                    dyn_struct.insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
+                    dyn_struct
+                        .insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
                 }
 
                 Box::new(dyn_struct)
-            },
+            }
             Value::Resource(_) => todo!(),
         }
     }
@@ -85,11 +92,8 @@ impl Value {
     pub fn try_format(
         &self,
         span: Span,
-        EvalParams {
-            world,
-            environment,
-            registrations,
-        }: EvalParams,
+        world: &World,
+        registrations: &[&TypeRegistration],
     ) -> Result<String, RunError> {
         match self {
             Value::None => Ok(format!("()")),
@@ -98,14 +102,7 @@ impl Value {
             Value::String(string) => Ok(format!("\"{string}\"")),
             Value::Reference(reference) => {
                 if let Some(rc) = reference.upgrade() {
-                    Ok(rc.borrow().try_format(
-                        span,
-                        EvalParams {
-                            world,
-                            environment,
-                            registrations,
-                        },
-                    )?)
+                    Ok(rc.borrow().try_format(span, world, registrations)?)
                 } else {
                     Err(RunError::ReferenceToMovedData(span))
                 }
@@ -116,14 +113,9 @@ impl Value {
                 for (key, value) in map {
                     string += &format!(
                         "\n\t{key}: {},",
-                        value.borrow().try_format(
-                            span.clone(),
-                            EvalParams {
-                                world,
-                                environment,
-                                registrations
-                            }
-                        )?
+                        value
+                            .borrow()
+                            .try_format(span.clone(), world, registrations)?
                     );
                 }
                 if !map.is_empty() {
@@ -138,14 +130,7 @@ impl Value {
                 for (key, value) in map {
                     string += &format!(
                         "\n\t{key}: {},",
-                        value.borrow().try_format(
-                            span.clone(),
-                            EvalParams {
-                                world,
-                                environment,
-                                registrations
-                            }
-                        )?
+                        value.borrow().try_format(span.clone(), world, registrations)?
                     );
                 }
                 if !map.is_empty() {
@@ -154,29 +139,18 @@ impl Value {
                 string.push('}');
                 Ok(string)
             }
-            Value::Resource(resource) => Ok(fancy_debug_print(
-                resource,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )),
+            Value::Resource(resource) => Ok(fancy_debug_print(resource, world, registrations)),
         }
     }
 }
 /// A massive function that takes in a type registration and the world and then
 /// does all the hard work of printing out the type nicely.
-fn fancy_debug_print(resource: &IntoResource, params: EvalParams) -> String {
-    let registration = params
-        .registrations
-        .iter()
-        .find(|reg| reg.type_id() == resource.id)
-        .expect("registration no longer exists");
-    let mut dyn_reflect = mut_dyn_reflect(params.world, registration).unwrap();
+fn fancy_debug_print(resource: &IntoResource, world: &World, registrations: &[&TypeRegistration]) -> String {
+    let registration = registrations.into_registration(resource.id);
+    let dyn_reflect = resource.ref_dyn_reflect(world, registration);
 
     let reflect = dyn_reflect
-        .reflect_path_mut(resource.path.as_str())
+        .reflect_path(resource.path.as_str())
         .unwrap();
 
     let mut f = String::new();
@@ -254,7 +228,7 @@ fn fancy_debug_print(resource: &IntoResource, params: EvalParams) -> String {
         }
         ReflectRef::Value(value) => {
             f += &format!("{value:?}");
-        },
+        }
     }
     f
 }
@@ -290,37 +264,43 @@ impl From<String> for Value {
     }
 }
 
-impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
-    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for Spanned<Value>
-{
-    type Error = RunError;
+impl FunctionParam for Spanned<Value> {
+    type Item<'world, 'env, 'reg> = Self;
+    const USES_VALUE: bool = true;
 
-    fn try_from(
-        FunctionParameterData { value, .. }: FunctionParameterData,
-    ) -> Result<Self, Self::Error> {
-        Ok(value)
+    fn get<'world, 'env, 'reg>(
+        value: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        Ok(value.unwrap())
     }
 }
-impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
-    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for Value
-{
-    type Error = RunError;
+impl FunctionParam for Value {
+    type Item<'world, 'env, 'reg> = Value;
+    const USES_VALUE: bool = true;
 
-    fn try_from(
-        FunctionParameterData { value, .. }: FunctionParameterData,
-    ) -> Result<Self, Self::Error> {
-        Ok(value.value)
+    fn get<'world, 'env, 'reg>(
+        value: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        Ok(value.unwrap().value)
     }
 }
-impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
-    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for f64
-{
-    type Error = RunError;
+impl FunctionParam for f64 {
+    type Item<'world, 'env, 'reg> = f64;
+    const USES_VALUE: bool = true;
 
-    fn try_from(
-        FunctionParameterData { value, .. }: FunctionParameterData,
-    ) -> Result<Self, Self::Error> {
-        if let Value::Number(number) = value.value {
+    fn get<'world, 'env, 'reg>(
+        value: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        if let Value::Number(number) = value.unwrap().value {
             Ok(number)
         } else {
             todo!()
@@ -328,15 +308,17 @@ impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
     }
 }
 
-impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
-    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>> for String
-{
-    type Error = RunError;
+impl FunctionParam for String {
+    type Item<'world, 'env, 'reg> = Self;
+    const USES_VALUE: bool = true;
 
-    fn try_from(
-        FunctionParameterData { value, .. }: FunctionParameterData,
-    ) -> Result<Self, Self::Error> {
-        if let Value::String(string) = value.value {
+    fn get<'world, 'env, 'reg>(
+        value: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        if let Value::String(string) = value.unwrap().value {
             Ok(string)
         } else {
             todo!()
@@ -344,26 +326,35 @@ impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
     }
 }
 
-impl<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
-    TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>>
-    for &'world mut World
-{
-    type Error = RunError;
+impl FunctionParam for &mut World {
+    type Item<'world, 'env, 'reg> = &'world mut World;
+    const USES_VALUE: bool = false;
 
-    fn try_from(
-        FunctionParameterData { world, .. }: FunctionParameterData<
-            'world,
-            'env,
-            'reg,
-            'world2,
-            'env2,
-            'reg2,
-        >,
-    ) -> Result<Self, Self::Error> {
-        if let Some(world) = world.take() {
-            Ok(world)
-        } else {
-            todo!()
-        }
+    fn get<'world, 'env, 'reg>(
+        _: Option<Spanned<Value>>,
+        world: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        let Some(world) = world.take() else {
+            // make this unreachable by checking the function when it gets registered
+            todo!("world borrowed twice");
+        };
+
+        Ok(world)
+    }
+}
+
+impl FunctionParam for &[&TypeRegistration] {
+    type Item<'world, 'env, 'reg> = &'reg [&'reg TypeRegistration];
+    const USES_VALUE: bool = false;
+
+    fn get<'world, 'env, 'reg>(
+        _: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        registrations: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        Ok(registrations)
     }
 }

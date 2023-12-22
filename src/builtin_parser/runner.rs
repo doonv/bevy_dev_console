@@ -36,10 +36,10 @@ pub use value::Value;
 // }
 
 /// Container for every value needed by evaluation functions.
-pub struct EvalParams<'a, 'b, 'c> {
-    world: &'a mut World,
-    environment: &'b mut Environment,
-    registrations: &'c [&'c TypeRegistration],
+pub struct EvalParams<'world, 'env, 'reg> {
+    world: &'world mut World,
+    environment: &'env mut Environment,
+    registrations: &'reg [&'reg TypeRegistration],
 }
 
 #[derive(Debug)]
@@ -59,7 +59,6 @@ pub enum RunError {
 }
 
 pub fn run(ast: Ast, world: &mut World) {
-    dbg!(&ast);
     // Temporarily remove the [`Environment`] resource to gain
     // mutability without needing a mutable reference.
     let Some(mut environment) = world.remove_non_send_resource::<Environment>() else {
@@ -110,11 +109,8 @@ pub fn run(ast: Ast, world: &mut World) {
                 Ok(Value::None) => {}
                 Ok(value) => match value.try_format(
                     span,
-                    EvalParams {
-                        world,
-                        environment: &mut environment,
-                        registrations: &registrations,
-                    },
+                    &world,
+                    &registrations,
                 ) {
                     Ok(value) => info!(name: "console_result", "> {value}"),
                     Err(err) => error!("{err:?}"),
@@ -485,13 +481,12 @@ fn eval_path<'a>(
                 Path::Resource(mut resource) => {
                     resource.path.push('.');
                     resource.path += &right;
-
                     Ok(Spanned {
                         span: left.span,
                         value: Path::Resource(resource),
                     })
                 }
-                Path::NewVariable(variable) => Err(RunError::VariableNotFound(left.span)),
+                Path::NewVariable(_) => Err(RunError::VariableNotFound(left.span)),
             }
         }
         _ => todo!(),

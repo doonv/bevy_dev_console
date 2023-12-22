@@ -1,20 +1,19 @@
 use crate::register;
-use bevy::log::info;
+use bevy::{log::info, ecs::world::World, reflect::TypeRegistration};
 use std::{cell::Ref, ops::Range};
 
 use super::{Environment, RunError, Spanned, Value};
 
-// This doesn't work because of a bug
-// fn print(value: Spanned<Value>, world: &mut World) -> Result<(), RunError> {
-//     match value.value {
-//         Value::String(string) => info!("{string}"),
-//         _ => {
-//             let string = value.value.try_format(value.span, world)?;
-//             info!("{string}");
-//         }
-//     }
-//     Ok(())
-// }
+fn print(value: Spanned<Value>, world: &mut World, registrations: &[&TypeRegistration]) -> Result<(), RunError> {
+    match value.value {
+        Value::String(string) => info!("{string}"),
+        _ => {
+            let string = value.value.try_format(value.span, world, registrations)?;
+            info!("{string}");
+        }
+    }
+    Ok(())
+}
 
 fn dbg(any: Value) {
     info!("Value::{any:?}");
@@ -55,7 +54,7 @@ fn drop(_v: Value) {}
 
 pub fn register(environment: &mut Environment) {
     register!(environment => {
-        // fn print;
+        fn print;
         fn dbg;
         fn ref_depth;
         fn drop;

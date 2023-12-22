@@ -60,7 +60,20 @@ impl<T: Into<Value>, E> From<Result<T, E>> for ResultContainer<Value, E> {
         ResultContainer(result.map(|v| v.into()))
     }
 }
-pub type FunctionType = dyn Fn(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, RunError>;
+pub trait FunctionParam: Sized {
+    // TODO: Add `Self` as default when https://github.com/rust-lang/rust/issues/29661 gets merged
+    type Item<'world, 'env, 'reg>;
+    const USES_VALUE: bool;
+
+    fn get<'world, 'env, 'reg>(
+        value: Option<Spanned<Value>>,
+        world: &mut Option<&'world mut World>,
+        environment: &mut Option<&'env mut Environment>,
+        registrations: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError>;
+}
+
+pub type FunctionType = dyn FnMut(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, RunError>;
 pub struct Function {
     pub argument_count: usize,
     pub body: Box<FunctionType>,
@@ -81,27 +94,21 @@ macro_rules! count_idents {
     ($($tts:ident)*) => {0usize $(+ replace_expr!($tts 1usize))*};
 }
 
-pub struct FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2> {
-    pub value: Spanned<Value>,
-    pub world: &'world2 mut Option<&'world mut World>,
-    pub environment: &'env2 mut Option<&'env mut Environment>,
-    pub registrations: &'reg2 [&'reg TypeRegistration],
-}
 macro_rules! impl_into_function {
     (
         $($(
                 $params:ident
         ),+)?
     ) => {
-        impl<F $(, $($params:
-            for<'world, 'env, 'reg, 'world2, 'env2, 'reg2>
-                TryFrom<FunctionParameterData<'world, 'env, 'reg, 'world2, 'env2, 'reg2>>
-        ),+ )?, R> IntoFunction<( $($($params,)+)? )> for F
+        #[allow(non_snake_case)]
+        impl<F: 'static $(, $($params: FunctionParam),+ )?, R> IntoFunction<( $($($params,)+)? )> for F
         where
-            F: Fn($($($params),+)?) -> R + 'static,
+            for<'a, 'world, 'env, 'reg> &'a mut F:
+                FnMut( $($($params),*)? ) -> R +
+                FnMut( $($(<$params as FunctionParam>::Item<'world, 'env, 'reg>),*)? ) -> R,
             R: Into<ResultContainer<Value, RunError>>,
         {
-            fn into_function(self) -> Function {
+            fn into_function(mut self) -> Function {
                 #[allow(unused_variables, unused_mut)]
                 let body = Box::new(move |args: Vec<Spanned<Expression>>, params: EvalParams| {
                     let EvalParams {
@@ -110,7 +117,7 @@ macro_rules! impl_into_function {
                         registrations,
                     } = params;
                     let mut args = args.into_iter().map(|expr| {
-                        Spanned {
+                        Ok(Spanned {
                             span: expr.span.clone(),
                             value: eval_expression(
                                 expr,
@@ -119,31 +126,44 @@ macro_rules! impl_into_function {
                                     environment,
                                     registrations,
                                 }
-                            )
-                        }
-                    }).collect::<Vec<_>>().into_iter();
+                            )?
+                        })
+                    }).collect::<Result<Vec<_>, RunError>>()?.into_iter();
                     let world = &mut Some(world);
                     let environment = &mut Some(environment);
-                    self(
+
+                    fn call_inner<R: Into<ResultContainer<Value, RunError>>, $($($params),*)?>(
+                        mut f: impl FnMut($($($params),*)?) -> R,
+                        $($($params: $params),*)?
+                    ) -> R {
+                        f($($($params),*)?)
+                    }
+                    call_inner(
+                        &mut self,
                         $($({
-                            let _: $params; // Tell rust im talking abouts the $params
-                            let arg = args.next().unwrap();
-                            FunctionParameterData {
-                                value: Spanned {
-                                    span: arg.span,
-                                    value: arg.value?
-                                },
+                            let arg = if $params::USES_VALUE {
+                                Some(args.next().unwrap())
+                            } else {
+                                None
+                            };
+                            
+                            let res = $params::get(
+                                arg,
                                 world,
                                 environment,
                                 registrations
-                            }
-                            .try_into()
-                            .unwrap_or_else(|_| todo!())
+                            )
+                            .unwrap_or_else(|_| todo!());
+
+                            res
                         }),+)?
                     )
                     .into().into()
                 });
-                let argument_count = count_idents!($($($params)+)?);
+
+                let argument_count = $($(
+                    $params::USES_VALUE as usize +
+                )+)? 0;
 
                 Function { body, argument_count }
             }
@@ -155,10 +175,10 @@ impl_into_function!(T1);
 impl_into_function!(T1, T2);
 impl_into_function!(T1, T2, T3);
 impl_into_function!(T1, T2, T3, T4);
-// impl_into_function!(T1, T2, T3, T4, T5);
-// impl_into_function!(T1, T2, T3, T4, T5, T6);
-// impl_into_function!(T1, T2, T3, T4, T5, T6, T7);
-// impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
+impl_into_function!(T1, T2, T3, T4, T5);
+impl_into_function!(T1, T2, T3, T4, T5, T6);
+impl_into_function!(T1, T2, T3, T4, T5, T6, T7);
+impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
 
 pub enum Variable {
     Unmoved(Rc<RefCell<Value>>),
@@ -204,7 +224,7 @@ impl Environment {
     pub(crate) fn function_scope<T>(
         &mut self,
         name: &str,
-        function: impl FnOnce(&mut Self, &Function) -> T,
+        function: impl FnOnce(&mut Self, &mut Function) -> T,
     ) -> T {
         let (env, _) = self.resolve_mut(name, 0..0).unwrap();
 
@@ -212,12 +232,13 @@ impl Environment {
         let var = env.variables.get_mut(name);
         let fn_obj = match var {
             Some(Variable::Function(_)) => {
-                let Variable::Function(fn_obj) = std::mem::replace(var.unwrap(), Variable::Moved)
+                let Variable::Function(mut fn_obj) =
+                    std::mem::replace(var.unwrap(), Variable::Moved)
                 else {
                     unreachable!()
                 };
 
-                return_result = function(env, &fn_obj);
+                return_result = function(env, &mut fn_obj);
 
                 fn_obj
             }

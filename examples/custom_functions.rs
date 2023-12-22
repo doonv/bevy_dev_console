@@ -12,7 +12,7 @@ use bevy_dev_console::{
 
 // Declare the functions we want to create:
 
-// Basic function
+/// Basic function
 fn time_since_epoch() {
     let time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -20,17 +20,29 @@ fn time_since_epoch() {
     info!("The unix epoch was {} seconds ago", time.as_secs());
 }
 
-// Function with parameters and return value
+/// Function with parameters and return value
 fn add(num1: f64, num2: f64) -> f64 {
     num1 + num2
 }
 
-// Function with any value + span
+/// Function with any value + span
 fn print_debug_info(value: Spanned<Value>) {
     info!(
         "Location in command: {:?}, Value: {:?}",
         value.span, value.value
     )
+}
+
+#[derive(Resource)]
+struct MyCounter(u32);
+
+/// Function with [`World`]
+fn increment_global_counter(world: &mut World) -> f64 {
+    world.resource_scope(|_, mut counter: Mut<MyCounter>| {
+        counter.0 += 1;
+
+        counter.0 as f64
+    })
 }
 
 // For more example take a look at the standard library.
@@ -44,6 +56,7 @@ fn custom_environment() -> Environment {
         fn time_since_epoch;
         fn add;
         fn print_debug_info;
+        fn increment_global_counter;
     });
 
     environment
@@ -51,6 +64,7 @@ fn custom_environment() -> Environment {
 
 fn main() {
     App::new()
+        .insert_resource(MyCounter(0))
         // Insert our new environment
         .insert_non_send_resource(custom_environment())
         .add_plugins((

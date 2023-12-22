@@ -1,11 +1,11 @@
-use std::{any::TypeId, rc::Rc, cell::RefCell, collections::HashMap};
+use std::{any::TypeId, collections::HashMap};
 
 use bevy::{
     prelude::*,
-    reflect::{ParsedPath, ReflectFromPtr, ReflectPathError, TypeRegistration, DynamicStruct},
+    reflect::{DynamicStruct, ReflectFromPtr, TypeRegistration},
 };
 
-use super::{EvalParams, Value};
+use super::Value;
 
 #[derive(Debug)]
 pub struct IntoResource {
@@ -22,7 +22,7 @@ impl IntoResource {
     pub fn ref_dyn_reflect<'a>(
         &self,
         world: &'a World,
-        registration: impl IntoRegistration
+        registration: impl IntoRegistration,
     ) -> &'a dyn Reflect {
         let registration = registration.into_registration(self.id);
         let ref_dyn_reflect = ref_dyn_reflect(world, registration).unwrap();
@@ -32,7 +32,7 @@ impl IntoResource {
     pub fn mut_dyn_reflect<'a>(
         &self,
         world: &'a mut World,
-        registration: impl IntoRegistration
+        registration: impl IntoRegistration,
     ) -> Mut<'a, dyn Reflect> {
         let registration = registration.into_registration(self.id);
         let ref_dyn_reflect = mut_dyn_reflect(world, registration).unwrap();
@@ -45,7 +45,7 @@ pub fn object_to_dynamic_struct(hashmap: HashMap<String, Value>) -> DynamicStruc
     let mut dynamic_struct = DynamicStruct::default();
     for (key, value) in hashmap {
         dynamic_struct.insert_boxed(&key, value.reflect());
-    } 
+    }
     dynamic_struct
 }
 
@@ -98,8 +98,7 @@ impl IntoRegistration for &TypeRegistration {
 }
 impl IntoRegistration for &[&TypeRegistration] {
     fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration {
-        self
-            .iter()
+        self.iter()
             .find(|reg| reg.type_id() == type_id)
             .expect("registration no longer exists")
     }
