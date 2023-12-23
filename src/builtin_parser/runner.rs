@@ -19,21 +19,9 @@ pub mod environment;
 pub mod reflection;
 pub mod stdlib;
 pub mod value;
+pub mod unique_rc;
 
 pub use value::Value;
-
-// enum ReflectMutlect<'a> {
-//     Ref(&'a mut dyn Reflect),
-//     Mut(Mut<'a, dyn Reflect>)
-// }
-// impl<'a> ReflectMutlect<'a> {
-//     pub fn to_ref(&'a mut self) -> &'a mut dyn Reflect {
-//         match self {
-//             ReflectMutlect::Ref(reference) => *reference,
-//             ReflectMutlect::Mut(reference) => reference.as_reflect_mut()
-//         }
-//     }
-// }
 
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'world, 'env, 'reg> {
@@ -44,7 +32,7 @@ pub struct EvalParams<'world, 'env, 'reg> {
 
 #[derive(Debug)]
 pub enum RunError {
-    Basic { text: String, span: Span },
+    Custom { text: String, span: Span },
     VariableNotFound(Span),
     ExpectedNumberAfterUnaryOperator(Value),
     InvalidVariantForResource(String, String),
@@ -107,11 +95,7 @@ pub fn run(ast: Ast, world: &mut World) {
 
             match value {
                 Ok(Value::None) => {}
-                Ok(value) => match value.try_format(
-                    span,
-                    &world,
-                    &registrations,
-                ) {
+                Ok(value) => match value.try_format(span, &world, &registrations) {
                     Ok(value) => info!(name: "console_result", "> {value}"),
                     Err(err) => error!("{err:?}"),
                 },
@@ -197,9 +181,7 @@ fn eval_expression(
                                         }
                                     })
                                 } else {
-                                    Err(RunError::EnumVariantNotFound {
-                                        name: variable
-                                    })
+                                    Err(RunError::EnumVariantNotFound { name: variable })
                                 }?
                             }
                             Expression::StructObject { name, map } => {

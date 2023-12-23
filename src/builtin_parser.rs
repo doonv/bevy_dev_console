@@ -15,8 +15,7 @@ pub(crate) mod lexer;
 pub(crate) mod parser;
 pub(crate) mod runner;
 
-pub use runner::environment::Environment;
-pub use runner::Value;
+pub use runner::{environment::Environment, Value, RunError};
 
 /// Wrapper around `T` that stores a [Span] (A location in the source code)
 #[derive(Debug, Clone)]

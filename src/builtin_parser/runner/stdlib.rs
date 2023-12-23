@@ -1,10 +1,14 @@
 use crate::register;
-use bevy::{log::info, ecs::world::World, reflect::TypeRegistration};
+use bevy::{ecs::world::World, log::info, reflect::TypeRegistration};
 use std::{cell::Ref, ops::Range};
 
 use super::{Environment, RunError, Spanned, Value};
 
-fn print(value: Spanned<Value>, world: &mut World, registrations: &[&TypeRegistration]) -> Result<(), RunError> {
+fn print(
+    value: Spanned<Value>,
+    world: &mut World,
+    registrations: &[&TypeRegistration],
+) -> Result<(), RunError> {
     match value.value {
         Value::String(string) => info!("{string}"),
         _ => {
@@ -50,7 +54,7 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
 }
 
 /// Disposes of a [`Value`].
-fn drop(_v: Value) {}
+fn drop(_: Value) {}
 
 pub fn register(environment: &mut Environment) {
     register!(environment => {

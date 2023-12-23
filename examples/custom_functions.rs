@@ -1,11 +1,13 @@
 //! A simple exmaple
 
+use std::{cell::RefCell, rc::Weak};
+
 use bevy::{
     log::{Level, LogPlugin},
     prelude::*,
 };
 use bevy_dev_console::{
-    builtin_parser::{Environment, Spanned, Value},
+    builtin_parser::{Environment, RunError, Spanned, Value},
     prelude::*,
     register,
 };
@@ -45,6 +47,21 @@ fn increment_global_counter(world: &mut World) -> f64 {
     })
 }
 
+// Function with reference (Syntax subject to change very soon)
+fn increment_number(number: Spanned<Weak<RefCell<Value>>>) -> Result<(), RunError> {
+    let rc = number.value.upgrade().unwrap();
+    let mut reference = rc.borrow_mut();
+    if let Value::Number(number) = &mut *reference {
+        *number += 1.0;
+        Ok(())
+    } else {
+        Err(RunError::Custom {
+            text: "w".to_string(),
+            span: number.span,
+        })
+    }
+}
+
 // For more example take a look at the standard library.
 
 // Register our functions by creating and inserting our own environment
@@ -57,6 +74,7 @@ fn custom_environment() -> Environment {
         fn add;
         fn print_debug_info;
         fn increment_global_counter;
+        fn increment_number;
     });
 
     environment

@@ -50,6 +50,11 @@ macro_rules! register {
 /// Get around implementation of Result causing stupid errors
 pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
 
+impl<T: Into<Value>> From<T> for ResultContainer<Value, RunError> {
+    fn from(value: T) -> Self {
+        ResultContainer(Ok(value.into()))
+    }
+}
 impl<T, E> From<ResultContainer<T, E>> for Result<T, E> {
     fn from(ResultContainer(result): ResultContainer<T, E>) -> Self {
         result
@@ -60,9 +65,12 @@ impl<T: Into<Value>, E> From<Result<T, E>> for ResultContainer<Value, E> {
         ResultContainer(result.map(|v| v.into()))
     }
 }
+/// A parameter in a [`Function`].
 pub trait FunctionParam: Sized {
-    // TODO: Add `Self` as default when https://github.com/rust-lang/rust/issues/29661 gets merged
+    /// TODO: Add `Self` as default when https://github.com/rust-lang/rust/issues/29661 gets merged
     type Item<'world, 'env, 'reg>;
+    /// Whether this parameter requires a [`Spanned<Value>`].
+    /// If `false` then `FunctionParam::get`'s `value` will be [`None`], and vice versa.
     const USES_VALUE: bool;
 
     fn get<'world, 'env, 'reg>(
@@ -82,16 +90,6 @@ pub struct Function {
 /// Trait that represents a [`Fn`] that can be turned into a [`Function`].
 pub trait IntoFunction<T> {
     fn into_function(self) -> Function;
-}
-
-macro_rules! replace_expr {
-    ($_t:ident $sub:expr) => {
-        $sub
-    };
-}
-
-macro_rules! count_idents {
-    ($($tts:ident)*) => {0usize $(+ replace_expr!($tts 1usize))*};
 }
 
 macro_rules! impl_into_function {
@@ -180,6 +178,7 @@ impl_into_function!(T1, T2, T3, T4, T5, T6);
 impl_into_function!(T1, T2, T3, T4, T5, T6, T7);
 impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
 
+/// A variable inside the [`Environment`].
 pub enum Variable {
     Unmoved(Rc<RefCell<Value>>),
     Moved,
@@ -207,8 +206,8 @@ impl Default for Environment {
 
 impl Environment {
     /// Set a variable.
-    pub fn set(&mut self, name: String, value: Rc<RefCell<Value>>) {
-        self.variables.insert(name, Variable::Unmoved(value));
+    pub fn set(&mut self, name: impl Into<String>, value: Rc<RefCell<Value>>) {
+        self.variables.insert(name.into(), Variable::Unmoved(value));
     }
 
     /// Returns a reference to a function if it exists.

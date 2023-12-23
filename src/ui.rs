@@ -24,7 +24,7 @@ fn system_time_to_chrono_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
     chrono::Utc.timestamp_opt(sec, nsec).unwrap()
 }
 
-pub fn ui(
+pub(crate) fn ui(
     mut commands: Commands,
     mut contexts: EguiContexts,
     mut state: ResMut<ConsoleUiState>,

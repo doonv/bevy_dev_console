@@ -9,6 +9,9 @@ use super::{
     Environment, Spanned,
 };
 
+/// An [Abstract Syntax Tree](https://en.wikipedia.org/wiki/Abstract_syntax_tree).
+/// 
+/// This type represents a list of expressions, which is what makes up a command.
 pub type Ast = Vec<Spanned<Expression>>;
 
 macro_rules! expect {

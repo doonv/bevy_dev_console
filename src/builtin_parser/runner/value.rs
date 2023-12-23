@@ -1,3 +1,4 @@
+use std::cell::RefMut;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::rc::Weak;
@@ -6,10 +7,11 @@ use std::{cell::RefCell, rc::Rc};
 use crate::builtin_parser::Environment;
 
 use super::environment::{FunctionParam, ResultContainer};
-use super::reflection::{mut_dyn_reflect, IntoResource, IntoRegistration};
+use super::reflection::{mut_dyn_reflect, IntoRegistration, IntoResource};
 use super::EvalParams;
 use super::{super::Spanned, RunError};
 
+use bevy::ecs::system::Resource;
 use bevy::ecs::world::World;
 use bevy::reflect::{
     DynamicStruct, GetPath, Reflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo,
@@ -62,20 +64,10 @@ impl Value {
             Value::Boolean(boolean) => Box::new(boolean),
             Value::String(string) => Box::new(string),
             Value::Reference(reference) => todo!(),
-            Value::Object(object) => {
+            Value::Object(object) | Value::StructObject { map: object, .. } => {
                 let mut dyn_struct = DynamicStruct::default();
 
                 for (name, value) in object {
-                    dyn_struct
-                        .insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
-                }
-
-                Box::new(dyn_struct)
-            }
-            Value::StructObject { name, map } => {
-                let mut dyn_struct = DynamicStruct::default();
-
-                for (name, value) in map {
                     dyn_struct
                         .insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
                 }
@@ -130,7 +122,9 @@ impl Value {
                 for (key, value) in map {
                     string += &format!(
                         "\n\t{key}: {},",
-                        value.borrow().try_format(span.clone(), world, registrations)?
+                        value
+                            .borrow()
+                            .try_format(span.clone(), world, registrations)?
                     );
                 }
                 if !map.is_empty() {
@@ -145,13 +139,15 @@ impl Value {
 }
 /// A massive function that takes in a type registration and the world and then
 /// does all the hard work of printing out the type nicely.
-fn fancy_debug_print(resource: &IntoResource, world: &World, registrations: &[&TypeRegistration]) -> String {
+fn fancy_debug_print(
+    resource: &IntoResource,
+    world: &World,
+    registrations: &[&TypeRegistration],
+) -> String {
     let registration = registrations.into_registration(resource.id);
     let dyn_reflect = resource.ref_dyn_reflect(world, registration);
 
-    let reflect = dyn_reflect
-        .reflect_path(resource.path.as_str())
-        .unwrap();
+    let reflect = dyn_reflect.reflect_path(resource.path.as_str()).unwrap();
 
     let mut f = String::new();
     let reflect_ref = reflect.reflect_ref();
@@ -233,19 +229,9 @@ fn fancy_debug_print(resource: &IntoResource, world: &World, registrations: &[&T
     f
 }
 
-impl From<Value> for ResultContainer<Value, RunError> {
-    fn from(value: Value) -> Self {
-        ResultContainer(Ok(value))
-    }
-}
 impl From<()> for Value {
     fn from((): ()) -> Self {
         Value::None
-    }
-}
-impl From<()> for ResultContainer<Value, RunError> {
-    fn from((): ()) -> Self {
-        ResultContainer(Ok(Value::None))
     }
 }
 impl From<f64> for Value {
@@ -253,14 +239,30 @@ impl From<f64> for Value {
         Value::Number(number)
     }
 }
-impl From<f64> for ResultContainer<Value, RunError> {
-    fn from(number: f64) -> Self {
-        ResultContainer(Ok(Value::Number(number)))
-    }
-}
 impl From<String> for Value {
     fn from(string: String) -> Self {
         Value::String(string)
+    }
+}
+impl From<bool> for Value {
+    fn from(boolean: bool) -> Self {
+        Value::Boolean(boolean)
+    }
+}
+
+impl From<HashMap<String, Rc<RefCell<Value>>>> for Value {
+    fn from(hashmap: HashMap<String, Rc<RefCell<Value>>>) -> Self {
+        Value::Object(hashmap)
+    }
+}
+impl From<HashMap<String, Value>> for Value {
+    fn from(hashmap: HashMap<String, Value>) -> Self {
+        Value::Object(
+            hashmap
+                .into_iter()
+                .map(|(k, v)| (k, Rc::new(RefCell::new(v))))
+                .collect(),
+        )
     }
 }
 
@@ -277,8 +279,25 @@ impl FunctionParam for Spanned<Value> {
         Ok(value.unwrap())
     }
 }
+impl<T: TryFrom<Value, Error = RunError>> FunctionParam for Spanned<T> {
+    type Item<'world, 'env, 'reg> = Self;
+    const USES_VALUE: bool = true;
+
+    fn get<'world, 'env, 'reg>(
+        value: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        let value = value.unwrap();
+        Ok(Spanned {
+            span: value.span,
+            value: T::try_from(value.value)?,
+        })
+    }
+}
 impl FunctionParam for Value {
-    type Item<'world, 'env, 'reg> = Value;
+    type Item<'world, 'env, 'reg> = Self;
     const USES_VALUE: bool = true;
 
     fn get<'world, 'env, 'reg>(
@@ -290,41 +309,47 @@ impl FunctionParam for Value {
         Ok(value.unwrap().value)
     }
 }
-impl FunctionParam for f64 {
-    type Item<'world, 'env, 'reg> = f64;
-    const USES_VALUE: bool = true;
 
-    fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
-        _: &mut Option<&'world mut World>,
-        _: &mut Option<&'env mut Environment>,
-        _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
-        if let Value::Number(number) = value.unwrap().value {
-            Ok(number)
-        } else {
-            todo!()
+macro_rules! impl_function_param_for_value {
+    (impl $type:ty: $value_pattern:pat => $return:expr) => {
+        impl FunctionParam for $type {
+            type Item<'world, 'env, 'reg> = Self;
+            const USES_VALUE: bool = true;
+
+            fn get<'world, 'env, 'reg>(
+                value: Option<Spanned<Value>>,
+                _: &mut Option<&'world mut World>,
+                _: &mut Option<&'env mut Environment>,
+                _: &'reg [&'reg TypeRegistration],
+            ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+                if let $value_pattern = value.unwrap().value {
+                    Ok($return)
+                } else {
+                    todo!()
+                }
+            }
         }
-    }
-}
+        impl TryFrom<Value> for $type {
+            type Error = RunError;
 
-impl FunctionParam for String {
-    type Item<'world, 'env, 'reg> = Self;
-    const USES_VALUE: bool = true;
-
-    fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
-        _: &mut Option<&'world mut World>,
-        _: &mut Option<&'env mut Environment>,
-        _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
-        if let Value::String(string) = value.unwrap().value {
-            Ok(string)
-        } else {
-            todo!()
+            fn try_from(value: Value) -> Result<Self, Self::Error> {
+                if let $value_pattern = value {
+                    Ok($return)
+                } else {
+                    todo!()
+                }
+            }
         }
-    }
+    };
 }
+impl_function_param_for_value!(impl f64: Value::Number(number) => number);
+impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
+impl_function_param_for_value!(impl String: Value::String(string) => string);
+impl_function_param_for_value!(impl HashMap<String, Rc<RefCell<Value>>>: Value::Object(object) => object);
+impl_function_param_for_value!(impl HashMap<String, Value>: Value::Object(object) => {
+    object.into_iter().map(|(k, v)| (k, Rc::try_unwrap(v).unwrap().into_inner())).collect()
+});
+impl_function_param_for_value!(impl Weak<RefCell<Value>>: Value::Reference(reference) => reference);
 
 impl FunctionParam for &mut World {
     type Item<'world, 'env, 'reg> = &'world mut World;
@@ -342,6 +367,21 @@ impl FunctionParam for &mut World {
         };
 
         Ok(world)
+    }
+}
+
+// This probably isn't a good idea. But eh who cares, more power to the user.
+impl FunctionParam for &mut Environment {
+    type Item<'world, 'env, 'reg> = &'env mut Environment;
+    const USES_VALUE: bool = false;
+
+    fn get<'world, 'env, 'reg>(
+        _: Option<Spanned<Value>>,
+        _: &mut Option<&'world mut World>,
+        environment: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+        Ok(environment.take().unwrap())
     }
 }
 

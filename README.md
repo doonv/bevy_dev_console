@@ -9,26 +9,32 @@
 ## Usage
 
 1. Add the `bevy_dev_console` git package.
-```bash
-cargo add --git https://github.com/doonv/bevy_dev_console.git
-```
+
+    ```bash
+    cargo add --git https://github.com/doonv/bevy_dev_console.git
+    ```
+
 2. Import the `prelude`.
-```rs
-use bevy_dev_console::prelude::*;
-```
+
+    ```rs
+    use bevy_dev_console::prelude::*;
+    ```
+
 3. Add the plugins.
-```rs
-App::new()
-    .add_plugins((
-        // Start capturing logs before the default plugins initiate.
-        ConsoleLogPlugin::default(),
-        // Add the default plugins without the LogPlugin.
-        // Not removing the LogPlugin will cause a panic!
-        DefaultPlugins.build().disable::<LogPlugin>(),
-        // Add the dev console plugin itself.
-        DevConsolePlugin,
-    ))
-```
+
+    ```rs
+    App::new()
+        .add_plugins((
+            // Start capturing logs before the default plugins initiate.
+            ConsoleLogPlugin::default(),
+            // Add the default plugins without the LogPlugin.
+            // Not removing the LogPlugin will cause a panic!
+            DefaultPlugins.build().disable::<LogPlugin>(),
+            // Add the dev console plugin itself.
+            DevConsolePlugin,
+        ))
+    ```
+
 4. That should be it! You can now press the `` ` `` or `~` key on your keyboard and it should open the console!
 
 ## Features
@@ -36,7 +42,6 @@ App::new()
 `builtin-parser (default)` allows you to optionally remove the built-in parser and replace it with your own.
 
 ## Bevy Compatibility
-
 
 | bevy   | bevy_dev_console |
 | ------ | ---------------- |
