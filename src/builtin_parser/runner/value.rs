@@ -1,17 +1,14 @@
-use std::cell::RefMut;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::rc::Weak;
 use std::{cell::RefCell, rc::Rc};
 
-use crate::builtin_parser::Environment;
+use crate::builtin_parser::{Environment, StrongRef};
 
-use super::environment::{FunctionParam, ResultContainer};
-use super::reflection::{mut_dyn_reflect, IntoRegistration, IntoResource};
-use super::EvalParams;
+use super::environment::FunctionParam;
+use super::reflection::{CreateRegistration, IntoResource};
+use super::unique_rc::WeakRef;
 use super::{super::Spanned, RunError};
 
-use bevy::ecs::system::Resource;
 use bevy::ecs::world::World;
 use bevy::reflect::{
     DynamicStruct, GetPath, Reflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo,
@@ -22,6 +19,7 @@ use logos::Span;
 
 /// A runtime value
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Value {
     /// Nothing at all
     None,
@@ -38,10 +36,7 @@ pub enum Value {
     /// and having only the owner of the value have a strong reference,
     /// while every other value has a weak reference. This causes
     /// [`Rc::try_unwrap`] to succeed every time.
-    ///
-    /// This isn't partically efficent, so:
-    /// TODO: Create a custom type this!
-    Reference(Weak<RefCell<Value>>),
+    Reference(WeakRef<Value>),
     /// A dynamic [`HashMap`].
     Object(HashMap<String, Rc<RefCell<Value>>>),
     /// An [`Object`](Value::Object) with a name attached to it.
@@ -144,7 +139,7 @@ fn fancy_debug_print(
     world: &World,
     registrations: &[&TypeRegistration],
 ) -> String {
-    let registration = registrations.into_registration(resource.id);
+    let registration = registrations.create_registration(resource.id);
     let dyn_reflect = resource.ref_dyn_reflect(world, registration);
 
     let reflect = dyn_reflect.reflect_path(resource.path.as_str()).unwrap();
@@ -349,7 +344,7 @@ impl_function_param_for_value!(impl HashMap<String, Rc<RefCell<Value>>>: Value::
 impl_function_param_for_value!(impl HashMap<String, Value>: Value::Object(object) => {
     object.into_iter().map(|(k, v)| (k, Rc::try_unwrap(v).unwrap().into_inner())).collect()
 });
-impl_function_param_for_value!(impl Weak<RefCell<Value>>: Value::Reference(reference) => reference);
+impl_function_param_for_value!(impl StrongRef<Value>: Value::Reference(reference) => reference.upgrade().unwrap());
 
 impl FunctionParam for &mut World {
     type Item<'world, 'env, 'reg> = &'world mut World;

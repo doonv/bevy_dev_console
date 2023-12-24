@@ -1,13 +1,15 @@
 //! Environment and function registeration
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::collections::HashMap;
 
 use bevy::{ecs::world::World, log::warn, reflect::TypeRegistration};
 use logos::Span;
 
 use super::{
     super::{parser::Expression, Spanned},
-    eval_expression, stdlib, EvalParams, RunError, Value,
+    eval_expression, stdlib,
+    unique_rc::UniqueRc,
+    EvalParams, RunError, Value,
 };
 
 /// Macro for mass registering functions.
@@ -130,6 +132,7 @@ macro_rules! impl_into_function {
                     let world = &mut Some(world);
                     let environment = &mut Some(environment);
 
+                    #[allow(clippy::too_many_arguments)]
                     fn call_inner<R: Into<ResultContainer<Value, RunError>>, $($($params),*)?>(
                         mut f: impl FnMut($($($params),*)?) -> R,
                         $($($params: $params),*)?
@@ -144,7 +147,7 @@ macro_rules! impl_into_function {
                             } else {
                                 None
                             };
-                            
+
                             let res = $params::get(
                                 arg,
                                 world,
@@ -180,7 +183,7 @@ impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
 
 /// A variable inside the [`Environment`].
 pub enum Variable {
-    Unmoved(Rc<RefCell<Value>>),
+    Unmoved(UniqueRc<Value>),
     Moved,
     Function(Function),
 }
@@ -206,7 +209,7 @@ impl Default for Environment {
 
 impl Environment {
     /// Set a variable.
-    pub fn set(&mut self, name: impl Into<String>, value: Rc<RefCell<Value>>) {
+    pub fn set(&mut self, name: impl Into<String>, value: UniqueRc<Value>) {
         self.variables.insert(name.into(), Variable::Unmoved(value));
     }
 
@@ -250,7 +253,7 @@ impl Environment {
         return_result
     }
     /// Returns a reference to a variable.
-    pub fn get(&self, name: &str, span: Span) -> Result<&Rc<RefCell<Value>>, RunError> {
+    pub fn get(&self, name: &str, span: Span) -> Result<&UniqueRc<Value>, RunError> {
         let (env, span) = self.resolve(name, span)?;
 
         match env.variables.get(name) {
@@ -261,33 +264,33 @@ impl Environment {
         }
     }
 
-    /// "moves" a variable, giving you ownership over it. However it will no longer be able to be used unless
-    /// it's a [`Value::None`], [`Value::Boolean`], or [`Value::Number`] in which case it will be copied.  
+    /// "Moves" a variable, giving you ownership over it.
+    ///
+    /// However it will no longer be able to be used unless it's a [`Value::None`],
+    /// [`Value::Boolean`], or [`Value::Number`] in which case it will be copied.  
     pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, RunError> {
         let (env, span) = self.resolve_mut(name, span)?;
 
         match env.variables.get_mut(name) {
             Some(Variable::Moved) => Err(RunError::VariableMoved(span)),
             Some(Variable::Function(_)) => todo!(),
-            Some(reference) => {
-                let Variable::Unmoved(value) = std::mem::replace(reference, Variable::Moved) else {
+            Some(variable_reference) => {
+                let Variable::Unmoved(reference) = variable_reference else {
                     unreachable!()
                 };
-                // SAFETY: The reference goes out of scope before it can get borrowed again.
-                let reference = unsafe { value.try_borrow_unguarded().unwrap() };
-                // This is a pretty bad way of handling
-                match reference {
-                    Value::None => Ok(Value::None),
-                    Value::Boolean(bool) => Ok(Value::Boolean(*bool)),
-                    Value::Number(number) => Ok(Value::Number(*number)),
-                    _ => {
-                        // Unwrapping will always succeed due to only the owner of the variable having
-                        // a strong reference. All other references are weak.
-                        let value = Rc::try_unwrap(value).unwrap();
-
-                        Ok(value.into_inner())
-                    }
-                }
+                // This is a pretty bad way of handling something similar to rust's [`Copy`] trait but whatever.
+                match &*reference.borrow_inner().borrow() {
+                    Value::None => return Ok(Value::None),
+                    Value::Boolean(bool) => return Ok(Value::Boolean(*bool)),
+                    Value::Number(number) => return Ok(Value::Number(*number)),
+                    _ => {}
+                };
+                let Variable::Unmoved(value) =
+                    std::mem::replace(variable_reference, Variable::Moved)
+                else {
+                    unreachable!()
+                };
+                Ok(value.into_inner())
             }
             None => Err(RunError::VariableNotFound(span)),
         }

@@ -4,7 +4,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use environment::Environment;
 
-use self::reflection::{object_to_dynamic_struct, IntoRegistration, IntoResource};
+use self::{
+    reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource},
+    unique_rc::{UniqueRc, WeakRef},
+};
 
 use super::{
     parser::{Ast, Expression, Operator},
@@ -12,14 +15,14 @@ use super::{
 };
 use bevy::{
     prelude::*,
-    reflect::{DynamicEnum, Enum, EnumInfo, ReflectMut, TypeInfo, TypeRegistration},
+    reflect::{DynamicEnum, Enum, ReflectMut, TypeInfo, TypeRegistration},
 };
 use logos::Span;
 pub mod environment;
 pub mod reflection;
 pub mod stdlib;
-pub mod value;
 pub mod unique_rc;
+pub mod value;
 
 pub use value::Value;
 
@@ -44,6 +47,7 @@ pub enum RunError {
     CannotBorrowValue(Span),
     IncompatibleReflectTypes { expected: String, actual: String },
     EnumVariantNotFound { name: String },
+    CannotMoveOutOfResource(Spanned<String>),
 }
 
 pub fn run(ast: Ast, world: &mut World) {
@@ -95,7 +99,7 @@ pub fn run(ast: Ast, world: &mut World) {
 
             match value {
                 Ok(Value::None) => {}
-                Ok(value) => match value.try_format(span, &world, &registrations) {
+                Ok(value) => match value.try_format(span, world, &registrations) {
                     Ok(value) => info!(name: "console_result", "> {value}"),
                     Err(err) => error!("{err:?}"),
                 },
@@ -123,7 +127,6 @@ fn eval_expression(
             value: value_expr,
         } => match eval_path(*name, environment, registrations)?.value {
             Path::Variable(variable) => {
-                let temp = variable.clone();
                 let value = eval_expression(
                     *value_expr,
                     EvalParams {
@@ -132,9 +135,9 @@ fn eval_expression(
                         registrations,
                     },
                 )?;
-                *temp.borrow_mut() = value;
+                *variable.upgrade().unwrap().borrow_mut() = value;
 
-                Ok(Value::Reference(Rc::downgrade(&temp)))
+                Ok(Value::Reference(variable))
             }
             Path::NewVariable(variable) => {
                 let value = eval_expression(
@@ -145,15 +148,15 @@ fn eval_expression(
                         registrations,
                     },
                 )?;
-                let rc = Rc::new(RefCell::new(value));
-                let weak = Rc::downgrade(&rc);
+                let rc = UniqueRc::new(value);
+                let weak = rc.borrow();
 
                 environment.set(variable, rc);
 
                 Ok(Value::Reference(weak))
             }
             Path::Resource(resource) => {
-                let registeration = registrations.into_registration(resource.id);
+                let registeration = registrations.create_registration(resource.id);
                 let mut dyn_reflect = resource.mut_dyn_reflect(world, registeration);
 
                 let reflect = dyn_reflect
@@ -248,11 +251,14 @@ fn eval_expression(
         Expression::String(string) => Ok(Value::String(string)),
         Expression::Number(number) => Ok(Value::Number(number)),
         Expression::Variable(variable) => {
-            if let Some(registration) = registrations
+            if registrations
                 .iter()
-                .find(|v| v.type_info().type_path_table().short_path() == variable)
+                .any(|v| v.type_info().type_path_table().short_path() == variable)
             {
-                Ok(Value::Resource(IntoResource::new(registration.type_id())))
+                Err(RunError::CannotMoveOutOfResource(Spanned {
+                    span: expr.span,
+                    value: variable,
+                }))
             } else {
                 environment.move_var(&variable, expr.span)
             }
@@ -353,7 +359,7 @@ fn eval_expression(
                     Ok(Value::Resource(IntoResource::new(registration.type_id())))
                 } else {
                     let rc = environment.get(&variable, inner.span)?;
-                    let weak = Rc::downgrade(rc);
+                    let weak = rc.borrow();
 
                     Ok(Value::Reference(weak))
                 }
@@ -418,17 +424,17 @@ fn eval_member_expression(
     }
 }
 
-enum Path<'a> {
-    Variable(&'a Rc<RefCell<Value>>),
+enum Path {
+    Variable(WeakRef<Value>),
     NewVariable(String),
     Resource(IntoResource),
 }
 
-fn eval_path<'a>(
+fn eval_path(
     expr: Spanned<Expression>,
-    environment: &'a Environment,
+    environment: &Environment,
     registrations: &[&TypeRegistration],
-) -> Result<Spanned<Path<'a>>, RunError> {
+) -> Result<Spanned<Path>, RunError> {
     match expr.value {
         Expression::Variable(variable) => {
             if let Some(registration) = registrations
@@ -439,18 +445,16 @@ fn eval_path<'a>(
                     span: expr.span,
                     value: Path::Resource(IntoResource::new(registration.type_id())),
                 })
+            } else if let Ok(variable) = environment.get(&variable, expr.span.clone()) {
+                Ok(Spanned {
+                    span: expr.span,
+                    value: Path::Variable(variable.borrow()),
+                })
             } else {
-                if let Ok(variable) = environment.get(&variable, expr.span.clone()) {
-                    Ok(Spanned {
-                        span: expr.span,
-                        value: Path::Variable(variable),
-                    })
-                } else {
-                    Ok(Spanned {
-                        span: expr.span,
-                        value: Path::NewVariable(variable),
-                    })
-                }
+                Ok(Spanned {
+                    span: expr.span,
+                    value: Path::NewVariable(variable),
+                })
             }
         }
         Expression::Member { left, right } => {

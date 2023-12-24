@@ -22,9 +22,9 @@ impl IntoResource {
     pub fn ref_dyn_reflect<'a>(
         &self,
         world: &'a World,
-        registration: impl IntoRegistration,
+        registration: impl CreateRegistration,
     ) -> &'a dyn Reflect {
-        let registration = registration.into_registration(self.id);
+        let registration = registration.create_registration(self.id);
         let ref_dyn_reflect = ref_dyn_reflect(world, registration).unwrap();
 
         ref_dyn_reflect
@@ -32,9 +32,9 @@ impl IntoResource {
     pub fn mut_dyn_reflect<'a>(
         &self,
         world: &'a mut World,
-        registration: impl IntoRegistration,
+        registration: impl CreateRegistration,
     ) -> Mut<'a, dyn Reflect> {
-        let registration = registration.into_registration(self.id);
+        let registration = registration.create_registration(self.id);
         let ref_dyn_reflect = mut_dyn_reflect(world, registration).unwrap();
 
         ref_dyn_reflect
@@ -82,22 +82,22 @@ pub fn ref_dyn_reflect<'a>(
     let resource = world.get_resource_by_id(component_id).unwrap();
     let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
     // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
-    let val: &'a dyn Reflect = unsafe { reflect_from_ptr.as_reflect(resource) };
+    let val: &dyn Reflect = unsafe { reflect_from_ptr.as_reflect(resource) };
     Some(val)
 }
 
-pub trait IntoRegistration {
-    fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration;
+pub trait CreateRegistration {
+    fn create_registration(&self, type_id: TypeId) -> &TypeRegistration;
 }
-impl IntoRegistration for &TypeRegistration {
-    fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration {
+impl CreateRegistration for &TypeRegistration {
+    fn create_registration(&self, type_id: TypeId) -> &TypeRegistration {
         assert!(self.type_id() == type_id);
 
-        &self
+        self
     }
 }
-impl IntoRegistration for &[&TypeRegistration] {
-    fn into_registration<'a>(&'a self, type_id: TypeId) -> &'a TypeRegistration {
+impl CreateRegistration for &[&TypeRegistration] {
+    fn create_registration(&self, type_id: TypeId) -> &TypeRegistration {
         self.iter()
             .find(|reg| reg.type_id() == type_id)
             .expect("registration no longer exists")
