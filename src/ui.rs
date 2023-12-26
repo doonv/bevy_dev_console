@@ -4,21 +4,28 @@
 
 use bevy::prelude::*;
 use bevy::utils::tracing::Level;
-use bevy_egui::*;
+use bevy_egui::{
+    egui::{text::LayoutJob, Color32, Stroke, TextFormat},
+    *,
+};
 use chrono::TimeZone;
-use instant::SystemTime;
+use web_time::SystemTime;
 
-use crate::{command::ExecuteCommand, logging::log_plugin::LogMessage};
+use crate::{
+    command::{CommandHints, ExecuteCommand},
+    logging::log_plugin::LogMessage,
+    prelude::ConsoleConfig,
+};
 
 #[derive(Default, Resource)]
-pub struct ConsoleUiState {
+pub(crate) struct ConsoleUiState {
     open: bool,
     log: Vec<(LogMessage, bool)>,
     command: String,
 }
 
 fn system_time_to_chrono_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
-    let dur = t.duration_since(instant::SystemTime::UNIX_EPOCH).unwrap();
+    let dur = t.duration_since(web_time::SystemTime::UNIX_EPOCH).unwrap();
     let (sec, nsec) = (dur.as_secs() as i64, dur.subsec_nanos());
 
     chrono::Utc.timestamp_opt(sec, nsec).unwrap()
@@ -30,6 +37,8 @@ pub(crate) fn ui(
     mut state: ResMut<ConsoleUiState>,
     key: Res<Input<KeyCode>>,
     mut logs: EventReader<LogMessage>,
+    hints: Res<CommandHints>,
+    config: Res<ConsoleConfig>,
 ) {
     for log_message in logs.read() {
         state.log.push((log_message.clone(), true));
@@ -39,11 +48,17 @@ pub(crate) fn ui(
         state.open = !state.open;
     }
 
-    if key.just_pressed(KeyCode::Return) && !state.command.trim().is_empty() {
-        info!(name: "console_command", "$ {}", state.command.trim());
-        // Get the owned command by replacing it with an empty string
-        let command = std::mem::take(&mut state.command);
-        commands.add(ExecuteCommand(command));
+    let mut submit_command = |command: &mut String| {
+        if !command.trim().is_empty() {
+            info!(name: "console_command", "$ {}", command.trim());
+            // Get the owned command string by replacing it with an empty string
+            let command = std::mem::take(command);
+            commands.add(ExecuteCommand(command));
+        }
+    };
+
+    if key.just_pressed(KeyCode::Return) {
+        submit_command(&mut state.command);
     }
 
     if state.open {
@@ -65,13 +80,17 @@ pub(crate) fn ui(
                     .show_inside(ui, |ui| {
                         //We can use a right to left layout, so we can place the text input last and tell it to fill all remaining space
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            let _ = ui.button("Submit");
+                            if ui.button("Submit").clicked() {
+                                submit_command(&mut state.command);
+                            }
                             // ui.button is a shorthand command, a similar command exists for text edits, but this is how to manually construct a widget.
                             // doing this also allows access to more options of the widget, rather than being stuck with the default the shorthand picks.
                             let text_edit = egui::TextEdit::singleline(&mut state.command)
                                 .desired_width(ui.available_width())
                                 .margin(egui::Vec2::splat(4.0))
+                                .font(config.font.clone())
                                 .lock_focus(true);
+
                             ui.add(text_edit);
                         });
                     });
@@ -81,7 +100,7 @@ pub(crate) fn ui(
                     .show(ui, |ui| {
                         ui.vertical(|ui| {
                             for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
-                                add_log(ui, id, message, is_new);
+                                add_log(ui, id, message, is_new, &hints, &config);
                             }
                         });
                     });
@@ -101,23 +120,52 @@ fn add_log(
         file,
         line,
         time,
-    }: &mut LogMessage,
+    }: &LogMessage,
     is_new: &mut bool,
+    hints: &CommandHints,
+    config: &ConsoleConfig,
 ) {
-    const CONSOLE_FONT_SIZE: f32 = 14.0;
-    const FONT_ID: egui::FontId = egui::FontId::monospace(CONSOLE_FONT_SIZE);
+    let text_format = TextFormat {
+        font_id: config.font.clone(),
+        color: egui::Color32::LIGHT_GRAY,
+        ..default()
+    };
+
+    let mut command_index = 0;
 
     ui.push_id(id, |ui| {
         let time_utc = system_time_to_chrono_utc(*time);
         let time: chrono::DateTime<chrono::Local> = time_utc.into();
         let res = ui
             .horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new(time.format("%H:%M").to_string()).font(FONT_ID));
+                ui.label(
+                    egui::RichText::new(time.format("%H:%M").to_string()).font(config.font.clone()),
+                );
                 if *name == "console_command" || *name == "console_result" {
+                    if *name == "console_command" {
+                        if let Some(hints) = hints.get(command_index) {
+                            let mut layout = LayoutJob::default();
+                            let hint = &hints[0];
+                            layout.append(&message[..hint.span.start], 0., text_format.clone());
+                            layout.append(
+                                &message[hint.span.clone()],
+                                0.,
+                                TextFormat {
+                                    underline: Stroke::new(2.0, Color32::RED),
+                                    ..text_format.clone()
+                                },
+                            );
+                            layout.append(&message[hint.span.end..], 0., text_format);
+
+                            ui.label(layout);
+                            return;
+                        }
+                        command_index += 1;
+                    }
                     ui.label(
                         egui::RichText::new(message.as_str())
                             .color(egui::Color32::from_gray(190))
-                            .font(FONT_ID),
+                            .font(config.font.clone()),
                     );
                     return;
                 }
@@ -131,12 +179,12 @@ fn add_log(
                 ui.label(
                     egui::RichText::new(level.as_str())
                         .color(level_color)
-                        .font(FONT_ID),
+                        .font(config.font.clone()),
                 );
                 ui.label(
                     egui::RichText::new(message.as_str())
                         .color(egui::Color32::LIGHT_GRAY)
-                        .font(FONT_ID),
+                        .font(config.font.clone()),
                 );
             })
             .response;

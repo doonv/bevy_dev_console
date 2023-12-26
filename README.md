@@ -16,13 +16,16 @@
 
 2. Import the `prelude`.
 
-    ```rs
+    ```rust
     use bevy_dev_console::prelude::*;
     ```
 
 3. Add the plugins.
 
-    ```rs
+    ```rust,no_run
+    use bevy::{prelude::*,log::LogPlugin};
+    use bevy_dev_console::prelude::*;
+
     App::new()
         .add_plugins((
             // Start capturing logs before the default plugins initiate.
@@ -33,11 +36,12 @@
             // Add the dev console plugin itself.
             DevConsolePlugin,
         ))
+        .run();
     ```
 
 4. That should be it! You can now press the `` ` `` or `~` key on your keyboard and it should open the console!
 
-## Features
+## Togglable Features
 
 `builtin-parser (default)` allows you to optionally remove the built-in parser and replace it with your own.
 

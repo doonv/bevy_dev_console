@@ -1,10 +1,9 @@
 use std::{
-    cell::{Ref, RefCell, RefMut, Cell},
+    cell::{Cell, Ref, RefCell, RefMut},
     fmt::Debug,
     ops::{Deref, DerefMut},
     rc::{Rc, Weak},
 };
-
 
 /// A uniquely owned [`Rc`] with interior mutability. Interior mutability is abstracted away with [`WeakRef`].
 ///
@@ -27,7 +26,7 @@ impl<T: ?Sized> UniqueRc<T> {
         &self.0
     }
     pub fn borrow(&self) -> WeakRef<T> {
-        WeakRef::new(&self)
+        WeakRef::new(self)
     }
 }
 impl<T> UniqueRc<T> {
@@ -37,10 +36,12 @@ impl<T> UniqueRc<T> {
     }
     pub fn into_inner(self) -> T {
         Rc::try_unwrap(self.0)
-            .unwrap_or_else(|rc| panic!(
-                "There are {} strong pointers to a UniqueRc!",
-                Rc::strong_count(&rc)
-            ))
+            .unwrap_or_else(|rc| {
+                panic!(
+                    "There are {} strong pointers to a UniqueRc!",
+                    Rc::strong_count(&rc)
+                )
+            })
             .into_inner()
     }
 }
@@ -60,34 +61,46 @@ impl<T> DerefMut for UniqueRc<T> {
 #[derive(Debug)]
 pub struct WeakRef<T: ?Sized> {
     reference: Weak<RefCell<T>>,
-    upgraded: Cell<bool>
+    upgraded: Cell<bool>,
 }
 impl<T: ?Sized> WeakRef<T> {
     fn new(unique_rc: &UniqueRc<T>) -> Self {
         // SAFETY: We are not cloning the `Rc`, so this is fine.
         let rc = unsafe { unique_rc.get_rc() };
-        Self { reference: Rc::downgrade(rc), upgraded: Cell::new(false) }
+        Self {
+            reference: Rc::downgrade(rc),
+            upgraded: Cell::new(false),
+        }
     }
     pub fn upgrade(&self) -> Option<StrongRef<T>> {
         if !self.upgraded.get() {
             self.upgraded.set(true);
-            self.upgrade_unchecked()
+            unsafe { self.upgrade_unchecked() }
         } else {
             None
         }
     }
-    fn upgrade_unchecked(&self) -> Option<StrongRef<T>> {
+    unsafe fn upgrade_unchecked(&self) -> Option<StrongRef<T>> {
         Some(StrongRef(self.reference.upgrade()?))
     }
 }
 
 /// A reference to value `T`.
-/// 
-/// This value is *technically* unsafe, but in practice the only way 
+///
+/// This value is *technically* unsafe, but in practice the only way
 /// you could obtain it is by having it passed into a custom function.
-/// 
+///
 /// ```
-/// fn add_to_reference()
+/// use bevy_dev_console::builtin_parser::{Value, StrongRef};
+///
+/// fn add_to_reference(my_reference: StrongRef<Value>, add: f64) {
+///     // currently you can only do it with `Value`
+///     if let Value::Number(number) = &mut *my_reference.borrow_mut() {
+///         *number += add;
+///     } else {
+///         todo!();
+///     }
+/// }
 /// ```
 #[derive(Debug)]
 pub struct StrongRef<T: ?Sized>(Rc<RefCell<T>>);

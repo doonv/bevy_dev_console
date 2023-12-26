@@ -1,35 +1,18 @@
-//! `bevy_dev_console` is a [Source](https://en.wikipedia.org/wiki/Source_(game_engine))-like
-//! developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
-//!
-//! `bevy_dev_console` is currently in its early development stages.
-//! Expect breaking changes in the near future (espically when using the built-in command parser).
-//! For this reason its only available as a git package at the moment.
-//!
-//! ## Example
-//!
-//! ```no_run
-//! use bevy::prelude::*;
-//! use bevy_dev_console::prelude::*;
-//!
-//! App::new()
-//!     .add_plugins((
-//!         ConsoleLogPlugin::default(),
-//!         DefaultPlugins.build().disable::<bevy::log::LogPlugin>(),
-//!         DevConsolePlugin,
-//!     ))
-//!     .run();
-//! ```
+#![doc = include_str!("../README.md")]
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
+use command::CommandHints;
+use config::ConsoleConfig;
 use ui::ConsoleUiState;
 
 #[cfg(feature = "builtin-parser")]
 pub mod builtin_parser;
 pub mod command;
+pub mod config;
 mod logging;
 pub mod prelude;
-mod ui;
+pub mod ui;
 
 /// Adds a Developer Console to your Bevy application.
 ///
@@ -48,6 +31,8 @@ impl Plugin for DevConsolePlugin {
         }
 
         app.init_resource::<ConsoleUiState>()
+            .init_resource::<CommandHints>()
+            .init_resource::<ConsoleConfig>()
             .add_systems(Update, ui::ui);
     }
 }

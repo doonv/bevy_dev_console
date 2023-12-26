@@ -4,6 +4,8 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use environment::Environment;
 
+use crate::command::{CommandHint, CommandHintColor, CommandHints};
+
 use self::{
     reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource},
     unique_rc::{UniqueRc, WeakRef},
@@ -33,9 +35,15 @@ pub struct EvalParams<'world, 'env, 'reg> {
     registrations: &'reg [&'reg TypeRegistration],
 }
 
+/// An error occuring during the while executing the [`AST`](Ast) of the command.
 #[derive(Debug)]
 pub enum RunError {
-    Custom { text: String, span: Span },
+    /// A custom text message. Contains very little contextual information, try to find an existing error instead.
+    Custom {
+        /// The text of the message
+        text: String,
+        span: Span,
+    },
     VariableNotFound(Span),
     ExpectedNumberAfterUnaryOperator(Value),
     InvalidVariantForResource(String, String),
@@ -45,8 +53,13 @@ pub enum RunError {
     ReferenceToMovedData(Span),
     VariableMoved(Span),
     CannotBorrowValue(Span),
-    IncompatibleReflectTypes { expected: String, actual: String },
-    EnumVariantNotFound { name: String },
+    IncompatibleReflectTypes {
+        expected: String,
+        actual: String,
+    },
+    EnumVariantNotFound {
+        name: String,
+    },
     CannotMoveOutOfResource(Spanned<String>),
 }
 
@@ -61,6 +74,11 @@ pub fn run(ast: Ast, world: &mut World) {
     // Same thing here (this time we are doing it because we are passing a `&mut World` to `eval_expression`)
     let Some(registry) = world.remove_resource::<AppTypeRegistry>() else {
         error!("The AppTypeRegistry doesn't exist, not executing command. (What have you done to cause this? o_O)");
+        return;
+    };
+
+    let Some(mut hints) = world.remove_resource::<CommandHints>() else {
+        error!("CommandHints don't exist, not executing commands. (Seriously how did this happen)");
         return;
     };
 
@@ -106,9 +124,15 @@ pub fn run(ast: Ast, world: &mut World) {
                 Err(err) => error!("{err:?}"),
             }
         }
+        hints.push([CommandHint::new(
+            3..4,
+            CommandHintColor::Error,
+            "woah description",
+        )]);
     }
 
     // Add back the resources
+    world.insert_resource(hints);
     world.insert_resource(registry);
     world.insert_non_send_resource(environment);
 }

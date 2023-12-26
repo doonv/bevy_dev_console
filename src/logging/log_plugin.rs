@@ -11,10 +11,10 @@
 //! For more fine-tuned control over logging behavior, set up the [`ConsoleLogPlugin`] or
 //! `DefaultPlugins` during app initialization.
 
-use instant::SystemTime;
 #[cfg(feature = "trace")]
 use std::panic;
 use std::sync::{Arc, Mutex};
+use web_time::SystemTime;
 #[cfg(target_os = "android")]
 mod android_tracing;
 
@@ -259,7 +259,7 @@ impl<S: Subscriber> Layer<S> for LogEventLayer {
     fn on_event(
         &self,
         event: &bevy::utils::tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
+        ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         let mut message = None;
         event.record(&mut LogEventVisitor(&mut message));

@@ -69,7 +69,7 @@ impl<T: Into<Value>, E> From<Result<T, E>> for ResultContainer<Value, E> {
 }
 /// A parameter in a [`Function`].
 pub trait FunctionParam: Sized {
-    /// TODO: Add `Self` as default when https://github.com/rust-lang/rust/issues/29661 gets merged
+    /// TODO: Add `Self` as default when <https://github.com/rust-lang/rust/issues/29661> gets merged
     type Item<'world, 'env, 'reg>;
     /// Whether this parameter requires a [`Spanned<Value>`].
     /// If `false` then `FunctionParam::get`'s `value` will be [`None`], and vice versa.
