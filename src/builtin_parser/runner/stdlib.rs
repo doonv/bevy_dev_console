@@ -2,7 +2,7 @@ use crate::register;
 use bevy::{ecs::world::World, log::info, reflect::TypeRegistration};
 use std::{cell::Ref, ops::Range};
 
-use super::{Environment, RunError, Spanned, Value};
+use super::{error::RunError, Environment, Spanned, Value};
 
 fn print(
     value: Spanned<Value>,

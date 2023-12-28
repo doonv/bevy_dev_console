@@ -29,6 +29,7 @@ impl From<Box<dyn CommandParser>> for DefaultCommandParser {
 }
 
 /// A hint displayed to the user when they make a mistake.
+#[derive(Debug, Clone)]
 pub struct CommandHint {
     /// The color of the hint.
     pub color: CommandHintColor,
@@ -53,6 +54,7 @@ impl CommandHint {
 }
 
 /// The color of a [`CommandHint`], may either be a standard color or a [`Custom`](CommandHintColor::Custom) [`Color`].
+#[derive(Debug, Clone)]
 pub enum CommandHintColor {
     /// An error marks bad code that cannot be recovered from.
     ///
@@ -78,11 +80,30 @@ pub enum CommandHintColor {
 /// A resource where hints (errors/warnings/etc) are stored
 /// to be displayed in the developer console.
 #[derive(Resource, Default, Deref)]
-pub struct CommandHints(Vec<Vec<CommandHint>>);
+pub struct CommandHints {
+    #[deref]
+    hints: Vec<Vec<CommandHint>>,
+    hint_added: bool,
+}
 impl CommandHints {
-    /// Push a list of hints. This should be done once per command call (even if theres no hints).
+    /// Push a list of hints. This should be done once per command call.
     pub fn push(&mut self, hints: impl Into<Vec<CommandHint>>) {
-        self.0.push(hints.into());
+        if self.hint_added {
+            warn!(
+                "Hints were added twice! Hint 1: {:?}, Hint 2: {:?}",
+                self.hints.last(),
+                hints.into()
+            )
+        } else {
+            self.hints.push(hints.into());
+        }
+    }
+    pub(crate) fn reset_hint_added(&mut self) {
+        if self.hint_added {
+            self.hint_added = false;
+        } else {
+            self.push([]);
+        }
     }
 }
 
@@ -97,10 +118,10 @@ impl CommandHints {
 /// pub struct MyCustomParser;
 /// impl CommandParser for MyCustomParser {
 ///     fn parse(&self, command: &str, world: &mut World) {
-///         // The `name: "console_result"` tells the console this is a result from
+///         // The `name: COMMAND_RESULT_NAME` tells the console this is a result from
 ///         // the parser and then formats it accordingly.
 ///         // TODO: figure out better solution for this
-///         info!(name: "console_result", "You just entered the command {command}")
+///         info!(name: COMMAND_RESULT_NAME, "You just entered the command {command}")
 ///     }
 /// }
 /// ```

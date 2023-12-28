@@ -7,7 +7,7 @@ use crate::builtin_parser::{Environment, StrongRef};
 use super::environment::FunctionParam;
 use super::reflection::{CreateRegistration, IntoResource};
 use super::unique_rc::WeakRef;
-use super::{super::Spanned, RunError};
+use super::{super::Spanned, error::RunError};
 
 use bevy::ecs::world::World;
 use bevy::reflect::{
@@ -19,7 +19,6 @@ use logos::Span;
 
 /// A runtime value
 #[derive(Debug)]
-#[non_exhaustive]
 pub enum Value {
     /// Nothing at all
     None,
@@ -129,6 +128,19 @@ impl Value {
                 Ok(string)
             }
             Value::Resource(resource) => Ok(fancy_debug_print(resource, world, registrations)),
+        }
+    }
+
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Value::None => "nothing",
+            Value::Number(_) => "a number",
+            Value::Boolean(_) => "a boolean",
+            Value::String(_) => "a string",
+            Value::Reference(_) => "a reference",
+            Value::Object(_) => "a object",
+            Value::StructObject { .. } => "a struct object",
+            Value::Resource(_) => "a resource",
         }
     }
 }

@@ -4,9 +4,10 @@ use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use environment::Environment;
 
-use crate::command::{CommandHint, CommandHintColor, CommandHints};
+use crate::{command::CommandHints, ui::COMMAND_RESULT_NAME};
 
 use self::{
+    error::RunError,
     reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource},
     unique_rc::{UniqueRc, WeakRef},
 };
@@ -19,8 +20,9 @@ use bevy::{
     prelude::*,
     reflect::{DynamicEnum, Enum, ReflectMut, TypeInfo, TypeRegistration},
 };
-use logos::Span;
+
 pub mod environment;
+pub mod error;
 pub mod reflection;
 pub mod stdlib;
 pub mod unique_rc;
@@ -33,34 +35,6 @@ pub struct EvalParams<'world, 'env, 'reg> {
     world: &'world mut World,
     environment: &'env mut Environment,
     registrations: &'reg [&'reg TypeRegistration],
-}
-
-/// An error occuring during the while executing the [`AST`](Ast) of the command.
-#[derive(Debug)]
-pub enum RunError {
-    /// A custom text message. Contains very little contextual information, try to find an existing error instead.
-    Custom {
-        /// The text of the message
-        text: String,
-        span: Span,
-    },
-    VariableNotFound(Span),
-    ExpectedNumberAfterUnaryOperator(Value),
-    InvalidVariantForResource(String, String),
-    CannotIndexValue(Span),
-    FieldNotFoundInStruct(Span),
-    CouldntDereferenceValue(Span),
-    ReferenceToMovedData(Span),
-    VariableMoved(Span),
-    CannotBorrowValue(Span),
-    IncompatibleReflectTypes {
-        expected: String,
-        actual: String,
-    },
-    EnumVariantNotFound {
-        name: String,
-    },
-    CannotMoveOutOfResource(Spanned<String>),
 }
 
 pub fn run(ast: Ast, world: &mut World) {
@@ -118,17 +92,16 @@ pub fn run(ast: Ast, world: &mut World) {
             match value {
                 Ok(Value::None) => {}
                 Ok(value) => match value.try_format(span, world, &registrations) {
-                    Ok(value) => info!(name: "console_result", "> {value}"),
+                    Ok(value) => info!(name: COMMAND_RESULT_NAME, "> {value}"),
                     Err(err) => error!("{err:?}"),
                 },
-                Err(err) => error!("{err:?}"),
+                Err(err) => {
+                    hints.push(err.hints());
+
+                    error!("{}", err.message());
+                }
             }
         }
-        hints.push([CommandHint::new(
-            3..4,
-            CommandHintColor::Error,
-            "woah description",
-        )]);
     }
 
     // Add back the resources
@@ -192,13 +165,15 @@ fn eval_expression(
                         let TypeInfo::Enum(enum_info) = registeration.type_info() else {
                             unreachable!();
                         };
-                        match value_expr.value {
+                        let Spanned { span, value } = *value_expr;
+                        match value {
                             Expression::Variable(variable) => {
                                 if enum_info.contains_variant(&variable) {
                                     let new_enum = DynamicEnum::new(variable, ());
 
                                     dyn_enum.set(Box::new(new_enum)).map_err(|new_enum| {
                                         RunError::IncompatibleReflectTypes {
+                                            span,
                                             expected: dyn_enum.variant_name().to_string(),
                                             actual: new_enum
                                                 .downcast::<DynamicEnum>()
@@ -208,7 +183,10 @@ fn eval_expression(
                                         }
                                     })
                                 } else {
-                                    Err(RunError::EnumVariantNotFound { name: variable })
+                                    Err(RunError::EnumVariantNotFound {
+                                        name: variable,
+                                        span,
+                                    })
                                 }?
                             }
                             Expression::StructObject { name, map } => {
@@ -244,6 +222,7 @@ fn eval_expression(
                         }
                     }
                     _ => {
+                        let span = value_expr.span.clone();
                         let value = eval_expression(
                             *value_expr,
                             EvalParams {
@@ -262,6 +241,7 @@ fn eval_expression(
 
                         reflect.set(value_reflect).map_err(|value_reflect| {
                             RunError::IncompatibleReflectTypes {
+                                span,
                                 expected: reflect.reflect_type_path().to_string(),
                                 actual: value_reflect.reflect_type_path().to_string(),
                             }
@@ -334,9 +314,10 @@ fn eval_expression(
                 registrations,
             },
         ),
-        Expression::UnaryOp(expr) => {
-            let expr = eval_expression(
-                *expr,
+        Expression::UnaryOp(sub_expr) => {
+            let span = sub_expr.span.clone();
+            let value = eval_expression(
+                *sub_expr,
                 EvalParams {
                     world,
                     environment,
@@ -344,9 +325,12 @@ fn eval_expression(
                 },
             )?;
 
-            match expr {
+            match value {
                 Value::Number(number) => Ok(Value::Number(-number)),
-                _ => Err(RunError::ExpectedNumberAfterUnaryOperator(expr)),
+                _ => Err(RunError::ExpectedNumberAfterUnaryOperator(Spanned {
+                    span,
+                    value,
+                })),
             }
         }
         Expression::StructObject { name, map } => {

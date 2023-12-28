@@ -259,7 +259,7 @@ impl<S: Subscriber> Layer<S> for LogEventLayer {
     fn on_event(
         &self,
         event: &bevy::utils::tracing::Event<'_>,
-        ctx: tracing_subscriber::layer::Context<'_, S>,
+        _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         let mut message = None;
         event.record(&mut LogEventVisitor(&mut message));

@@ -17,6 +17,12 @@ use crate::{
     prelude::ConsoleConfig,
 };
 
+const COMMAND_MESSAGE_PREFIX: &str = "$ ";
+/// Identifier for log messages that show a previous command.
+pub const COMMAND_MESSAGE_NAME: &str = "console_command";
+/// Identifier for log messages that show the result of a history
+pub const COMMAND_RESULT_NAME: &str = "console_result";
+
 #[derive(Default, Resource)]
 pub(crate) struct ConsoleUiState {
     /// Whever the console is open or not.
@@ -61,7 +67,7 @@ pub(crate) fn render_ui(
 ) {
     let mut submit_command = |command: &mut String| {
         if !command.trim().is_empty() {
-            info!(name: "console_command", "$ {}", command.trim());
+            info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{}", command.trim());
             // Get the owned command string by replacing it with an empty string
             let command = std::mem::take(command);
             commands.add(ExecuteCommand(command));
@@ -193,23 +199,35 @@ fn format_line(
         0.0,
         config.theme.format_dark(),
     );
-    if *name == "console_command" || *name == "console_result" {
-        if *name == "console_command" {
+    if *name == COMMAND_MESSAGE_NAME || *name == COMMAND_RESULT_NAME {
+        if *name == COMMAND_MESSAGE_NAME {
             if new {
                 hints.reset_hint_added();
             }
-            if let Some(hints) = hints.get(*command_index) {
-                let hint = &hints[0];
-                text.append(&message[..hint.span.start], 0., config.theme.format_text());
+            let hints = &hints[*command_index];
+
+            // TODO: Handle more than just he first element
+            if let Some(hint) = hints.first() {
+                const PREFIX_LEN: usize = COMMAND_MESSAGE_PREFIX.len();
+
                 text.append(
-                    &message[hint.span.clone()],
+                    &message[..hint.span.start + PREFIX_LEN],
+                    0.,
+                    config.theme.format_text(),
+                );
+                text.append(
+                    &message[hint.span.start + PREFIX_LEN..hint.span.end + PREFIX_LEN],
                     0.,
                     TextFormat {
-                        underline: Stroke::new(2.0, config.theme.error.to_color32()),
+                        underline: Stroke::new(1.0, config.theme.error.to_color32()),
                         ..config.theme.format_text()
                     },
                 );
-                text.append(&message[hint.span.end..], 0., config.theme.format_text());
+                text.append(
+                    &message[hint.span.end + PREFIX_LEN..],
+                    0.,
+                    config.theme.format_text(),
+                );
                 return text;
             }
             *command_index += 1;

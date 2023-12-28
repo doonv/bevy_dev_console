@@ -1,7 +1,7 @@
 //! Configuration structs for the developer console.
 
 use bevy::{log::Level, prelude::*};
-use bevy_egui::egui::{self, Color32, FontId, TextFormat};
+use bevy_egui::egui::{Color32, FontId, TextFormat};
 
 /// The configuration of the developer console.
 #[derive(Resource)]
@@ -25,8 +25,10 @@ impl Default for ConsoleConfig {
 pub struct ConsoleTheme {
     /// The font used in the developer console.
     pub font: FontId,
-    pub dark: Color,
+    /// The default color of text.
     pub text_color: Color,
+    /// The color of dark text.
+    pub dark: Color,
     /// The color of the "error" level.
     ///
     /// Designates very serious errors.

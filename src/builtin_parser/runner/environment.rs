@@ -7,9 +7,10 @@ use logos::Span;
 
 use super::{
     super::{parser::Expression, Spanned},
+    error::RunError,
     eval_expression, stdlib,
     unique_rc::UniqueRc,
-    EvalParams, RunError, Value,
+    EvalParams, Value,
 };
 
 /// Macro for mass registering functions.
