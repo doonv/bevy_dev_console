@@ -89,7 +89,9 @@ impl RunError {
                 span,
             } => todo!(),
             EnumVariantNotFound { name, span } => todo!(),
-            CannotMoveOutOfResource(Spanned { value, .. }) => format!("Cannot move out of resource `{value}`, try borrowing it instead.").into(),
+            CannotMoveOutOfResource(Spanned { value, .. }) => {
+                format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()
+            }
         }
     }
 }

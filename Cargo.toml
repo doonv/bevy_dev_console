@@ -16,9 +16,10 @@ bevy_egui = "0.24.0"
 chrono = "0.4.31"
 tracing-log = "0.2.0"
 tracing-subscriber = "0.3.18"
-
-logos = { version = "0.13.0", optional = true }
 web-time = "0.2.4"
+
+# built-in parser
+logos = { version = "0.13.0", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_log-sys = "0.3.0"

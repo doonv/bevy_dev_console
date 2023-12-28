@@ -114,6 +114,7 @@ impl CommandHints {
 /// # use bevy::ecs::world::World;
 /// # use bevy_dev_console::command::CommandParser;
 /// # use bevy::log::info;
+/// # use bevy_dev_console::ui::COMMAND_RESULT_NAME;
 ///
 /// pub struct MyCustomParser;
 /// impl CommandParser for MyCustomParser {
