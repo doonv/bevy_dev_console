@@ -33,6 +33,13 @@ impl Plugin for DevConsolePlugin {
         app.init_resource::<ConsoleUiState>()
             .init_resource::<CommandHints>()
             .init_resource::<ConsoleConfig>()
-            .add_systems(Update, ui::ui);
+            .add_systems(
+                Update,
+                (
+                    ui::read_logs,
+                    ui::open_close_ui,
+                    ui::render_ui.run_if(|s: Res<ConsoleUiState>| s.open),
+                ),
+            );
     }
 }
