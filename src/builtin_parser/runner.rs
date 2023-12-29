@@ -291,11 +291,11 @@ fn eval_expression(
 
             match (left, right) {
                 (Value::Number(left), Value::Number(right)) => Ok(Value::Number(match operator {
-                    Operator::Add => left + right,
-                    Operator::Sub => left - right,
-                    Operator::Mul => left * right,
-                    Operator::Div => left / right,
-                    Operator::Mod => left % right,
+                    Operator::Add => (left + right)?,
+                    Operator::Sub => (left - right)?,
+                    Operator::Mul => (left * right)?,
+                    Operator::Div => (left / right)?,
+                    Operator::Mod => (left % right)?,
                 })),
                 (left, right) => todo!("{left:#?}, {right:#?}"),
             }
@@ -325,12 +325,13 @@ fn eval_expression(
                 },
             )?;
 
-            match value {
-                Value::Number(number) => Ok(Value::Number(-number)),
-                _ => Err(RunError::ExpectedNumberAfterUnaryOperator(Spanned {
+            if let Value::Number(number) = value {
+                Ok(Value::Number(number.neg(span)?))
+            } else {
+                Err(RunError::ExpectedNumberAfterUnaryOperator(Spanned {
                     span,
                     value,
-                })),
+                }))
             }
         }
         Expression::StructObject { name, map } => {

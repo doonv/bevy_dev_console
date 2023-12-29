@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::{cell::RefCell, rc::Rc};
 
+use crate::builtin_parser::number::Number;
 use crate::builtin_parser::{Environment, StrongRef};
 
 use super::environment::FunctionParam;
@@ -22,8 +23,8 @@ use logos::Span;
 pub enum Value {
     /// Nothing at all
     None,
-    /// A number, for simplicity only f64s are used. (However this will probably change in the future)
-    Number(f64),
+    /// A number.
+    Number(Number),
     /// `true` or `false`. Thats it...
     Boolean(bool),
     /// A string... there isn't much to say about this one.
@@ -54,7 +55,7 @@ impl Value {
     pub fn reflect(self) -> Box<dyn Reflect> {
         match self {
             Value::None => Box::new(()),
-            Value::Number(number) => Box::new(number),
+            Value::Number(number) => number.reflect(),
             Value::Boolean(boolean) => Box::new(boolean),
             Value::String(string) => Box::new(string),
             Value::Reference(reference) => todo!(),
@@ -241,11 +242,31 @@ impl From<()> for Value {
         Value::None
     }
 }
-impl From<f64> for Value {
-    fn from(number: f64) -> Self {
-        Value::Number(number)
-    }
+macro_rules! from_number {
+    ($($number:ident),*$(,)?) => {
+        $(
+            impl From<$number> for Value {
+                fn from(number: $number) -> Self {
+                    Value::Number(Number::$number(number))
+                }
+            }
+        )*
+    };
 }
+
+from_number!(
+    u8,
+    u16,
+    u32,
+    u64,
+    i8,
+    i16,
+    i32,
+    i64,
+    f32,
+    f64,
+);
+
 impl From<String> for Value {
     fn from(string: String) -> Self {
         Value::String(string)
@@ -349,7 +370,27 @@ macro_rules! impl_function_param_for_value {
         }
     };
 }
-impl_function_param_for_value!(impl f64: Value::Number(number) => number);
+macro_rules! impl_function_param_for_numbers {
+    ($($number:ident),*$(,)?) => {
+        $(
+            impl_function_param_for_value!(impl $number: Value::Number(Number::$number(number)) => number);
+        )*
+    };
+}
+
+impl_function_param_for_numbers!(
+    u8,
+    u16,
+    u32,
+    u64,
+    i8,
+    i16,
+    i32,
+    i64,
+    f32,
+    f64,
+);
+
 impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
 impl_function_param_for_value!(impl String: Value::String(string) => string);
 impl_function_param_for_value!(impl HashMap<String, Rc<RefCell<Value>>>: Value::Object(object) => object);

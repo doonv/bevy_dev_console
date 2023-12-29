@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use logos::Span;
 
 use crate::{
-    builtin_parser::Spanned,
+    builtin_parser::{number::Number, Spanned},
     command::{CommandHint, CommandHintColor},
 };
 
@@ -37,6 +37,7 @@ pub enum RunError {
         span: Span,
     },
     CannotMoveOutOfResource(Spanned<String>),
+    CannotNegateUnsignedInteger(Spanned<Number>),
 }
 
 impl RunError {
@@ -57,12 +58,13 @@ impl RunError {
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound { span, .. } => vec![span.clone()],
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
+            CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()]
         }
     }
     pub fn hints(&self) -> Vec<CommandHint> {
         self.spans()
             .into_iter()
-            .map(|span| CommandHint::new(span, CommandHintColor::Error, "todo"))
+            .map(|span| CommandHint::new(span, CommandHintColor::Error, self.message()))
             .collect()
     }
     pub fn message(&self) -> Cow<'static, str> {
@@ -92,6 +94,11 @@ impl RunError {
             CannotMoveOutOfResource(Spanned { value, .. }) => {
                 format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()
             }
+            CannotNegateUnsignedInteger(Spanned { value, .. }) => format!(
+                "Unsigned integers cannot be negated. (Type: {})",
+                value.kind()
+            )
+            .into(),
         }
     }
 }

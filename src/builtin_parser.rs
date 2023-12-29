@@ -14,6 +14,7 @@ use self::{lexer::TokenStream, parser::parse};
 pub(crate) mod lexer;
 pub(crate) mod parser;
 pub(crate) mod runner;
+pub(crate) mod number;
 
 pub use runner::{environment::Environment, error::RunError, unique_rc::*, Value};
 

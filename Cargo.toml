@@ -8,7 +8,7 @@ edition = "2021"
 [features]
 default = ["builtin-parser"]
 
-builtin-parser = ["dep:logos"]
+builtin-parser = ["dep:logos", "dep:kinded"]
 
 [dependencies]
 bevy = "0.12.1"
@@ -20,6 +20,7 @@ web-time = "0.2.4"
 
 # built-in parser
 logos = { version = "0.13.0", optional = true }
+kinded = { version = "0.3.0", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_log-sys = "0.3.0"

@@ -67,8 +67,22 @@ pub enum Token {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Identifer,
 
-    #[regex("[0-9]+")]
-    Number,
+    #[regex(r#"[0-9]+"#)]
+    IntegerNumber,
+    #[regex(r#"[0-9]*\.?[0-9]*"#)]
+    FloatNumber,
+
+    #[token("i8")]
+    #[token("i16")]
+    #[token("i32")]
+    #[token("i64")]
+    #[token("u8")]
+    #[token("u16")]
+    #[token("u32")]
+    #[token("u64")]
+    #[token("f32")]
+    #[token("f64")]
+    NumberType,
 }
 
 /// A wrapper for the lexer which provides token peeking and other helper functions
@@ -138,7 +152,7 @@ impl<'a> TokenStream<'a> {
     }
 
     /// Get a [`str`] slice of the next [`Token`].
-    pub fn _peek_slice(&self) -> &str {
+    pub fn peek_slice(&self) -> &str {
         self.lexer.slice()
     }
 
@@ -171,7 +185,7 @@ mod tests {
 
     #[test]
     fn var_assign() {
-        let mut lexer = TokenStream::new("x = 1 + 2 - 30");
+        let mut lexer = TokenStream::new("x = 1 + 2 - 30.6");
 
         assert_eq!(lexer.next(), Some(Ok(Token::Identifer)));
         assert_eq!(lexer.slice(), "x");
@@ -179,19 +193,19 @@ mod tests {
         assert_eq!(lexer.next(), Some(Ok(Token::Equals)));
         assert_eq!(lexer.slice(), "=");
 
-        assert_eq!(lexer.next(), Some(Ok(Token::Number)));
+        assert_eq!(lexer.next(), Some(Ok(Token::IntegerNumber)));
         assert_eq!(lexer.slice(), "1");
 
         assert_eq!(lexer.next(), Some(Ok(Token::Plus)));
         assert_eq!(lexer.slice(), "+");
 
-        assert_eq!(lexer.next(), Some(Ok(Token::Number)));
+        assert_eq!(lexer.next(), Some(Ok(Token::IntegerNumber)));
         assert_eq!(lexer.slice(), "2");
 
         assert_eq!(lexer.next(), Some(Ok(Token::Minus)));
         assert_eq!(lexer.slice(), "-");
 
-        assert_eq!(lexer.next(), Some(Ok(Token::Number)));
-        assert_eq!(lexer.slice(), "30");
+        assert_eq!(lexer.next(), Some(Ok(Token::FloatNumber)));
+        assert_eq!(lexer.slice(), "30.6");
     }
 }
