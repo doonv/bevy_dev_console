@@ -313,7 +313,7 @@ fn parse_primary(
                 let err_map = |error: std::num::ParseIntError| match error.kind() {
                     IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(tokens.span()),
                     IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(tokens.span()),
-                    _ => unreachable!("lexer makes sure other errors arent possible")
+                    _ => unreachable!("lexer makes sure other errors arent possible"),
                 };
                 let number: Number = match tokens.peek_slice() {
                     "u8" => Number::u8(tokens.slice().parse().map_err(err_map)?),

@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_dev_console::{
-    builtin_parser::{Environment, RunError, Spanned, StrongRef, Value, Number},
+    builtin_parser::{Environment, Number, RunError, Spanned, StrongRef, Value},
     prelude::*,
     register,
 };

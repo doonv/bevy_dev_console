@@ -41,7 +41,7 @@ pub enum RunError {
     IncompatibleNumberTypes {
         left: &'static str,
         right: &'static str,
-        span: Span
+        span: Span,
     },
 }
 
@@ -105,12 +105,10 @@ impl RunError {
                 value.kind()
             )
             .into(),
-            IncompatibleNumberTypes {
-                left,
-                right,
-                ..
-            } => format!("Incompatible number types; `{left}` and `{right}` are incompatible.")
-                .into(),
+            IncompatibleNumberTypes { left, right, .. } => {
+                format!("Incompatible number types; `{left}` and `{right}` are incompatible.")
+                    .into()
+            }
         }
     }
 }
