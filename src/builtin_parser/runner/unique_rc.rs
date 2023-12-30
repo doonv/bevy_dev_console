@@ -93,10 +93,10 @@ impl<T: ?Sized> WeakRef<T> {
 /// ```
 /// use bevy_dev_console::builtin_parser::{Value, StrongRef};
 ///
-/// fn add_to_reference(my_reference: StrongRef<Value>, add: f64) {
+/// fn add_to_reference(my_reference: StrongRef<Value>, add: String) {
 ///     // currently you can only do it with `Value`
-///     if let Value::Number(number) = &mut *my_reference.borrow_mut() {
-///         *number += add;
+///     if let Value::String(string) = &mut *my_reference.borrow_mut() {
+///         *string += &add;
 ///     } else {
 ///         todo!();
 ///     }
