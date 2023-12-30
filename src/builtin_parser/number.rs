@@ -1,5 +1,3 @@
-#![allow(non_camel_case_types)]
-
 use std::fmt::Display;
 use std::ops::*;
 
@@ -8,12 +6,13 @@ use logos::Span;
 
 use super::{RunError, SpanExtension, Spanned};
 
-/// An enum for containing any type of number.
+/// An enum that contains any type of number.
 ///
 /// The [`Integer`](Number::Integer) and [`Float`](Number::Float) types
 /// are generic types that then get downcasted when they first interact
 /// with a concrete type. (i.e. calling a function, etc)
 #[derive(Debug, Clone, Copy)]
+#[allow(missing_docs, non_camel_case_types)]
 pub enum Number {
     /// Generic integer that can get downcasted.
     Integer(i128),
@@ -33,6 +32,7 @@ pub enum Number {
 }
 
 impl Number {
+    /// Converts this into a [`Box<dyn Reflect>`](Reflect).
     pub fn reflect(self) -> Box<dyn Reflect> {
         match self {
             Number::u8(number) => Box::new(number),
@@ -50,6 +50,7 @@ impl Number {
         }
     }
 
+    /// Returns a [`&'static str`](str) represents the kind of the number.
     pub fn kind(&self) -> &'static str {
         match self {
             Number::Float(_) => "(float)",
@@ -90,6 +91,7 @@ impl Display for Number {
 macro_rules! impl_op {
     ($fn:ident, $op:tt) => {
         impl Number {
+            #[doc = concat!("Performs the `", stringify!($op), "` calculation.")]
             pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, RunError> {
                 match (left, right) {
                     (Number::u8(left), Number::u8(right)) => Ok(Number::u8(left $op right)),
@@ -162,6 +164,7 @@ impl_op_spanned!(Mul, mul);
 impl_op_spanned!(Rem, rem);
 
 impl Number {
+    /// Performs the unary `-` operation.
     pub fn neg(self, span: Span) -> Result<Number, RunError> {
         match self {
             Number::u8(_) => Err(RunError::CannotNegateUnsignedInteger(Spanned {
