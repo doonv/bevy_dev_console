@@ -128,7 +128,7 @@ macro_rules! impl_op {
                     (Number::Float(left), Number::Float(right)) => Ok(Number::Float(left $op right)),
                     (Number::f32(left), Number::Float(right)) => Ok(Number::f32(left $op right as f32)),
                     (Number::f64(left), Number::Float(right)) => Ok(Number::f64(left $op right as f64)),
-                 _ => Err(RunError::IncompatibleNumberTypes {
+                    _ => Err(RunError::IncompatibleNumberTypes {
                         left: left.kind(),
                         right: right.kind(),
                         span
