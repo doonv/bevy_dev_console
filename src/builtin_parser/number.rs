@@ -1,12 +1,18 @@
 #![allow(non_camel_case_types)]
 
-use std::{fmt::Display, ops::*, str::FromStr};
+use std::fmt::Display;
+use std::ops::*;
 
 use bevy::reflect::Reflect;
 use logos::Span;
 
-use super::{RunError, Spanned};
+use super::{RunError, SpanExtension, Spanned};
 
+/// An enum for containing any type of number.
+///
+/// The [`Integer`](Number::Integer) and [`Float`](Number::Float) types
+/// are generic types that then get downcasted when they first interact
+/// with a concrete type. (i.e. calling a function, etc)
 #[derive(Debug, Clone, Copy)]
 pub enum Number {
     /// Generic integer that can get downcasted.
@@ -46,8 +52,8 @@ impl Number {
 
     pub fn kind(&self) -> &'static str {
         match self {
-            Number::Float(_) => "{float}",
-            Number::Integer(_) => "{integer}",
+            Number::Float(_) => "(float)",
+            Number::Integer(_) => "(integer)",
             Number::u8(_) => "u8",
             Number::u16(_) => "u16",
             Number::u32(_) => "u32",
@@ -82,11 +88,10 @@ impl Display for Number {
 }
 
 macro_rules! impl_op {
-    ($trait:ident, $fn:ident, $op:tt) => {
-        impl $trait<Self> for Number {
-            type Output = Result<Self, RunError>;
-            fn $fn(self, rhs: Number) -> Self::Output {
-                match (self, rhs) {
+    ($fn:ident, $op:tt) => {
+        impl Number {
+            pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, RunError> {
+                match (left, right) {
                     (Number::u8(left), Number::u8(right)) => Ok(Number::u8(left $op right)),
                     (Number::u16(left), Number::u16(right)) => Ok(Number::u16(left $op right)),
                     (Number::u32(left), Number::u32(right)) => Ok(Number::u32(left $op right)),
@@ -121,18 +126,40 @@ macro_rules! impl_op {
                     (Number::Float(left), Number::Float(right)) => Ok(Number::Float(left $op right)),
                     (Number::f32(left), Number::Float(right)) => Ok(Number::f32(left $op right as f32)),
                     (Number::f64(left), Number::Float(right)) => Ok(Number::f64(left $op right as f64)),
-                    _ => todo!()
+                 _ => Err(RunError::IncompatibleNumberTypes {
+                        left: left.kind(),
+                        right: right.kind(),
+                        span
+                    })
                 }
             }
         }
     };
 }
 
-impl_op!(Add, add, +);
-impl_op!(Sub, sub, -);
-impl_op!(Mul, mul, *);
-impl_op!(Div, div, /);
-impl_op!(Rem, rem, %);
+impl_op!(add, +);
+impl_op!(sub, -);
+impl_op!(mul, *);
+impl_op!(div, /);
+impl_op!(rem, %);
+
+macro_rules! impl_op_spanned {
+    ($trait:ident, $method:ident) => {
+        impl $trait<Self> for Spanned<Number> {
+            type Output = Result<Number, RunError>;
+            fn $method(self, rhs: Self) -> Self::Output {
+                let span = self.span.join(rhs.span);
+
+                Number::$method(self.value, rhs.value, span)
+            }
+        }
+    };
+}
+
+impl_op_spanned!(Add, add);
+impl_op_spanned!(Sub, sub);
+impl_op_spanned!(Mul, mul);
+impl_op_spanned!(Rem, rem);
 
 impl Number {
     pub fn neg(self, span: Span) -> Result<Number, RunError> {

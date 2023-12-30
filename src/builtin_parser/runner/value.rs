@@ -242,6 +242,16 @@ impl From<()> for Value {
         Value::None
     }
 }
+
+macro_rules! from_t {
+    (impl $type:ty: $var:ident => $expr:expr) => {
+        impl From<$type> for Value {
+            fn from($var: $type) -> Self {
+                $expr
+            }
+        }
+    };
+}
 macro_rules! from_number {
     ($($number:ident),*$(,)?) => {
         $(
@@ -254,45 +264,18 @@ macro_rules! from_number {
     };
 }
 
-from_number!(
-    u8,
-    u16,
-    u32,
-    u64,
-    i8,
-    i16,
-    i32,
-    i64,
-    f32,
-    f64,
-);
+from_number!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
 
-impl From<String> for Value {
-    fn from(string: String) -> Self {
-        Value::String(string)
-    }
-}
-impl From<bool> for Value {
-    fn from(boolean: bool) -> Self {
-        Value::Boolean(boolean)
-    }
-}
-
-impl From<HashMap<String, Rc<RefCell<Value>>>> for Value {
-    fn from(hashmap: HashMap<String, Rc<RefCell<Value>>>) -> Self {
-        Value::Object(hashmap)
-    }
-}
-impl From<HashMap<String, Value>> for Value {
-    fn from(hashmap: HashMap<String, Value>) -> Self {
-        Value::Object(
-            hashmap
-                .into_iter()
-                .map(|(k, v)| (k, Rc::new(RefCell::new(v))))
-                .collect(),
-        )
-    }
-}
+from_t!(impl String: string => Value::String(string));
+from_t!(impl bool: bool => Value::Boolean(bool));
+from_t!(impl Number: number => Value::Number(number));
+from_t!(impl HashMap<String, Rc<RefCell<Value>>>: hashmap => Value::Object(hashmap));
+from_t!(impl HashMap<String, Value>: hashmap => Value::Object(
+    hashmap
+        .into_iter()
+        .map(|(k, v)| (k, Rc::new(RefCell::new(v))))
+        .collect(),
+));
 
 impl FunctionParam for Spanned<Value> {
     type Item<'world, 'env, 'reg> = Self;
@@ -371,27 +354,45 @@ macro_rules! impl_function_param_for_value {
     };
 }
 macro_rules! impl_function_param_for_numbers {
-    ($($number:ident),*$(,)?) => {
+    ($generic:ident ($($number:ident),*$(,)?)) => {
         $(
-            impl_function_param_for_value!(impl $number: Value::Number(Number::$number(number)) => number);
+            impl FunctionParam for $number {
+                type Item<'world, 'env, 'reg> = Self;
+                const USES_VALUE: bool = true;
+
+                fn get<'world, 'env, 'reg>(
+                    value: Option<Spanned<Value>>,
+                    _: &mut Option<&'world mut World>,
+                    _: &mut Option<&'env mut Environment>,
+                    _: &'reg [&'reg TypeRegistration],
+                ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+                    match value.unwrap().value {
+                        Value::Number(Number::$number(value)) => Ok(value),
+                        Value::Number(Number::$generic(value)) => Ok(value as $number),
+                        _ => todo!()
+                    }
+                }
+            }
+            impl TryFrom<Value> for $number {
+                type Error = RunError;
+
+                fn try_from(value: Value) -> Result<Self, Self::Error> {
+                    match value {
+                        Value::Number(Number::$number(value)) => Ok(value),
+                        Value::Number(Number::$generic(value)) => Ok(value as $number),
+                        _ => todo!()
+                    }
+                }
+            }
         )*
     };
 }
 
-impl_function_param_for_numbers!(
-    u8,
-    u16,
-    u32,
-    u64,
-    i8,
-    i16,
-    i32,
-    i64,
-    f32,
-    f64,
-);
+impl_function_param_for_numbers!(Float(f32, f64));
+impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, i8, i16, i32, i64));
 
 impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
+impl_function_param_for_value!(impl Number: Value::Number(number) => number);
 impl_function_param_for_value!(impl String: Value::String(string) => string);
 impl_function_param_for_value!(impl HashMap<String, Rc<RefCell<Value>>>: Value::Object(object) => object);
 impl_function_param_for_value!(impl HashMap<String, Value>: Value::Object(object) => {

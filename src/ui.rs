@@ -115,8 +115,18 @@ pub(crate) fn render_ui(
                 .auto_shrink([false, true])
                 .show(ui, |ui| {
                     ui.vertical(|ui| {
+                        let mut command_index = 0;
+
                         for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
-                            add_log(ui, id, message, is_new, &mut hints, &config);
+                            add_log(
+                                ui,
+                                id,
+                                message,
+                                is_new,
+                                &mut hints,
+                                &config,
+                                &mut command_index,
+                            );
                         }
                     });
                 });
@@ -130,14 +140,13 @@ fn add_log(
     is_new: &mut bool,
     hints: &mut CommandHints,
     config: &ConsoleConfig,
+    command_index: &mut usize,
 ) {
-    let mut command_index = 0;
-
     ui.push_id(id, |ui| {
         let time_utc = system_time_to_chrono_utc(event.time);
         let time: DateTime<chrono::Local> = time_utc.into();
 
-        let text = format_line(time, config, event, *is_new, &mut command_index, hints);
+        let text = format_line(time, config, event, *is_new, command_index, hints);
         let label = ui.label(text);
 
         if *is_new {

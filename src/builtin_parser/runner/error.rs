@@ -38,6 +38,11 @@ pub enum RunError {
     },
     CannotMoveOutOfResource(Spanned<String>),
     CannotNegateUnsignedInteger(Spanned<Number>),
+    IncompatibleNumberTypes {
+        left: &'static str,
+        right: &'static str,
+        span: Span
+    },
 }
 
 impl RunError {
@@ -58,7 +63,8 @@ impl RunError {
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound { span, .. } => vec![span.clone()],
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
-            CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()]
+            CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
+            IncompatibleNumberTypes { span, .. } => vec![span.clone()],
         }
     }
     pub fn hints(&self) -> Vec<CommandHint> {
@@ -99,6 +105,12 @@ impl RunError {
                 value.kind()
             )
             .into(),
+            IncompatibleNumberTypes {
+                left,
+                right,
+                ..
+            } => format!("Incompatible number types; `{left}` and `{right}` are incompatible.")
+                .into(),
         }
     }
 }

@@ -14,7 +14,7 @@ use self::{
 
 use super::{
     parser::{Ast, Expression, Operator},
-    Spanned,
+    Number, SpanExtension, Spanned,
 };
 use bevy::{
     prelude::*,
@@ -291,11 +291,11 @@ fn eval_expression(
 
             match (left, right) {
                 (Value::Number(left), Value::Number(right)) => Ok(Value::Number(match operator {
-                    Operator::Add => (left + right)?,
-                    Operator::Sub => (left - right)?,
-                    Operator::Mul => (left * right)?,
-                    Operator::Div => (left / right)?,
-                    Operator::Mod => (left % right)?,
+                    Operator::Add => Number::add(left, right, expr.span)?,
+                    Operator::Sub => Number::sub(left, right, expr.span)?,
+                    Operator::Mul => Number::mul(left, right, expr.span)?,
+                    Operator::Div => Number::div(left, right, expr.span)?,
+                    Operator::Mod => Number::rem(left, right, expr.span)?,
                 })),
                 (left, right) => todo!("{left:#?}, {right:#?}"),
             }

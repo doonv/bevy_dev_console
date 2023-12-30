@@ -266,6 +266,7 @@ fn parse_primary(
                 if let Some(Function { argument_count, .. }) =
                     environment.get_function(tokens.slice())
                 {
+                    dbg!(argument_count);
                     let name = tokens.slice().to_string();
                     let start = tokens.span().start;
                     let mut arguments = Vec::new();
