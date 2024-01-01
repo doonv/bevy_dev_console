@@ -12,10 +12,28 @@ use crate::command::{CommandParser, DefaultCommandParser};
 use self::{lexer::TokenStream, parser::parse};
 
 pub(crate) mod lexer;
+pub(crate) mod number;
 pub(crate) mod parser;
 pub(crate) mod runner;
 
+pub use number::*;
 pub use runner::{environment::Environment, error::RunError, unique_rc::*, Value};
+
+/// Additonal traits for span.
+pub trait SpanExtension {
+    /// Wrap this value with a [`Spanned`].
+    fn wrap<T>(self, value: T) -> Spanned<T>;
+    /// Combine two [`Span`]s into one.
+    fn join(self, span: Self) -> Self;
+}
+impl SpanExtension for Span {
+    fn wrap<T>(self, value: T) -> Spanned<T> {
+        Spanned { span: self, value }
+    }
+    fn join(self, span: Self) -> Self {
+        self.start..span.end
+    }
+}
 
 /// Wrapper around `T` that stores a [Span] (A location in the source code)
 #[derive(Debug, Clone)]

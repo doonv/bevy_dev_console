@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::{cell::RefCell, rc::Rc};
 
+use crate::builtin_parser::number::Number;
 use crate::builtin_parser::{Environment, StrongRef};
 
 use super::environment::FunctionParam;
@@ -22,8 +23,8 @@ use logos::Span;
 pub enum Value {
     /// Nothing at all
     None,
-    /// A number, for simplicity only f64s are used. (However this will probably change in the future)
-    Number(f64),
+    /// A number.
+    Number(Number),
     /// `true` or `false`. Thats it...
     Boolean(bool),
     /// A string... there isn't much to say about this one.
@@ -54,7 +55,7 @@ impl Value {
     pub fn reflect(self) -> Box<dyn Reflect> {
         match self {
             Value::None => Box::new(()),
-            Value::Number(number) => Box::new(number),
+            Value::Number(number) => number.reflect(),
             Value::Boolean(boolean) => Box::new(boolean),
             Value::String(string) => Box::new(string),
             Value::Reference(reference) => todo!(),
@@ -134,7 +135,7 @@ impl Value {
     pub fn kind(&self) -> &'static str {
         match self {
             Value::None => "nothing",
-            Value::Number(_) => "a number",
+            Value::Number(number) => number.kind(),
             Value::Boolean(_) => "a boolean",
             Value::String(_) => "a string",
             Value::Reference(_) => "a reference",
@@ -241,37 +242,40 @@ impl From<()> for Value {
         Value::None
     }
 }
-impl From<f64> for Value {
-    fn from(number: f64) -> Self {
-        Value::Number(number)
-    }
+
+macro_rules! from_t {
+    (impl $type:ty: $var:ident => $expr:expr) => {
+        impl From<$type> for Value {
+            fn from($var: $type) -> Self {
+                $expr
+            }
+        }
+    };
 }
-impl From<String> for Value {
-    fn from(string: String) -> Self {
-        Value::String(string)
-    }
-}
-impl From<bool> for Value {
-    fn from(boolean: bool) -> Self {
-        Value::Boolean(boolean)
-    }
+macro_rules! from_number {
+    ($($number:ident),*$(,)?) => {
+        $(
+            impl From<$number> for Value {
+                fn from(number: $number) -> Self {
+                    Value::Number(Number::$number(number))
+                }
+            }
+        )*
+    };
 }
 
-impl From<HashMap<String, Rc<RefCell<Value>>>> for Value {
-    fn from(hashmap: HashMap<String, Rc<RefCell<Value>>>) -> Self {
-        Value::Object(hashmap)
-    }
-}
-impl From<HashMap<String, Value>> for Value {
-    fn from(hashmap: HashMap<String, Value>) -> Self {
-        Value::Object(
-            hashmap
-                .into_iter()
-                .map(|(k, v)| (k, Rc::new(RefCell::new(v))))
-                .collect(),
-        )
-    }
-}
+from_number!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+
+from_t!(impl String: string => Value::String(string));
+from_t!(impl bool: bool => Value::Boolean(bool));
+from_t!(impl Number: number => Value::Number(number));
+from_t!(impl HashMap<String, Rc<RefCell<Value>>>: hashmap => Value::Object(hashmap));
+from_t!(impl HashMap<String, Value>: hashmap => Value::Object(
+    hashmap
+        .into_iter()
+        .map(|(k, v)| (k, Rc::new(RefCell::new(v))))
+        .collect(),
+));
 
 impl FunctionParam for Spanned<Value> {
     type Item<'world, 'env, 'reg> = Self;
@@ -286,7 +290,7 @@ impl FunctionParam for Spanned<Value> {
         Ok(value.unwrap())
     }
 }
-impl<T: TryFrom<Value, Error = RunError>> FunctionParam for Spanned<T> {
+impl<T: TryFrom<Spanned<Value>, Error = RunError>> FunctionParam for Spanned<T> {
     type Item<'world, 'env, 'reg> = Self;
     const USES_VALUE: bool = true;
 
@@ -298,8 +302,8 @@ impl<T: TryFrom<Value, Error = RunError>> FunctionParam for Spanned<T> {
     ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
         let value = value.unwrap();
         Ok(Spanned {
-            span: value.span,
-            value: T::try_from(value.value)?,
+            span: value.span.clone(),
+            value: T::try_from(value)?,
         })
     }
 }
@@ -329,18 +333,23 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
             ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
-                if let $value_pattern = value.unwrap().value {
+                let value = value.unwrap();
+                if let $value_pattern = value.value {
                     Ok($return)
                 } else {
-                    todo!()
+                    Err(RunError::IncompatibleFunctionParameter {
+                        expected: stringify!($type),
+                        actual: value.value.kind(),
+                        span: value.span,
+                    })
                 }
             }
         }
-        impl TryFrom<Value> for $type {
+        impl TryFrom<Spanned<Value>> for $type {
             type Error = RunError;
 
-            fn try_from(value: Value) -> Result<Self, Self::Error> {
-                if let $value_pattern = value {
+            fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+                if let $value_pattern = value.value {
                     Ok($return)
                 } else {
                     todo!()
@@ -349,8 +358,55 @@ macro_rules! impl_function_param_for_value {
         }
     };
 }
-impl_function_param_for_value!(impl f64: Value::Number(number) => number);
+macro_rules! impl_function_param_for_numbers {
+    ($generic:ident ($($number:ident),*$(,)?)) => {
+        $(
+            impl FunctionParam for $number {
+                type Item<'world, 'env, 'reg> = Self;
+                const USES_VALUE: bool = true;
+
+                fn get<'world, 'env, 'reg>(
+                    value: Option<Spanned<Value>>,
+                    _: &mut Option<&'world mut World>,
+                    _: &mut Option<&'env mut Environment>,
+                    _: &'reg [&'reg TypeRegistration],
+                ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+                    let value = value.unwrap();
+                    match value.value {
+                        Value::Number(Number::$number(value)) => Ok(value),
+                        Value::Number(Number::$generic(value)) => Ok(value as $number),
+                        _ => Err(RunError::IncompatibleFunctionParameter {
+                            expected: concat!("a ", stringify!($number)),
+                            actual: value.value.kind(),
+                            span: value.span,
+                        })
+                    }
+                }
+            }
+            impl TryFrom<Spanned<Value>> for $number {
+                type Error = RunError;
+
+                fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+                    match value.value {
+                        Value::Number(Number::$number(value)) => Ok(value),
+                        Value::Number(Number::$generic(value)) => Ok(value as $number),
+                        _ => Err(RunError::IncompatibleFunctionParameter {
+                            expected: concat!("a ", stringify!($number)),
+                            actual: value.value.kind(),
+                            span: value.span
+                        })
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_function_param_for_numbers!(Float(f32, f64));
+impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, i8, i16, i32, i64));
+
 impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
+impl_function_param_for_value!(impl Number: Value::Number(number) => number);
 impl_function_param_for_value!(impl String: Value::String(string) => string);
 impl_function_param_for_value!(impl HashMap<String, Rc<RefCell<Value>>>: Value::Object(object) => object);
 impl_function_param_for_value!(impl HashMap<String, Value>: Value::Object(object) => {

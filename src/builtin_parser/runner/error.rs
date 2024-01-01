@@ -3,7 +3,7 @@ use std::borrow::Cow;
 use logos::Span;
 
 use crate::{
-    builtin_parser::Spanned,
+    builtin_parser::{number::Number, Spanned},
     command::{CommandHint, CommandHintColor},
 };
 
@@ -11,6 +11,7 @@ use super::Value;
 
 /// An error occuring during the while executing the [`AST`](Ast) of the command.
 #[derive(Debug)]
+#[allow(missing_docs)]
 pub enum RunError {
     /// A custom text message. Contains very little contextual information, try to find an existing error instead.
     Custom {
@@ -37,6 +38,17 @@ pub enum RunError {
         span: Span,
     },
     CannotMoveOutOfResource(Spanned<String>),
+    CannotNegateUnsignedInteger(Spanned<Number>),
+    IncompatibleNumberTypes {
+        left: &'static str,
+        right: &'static str,
+        span: Span,
+    },
+    IncompatibleFunctionParameter {
+        expected: &'static str,
+        actual: &'static str,
+        span: Span,
+    },
 }
 
 impl RunError {
@@ -57,12 +69,15 @@ impl RunError {
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound { span, .. } => vec![span.clone()],
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
+            CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
+            IncompatibleNumberTypes { span, .. } => vec![span.clone()],
+            IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
         }
     }
     pub fn hints(&self) -> Vec<CommandHint> {
         self.spans()
             .into_iter()
-            .map(|span| CommandHint::new(span, CommandHintColor::Error, "todo"))
+            .map(|span| CommandHint::new(span, CommandHintColor::Error, self.message()))
             .collect()
     }
     pub fn message(&self) -> Cow<'static, str> {
@@ -91,6 +106,21 @@ impl RunError {
             EnumVariantNotFound { name, span } => todo!(),
             CannotMoveOutOfResource(Spanned { value, .. }) => {
                 format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()
+            }
+            CannotNegateUnsignedInteger(Spanned { value, .. }) => format!(
+                "Unsigned integers cannot be negated. (Type: {})",
+                value.kind()
+            )
+            .into(),
+            IncompatibleNumberTypes { left, right, .. } => {
+                format!("Incompatible number types; `{left}` and `{right}` are incompatible.")
+                    .into()
+            }
+            IncompatibleFunctionParameter {
+                expected, actual, ..
+            } => {
+                format!("Mismatched function paramater type. Expected {expected} but got {actual}")
+                    .into()
             }
         }
     }

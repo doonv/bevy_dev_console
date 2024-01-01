@@ -5,7 +5,7 @@ use bevy::{
     prelude::*,
 };
 use bevy_dev_console::{
-    builtin_parser::{Environment, RunError, Spanned, StrongRef, Value},
+    builtin_parser::{Environment, Number, RunError, Spanned, StrongRef, Value},
     prelude::*,
     register,
 };
@@ -20,7 +20,9 @@ fn time_since_epoch() {
     info!("The unix epoch was {} seconds ago", time.as_secs());
 }
 
-/// Function with parameters and return value
+/// Function with parameters and return value.
+///
+/// Note that this will cause an error if an integer to passed to this function.
 fn add(num1: f64, num2: f64) -> f64 {
     num1 + num2
 }
@@ -37,24 +39,25 @@ fn print_debug_info(value: Spanned<Value>) {
 struct MyCounter(u32);
 
 /// Function with [`World`]
-fn increment_global_counter(world: &mut World) -> f64 {
+fn increment_global_counter(world: &mut World) -> u32 {
     world.resource_scope(|_, mut counter: Mut<MyCounter>| {
         counter.0 += 1;
 
-        counter.0 as f64
+        counter.0
     })
 }
 
 // Function with reference (Syntax subject to change soon)
 fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), RunError> {
+    let span = number.span;
     let mut reference = number.value.borrow_mut();
     if let Value::Number(number) = &mut *reference {
-        *number += 1.0;
+        *number = Number::add(*number, Number::Integer(1), span).unwrap();
         Ok(())
     } else {
         Err(RunError::Custom {
             text: "Oh nooo".to_string(),
-            span: number.span,
+            span,
         })
     }
 }

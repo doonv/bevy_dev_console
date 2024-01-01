@@ -1,10 +1,11 @@
 //! Generates an abstract syntax tree from a list of tokens.
 
 use logos::Span;
-use std::collections::HashMap;
+use std::{collections::HashMap, num::IntErrorKind};
 
 use super::{
     lexer::{FailedToLexCharacter, Token, TokenStream},
+    number::Number,
     runner::environment::Function,
     Environment, Spanned,
 };
@@ -39,7 +40,7 @@ pub enum Expression {
         name: Box<Spanned<Expression>>,
         value: Box<Spanned<Expression>>,
     },
-    Number(f64),
+    Number(Number),
     Variable(String),
     BinaryOp {
         left: Box<Spanned<Expression>>,
@@ -92,6 +93,9 @@ pub enum ParseError {
     },
     ExpectedEndline(Spanned<Token>),
     UnexpectedToken(Spanned<Token>),
+    InvalidSuffixForDecimal(std::ops::Range<usize>),
+    NegativeIntOverflow(Span),
+    PositiveIntOverflow(Span),
 }
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
@@ -129,7 +133,14 @@ fn parse_expression(
             }
 
             let loop_count = match parse_additive(tokens, environment)?.value {
-                Expression::Number(number) => number as u64,
+                Expression::Number(Number::u8(number)) => number as u64,
+                Expression::Number(Number::u16(number)) => number as u64,
+                Expression::Number(Number::u32(number)) => number as u64,
+                Expression::Number(Number::u64(number)) => number,
+                Expression::Number(Number::i8(number)) => number as u64,
+                Expression::Number(Number::i16(number)) => number as u64,
+                Expression::Number(Number::i32(number)) => number as u64,
+                Expression::Number(Number::i64(number)) => number as u64,
                 t => todo!("{t:?}"),
             };
 
@@ -255,6 +266,7 @@ fn parse_primary(
                 if let Some(Function { argument_count, .. }) =
                     environment.get_function(tokens.slice())
                 {
+                    dbg!(argument_count);
                     let name = tokens.slice().to_string();
                     let start = tokens.span().start;
                     let mut arguments = Vec::new();
@@ -296,14 +308,79 @@ fn parse_primary(
             let expr = parse_primary(tokens, environment)?;
             Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
         }
-        Some(Ok(Token::Number)) => {
-            Ok(tokens.wrap_span(Expression::Number(tokens.slice().parse().unwrap())))
+        Some(Ok(Token::IntegerNumber)) => {
+            if let Some(Ok(Token::NumberType)) = tokens.peek() {
+                let err_map = |error: std::num::ParseIntError| match error.kind() {
+                    IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(tokens.span()),
+                    IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(tokens.span()),
+                    _ => unreachable!("lexer makes sure other errors arent possible"),
+                };
+                let number: Number = match tokens.peek_slice() {
+                    "u8" => Number::u8(tokens.slice().parse().map_err(err_map)?),
+                    "u16" => Number::u16(tokens.slice().parse().map_err(err_map)?),
+                    "u32" => Number::u32(tokens.slice().parse().map_err(err_map)?),
+                    "u64" => Number::u64(tokens.slice().parse().map_err(err_map)?),
+                    "i8" => Number::i8(tokens.slice().parse().map_err(err_map)?),
+                    "i16" => Number::i16(tokens.slice().parse().map_err(err_map)?),
+                    "i32" => Number::i32(tokens.slice().parse().map_err(err_map)?),
+                    "i64" => Number::i64(tokens.slice().parse().map_err(err_map)?),
+                    "f32" => Number::f32(tokens.slice().parse().unwrap()),
+                    "f64" => Number::f64(tokens.slice().parse().unwrap()),
+                    _ => unreachable!(),
+                };
+                let start_span = tokens.span().end;
+                tokens.next();
+
+                Ok(Spanned {
+                    span: start_span..tokens.span().end,
+                    value: Expression::Number(number),
+                })
+            } else {
+                let number = Number::Integer(tokens.slice().parse().unwrap());
+
+                Ok(Spanned {
+                    span: tokens.span(),
+                    value: Expression::Number(number),
+                })
+            }
+        }
+        Some(Ok(Token::FloatNumber)) => {
+            if let Some(Ok(Token::NumberType)) = tokens.peek() {
+                let number: Number = match tokens.peek_slice() {
+                    "u8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "u16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "u32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "u64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "i8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "i16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "i32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "i64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                    "f32" => Number::f32(tokens.slice().parse().unwrap()),
+                    "f64" => Number::f64(tokens.slice().parse().unwrap()),
+                    _ => unreachable!(),
+                };
+                let start_span = tokens.span().end;
+
+                tokens.next();
+
+                Ok(Spanned {
+                    span: start_span..tokens.span().end,
+                    value: Expression::Number(number),
+                })
+            } else {
+                let number = Number::Float(tokens.slice().parse().unwrap());
+
+                Ok(Spanned {
+                    span: tokens.span(),
+                    value: Expression::Number(number),
+                })
+            }
         }
         Some(Ok(Token::True)) => Ok(tokens.wrap_span(Expression::Boolean(true))),
         Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
         Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
         Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
-        None => unreachable!("oh fuck what have i done to cause this to happen"),
+        None => todo!(),
     }?;
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
