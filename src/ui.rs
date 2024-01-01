@@ -214,7 +214,7 @@ fn format_line(
                 hints.reset_hint_added();
             }
             let hints = &hints[*command_index];
-            
+
             *command_index += 1;
 
             // TODO: Handle more than just he first element
