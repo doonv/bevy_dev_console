@@ -154,8 +154,7 @@ macro_rules! impl_into_function {
                                 world,
                                 environment,
                                 registrations
-                            )
-                            .unwrap_or_else(|_| todo!());
+                            )?;
 
                             res
                         }),+)?
@@ -320,7 +319,7 @@ impl Environment {
 
     /// Registers a function for use inside the language.
     ///
-    /// All parameters must implement [`TryFrom<Value>`].
+    /// All parameters must implement [`FunctionParam`].
     /// There is a limit of 8 parameters.
     ///
     /// The return value of the function must implement [`Into<Value>`]

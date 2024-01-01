@@ -79,7 +79,7 @@ pub enum CommandHintColor {
 
 /// A resource where hints (errors/warnings/etc) are stored
 /// to be displayed in the developer console.
-#[derive(Resource, Default, Deref)]
+#[derive(Resource, Debug, Default, Deref)]
 pub struct CommandHints {
     #[deref]
     hints: Vec<Vec<CommandHint>>,
@@ -95,13 +95,16 @@ impl CommandHints {
                 hints.into()
             )
         } else {
+            self.hint_added = true;
             self.hints.push(hints.into());
         }
     }
     pub(crate) fn reset_hint_added(&mut self) {
         if self.hint_added {
+            dbg!("yeah");
             self.hint_added = false;
         } else {
+            dbg!("nah");
             self.push([]);
         }
     }
@@ -121,7 +124,7 @@ impl CommandHints {
 ///     fn parse(&self, command: &str, world: &mut World) {
 ///         // The `name: COMMAND_RESULT_NAME` tells the console this is a result from
 ///         // the parser and then formats it accordingly.
-///         // TODO: figure out better solution for this
+/// #       // TODO: figure out better solution for this
 ///         info!(name: COMMAND_RESULT_NAME, "You just entered the command {command}")
 ///     }
 /// }

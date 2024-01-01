@@ -20,8 +20,10 @@ fn time_since_epoch() {
     info!("The unix epoch was {} seconds ago", time.as_secs());
 }
 
-/// Function with parameters and return value
-fn add(num1: Spanned<Number>, num2: Spanned<Number>) -> Result<Number, RunError> {
+/// Function with parameters and return value.
+///
+/// Note that this will cause an error if an integer to passed to this function.
+fn add(num1: f64, num2: f64) -> f64 {
     num1 + num2
 }
 

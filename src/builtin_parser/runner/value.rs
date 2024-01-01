@@ -135,7 +135,7 @@ impl Value {
     pub fn kind(&self) -> &'static str {
         match self {
             Value::None => "nothing",
-            Value::Number(_) => "a number",
+            Value::Number(number) => number.kind(),
             Value::Boolean(_) => "a boolean",
             Value::String(_) => "a string",
             Value::Reference(_) => "a reference",
@@ -290,7 +290,7 @@ impl FunctionParam for Spanned<Value> {
         Ok(value.unwrap())
     }
 }
-impl<T: TryFrom<Value, Error = RunError>> FunctionParam for Spanned<T> {
+impl<T: TryFrom<Spanned<Value>, Error = RunError>> FunctionParam for Spanned<T> {
     type Item<'world, 'env, 'reg> = Self;
     const USES_VALUE: bool = true;
 
@@ -302,8 +302,8 @@ impl<T: TryFrom<Value, Error = RunError>> FunctionParam for Spanned<T> {
     ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
         let value = value.unwrap();
         Ok(Spanned {
-            span: value.span,
-            value: T::try_from(value.value)?,
+            span: value.span.clone(),
+            value: T::try_from(value)?,
         })
     }
 }
@@ -333,18 +333,23 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
             ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
-                if let $value_pattern = value.unwrap().value {
+                let value = value.unwrap();
+                if let $value_pattern = value.value {
                     Ok($return)
                 } else {
-                    todo!()
+                    Err(RunError::IncompatibleFunctionParameter {
+                        expected: stringify!($type),
+                        actual: value.value.kind(),
+                        span: value.span,
+                    })
                 }
             }
         }
-        impl TryFrom<Value> for $type {
+        impl TryFrom<Spanned<Value>> for $type {
             type Error = RunError;
 
-            fn try_from(value: Value) -> Result<Self, Self::Error> {
-                if let $value_pattern = value {
+            fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+                if let $value_pattern = value.value {
                     Ok($return)
                 } else {
                     todo!()
@@ -366,21 +371,30 @@ macro_rules! impl_function_param_for_numbers {
                     _: &mut Option<&'env mut Environment>,
                     _: &'reg [&'reg TypeRegistration],
                 ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
-                    match value.unwrap().value {
+                    let value = value.unwrap();
+                    match value.value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => todo!()
+                        _ => Err(RunError::IncompatibleFunctionParameter {
+                            expected: concat!("a ", stringify!($number)),
+                            actual: value.value.kind(),
+                            span: value.span,
+                        })
                     }
                 }
             }
-            impl TryFrom<Value> for $number {
+            impl TryFrom<Spanned<Value>> for $number {
                 type Error = RunError;
 
-                fn try_from(value: Value) -> Result<Self, Self::Error> {
-                    match value {
+                fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
+                    match value.value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => todo!()
+                        _ => Err(RunError::IncompatibleFunctionParameter {
+                            expected: concat!("a ", stringify!($number)),
+                            actual: value.value.kind(),
+                            span: value.span
+                        })
                     }
                 }
             }

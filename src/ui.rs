@@ -215,6 +215,8 @@ fn format_line(
             }
             let hints = &hints[*command_index];
 
+            *command_index += 1;
+
             // TODO: Handle more than just he first element
             if let Some(hint) = hints.first() {
                 const PREFIX_LEN: usize = COMMAND_MESSAGE_PREFIX.len();
@@ -239,7 +241,6 @@ fn format_line(
                 );
                 return text;
             }
-            *command_index += 1;
         }
         text.append(message.as_str(), 0.0, config.theme.format_text());
 

@@ -11,6 +11,7 @@ use super::Value;
 
 /// An error occuring during the while executing the [`AST`](Ast) of the command.
 #[derive(Debug)]
+#[allow(missing_docs)]
 pub enum RunError {
     /// A custom text message. Contains very little contextual information, try to find an existing error instead.
     Custom {
@@ -43,6 +44,11 @@ pub enum RunError {
         right: &'static str,
         span: Span,
     },
+    IncompatibleFunctionParameter {
+        expected: &'static str,
+        actual: &'static str,
+        span: Span,
+    },
 }
 
 impl RunError {
@@ -65,6 +71,7 @@ impl RunError {
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
             CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
             IncompatibleNumberTypes { span, .. } => vec![span.clone()],
+            IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
         }
     }
     pub fn hints(&self) -> Vec<CommandHint> {
@@ -107,6 +114,12 @@ impl RunError {
             .into(),
             IncompatibleNumberTypes { left, right, .. } => {
                 format!("Incompatible number types; `{left}` and `{right}` are incompatible.")
+                    .into()
+            }
+            IncompatibleFunctionParameter {
+                expected, actual, ..
+            } => {
+                format!("Mismatched function paramater type. Expected {expected} but got {actual}")
                     .into()
             }
         }

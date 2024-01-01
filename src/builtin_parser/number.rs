@@ -53,18 +53,18 @@ impl Number {
     /// Returns a [`&'static str`](str) represents the kind of the number.
     pub fn kind(&self) -> &'static str {
         match self {
-            Number::Float(_) => "(float)",
-            Number::Integer(_) => "(integer)",
-            Number::u8(_) => "u8",
-            Number::u16(_) => "u16",
-            Number::u32(_) => "u32",
-            Number::u64(_) => "u64",
-            Number::i8(_) => "i8",
-            Number::i16(_) => "i16",
-            Number::i32(_) => "i32",
-            Number::i64(_) => "i64",
-            Number::f32(_) => "f32",
-            Number::f64(_) => "f64",
+            Number::Float(_) => "a float",
+            Number::Integer(_) => "an integer",
+            Number::u8(_) => "a u8",
+            Number::u16(_) => "a u16",
+            Number::u32(_) => "a u32",
+            Number::u64(_) => "a u64",
+            Number::i8(_) => "a i8",
+            Number::i16(_) => "a i16",
+            Number::i32(_) => "a i32",
+            Number::i64(_) => "a i64",
+            Number::f32(_) => "a f32",
+            Number::f64(_) => "a f64",
         }
     }
 }
