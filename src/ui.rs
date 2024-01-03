@@ -17,7 +17,9 @@ use crate::{
     prelude::ConsoleConfig,
 };
 
+/// The prefix for commands
 const COMMAND_MESSAGE_PREFIX: &str = "$ ";
+const COMMAND_RESULT_PREFIX: &str = "> ";
 /// Identifier for log messages that show a previous command.
 pub const COMMAND_MESSAGE_NAME: &str = "console_command";
 /// Identifier for log messages that show the result of a history
@@ -217,7 +219,7 @@ fn format_line(
 
             *command_index += 1;
 
-            // TODO: Handle more than just he first element
+            // TODO: Handle more than just the first element
             if let Some(hint) = hints.first() {
                 const PREFIX_LEN: usize = COMMAND_MESSAGE_PREFIX.len();
 
@@ -241,10 +243,12 @@ fn format_line(
                 );
                 return text;
             }
+            text.append(message.as_str(), 0.0, config.theme.format_text());
+            return text;
+        } else { // COMMAND_RESULT_NAME
+            text.append(COMMAND_RESULT_PREFIX, 0.0, config.theme.format_dark())
         }
-        text.append(message.as_str(), 0.0, config.theme.format_text());
 
-        return text;
     }
     text.append(level.as_str(), 0.0, config.theme.format_level(*level));
     text.append(&format!(" {message}"), 0.0, config.theme.format_text());

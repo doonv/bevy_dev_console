@@ -92,7 +92,7 @@ pub fn run(ast: Ast, world: &mut World) {
             match value {
                 Ok(Value::None) => {}
                 Ok(value) => match value.try_format(span, world, &registrations) {
-                    Ok(value) => info!(name: COMMAND_RESULT_NAME, "> {value}"),
+                    Ok(value) => info!(name: COMMAND_RESULT_NAME, "{value}"),
                     Err(err) => error!("{err:?}"),
                 },
                 Err(err) => {

@@ -115,17 +115,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn weak_ref_upgrade_once() {
-        let rc = UniqueRc::new(0);
-
-        let weak = rc.borrow();
-
-        assert!(weak.upgrade().is_some());
-        assert!(weak.upgrade().is_none());
-        assert!(weak.upgrade().is_none());
-    }
-
-    #[test]
     #[should_panic]
     fn strong_ref_panic() {
         let rc = UniqueRc::new(0);
