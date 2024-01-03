@@ -52,6 +52,7 @@ pub enum RunError {
 }
 
 impl RunError {
+    /// Get all the locations of the error in the source.
     pub fn spans(&self) -> Vec<Span> {
         use RunError::*;
 

@@ -22,9 +22,10 @@ impl<T: ?Sized> UniqueRc<T> {
     unsafe fn get_rc(&self) -> &Rc<RefCell<T>> {
         &self.0
     }
-    pub fn borrow_inner(&self) -> &RefCell<T> {
+    pub(crate) fn borrow_inner(&self) -> &RefCell<T> {
         &self.0
     }
+    /// Create a new weak pointer to this [`UniqueRc`].
     pub fn borrow(&self) -> WeakRef<T> {
         WeakRef::new(self)
     }
@@ -34,6 +35,7 @@ impl<T> UniqueRc<T> {
     pub fn new(value: T) -> UniqueRc<T> {
         UniqueRc(Rc::new(RefCell::new(value)))
     }
+    /// Get the inner value (`T`) of this [`UniqueRc<T>`].
     pub fn into_inner(self) -> T {
         Rc::try_unwrap(self.0)
             .unwrap_or_else(|rc| {
@@ -58,10 +60,10 @@ impl<T> DerefMut for UniqueRc<T> {
     }
 }
 
+/// A weak reference to a [`UniqueRc`] may or may not exist.
 #[derive(Debug)]
 pub struct WeakRef<T: ?Sized> {
     reference: Weak<RefCell<T>>,
-    upgraded: Cell<bool>,
 }
 impl<T: ?Sized> WeakRef<T> {
     fn new(unique_rc: &UniqueRc<T>) -> Self {
@@ -69,32 +71,25 @@ impl<T: ?Sized> WeakRef<T> {
         let rc = unsafe { unique_rc.get_rc() };
         Self {
             reference: Rc::downgrade(rc),
-            upgraded: Cell::new(false),
         }
     }
+    /// Converts this [`WeakRef`] into a [`StrongRef`] (may be unsafe, see [`StrongRef`]'s documentation).
     pub fn upgrade(&self) -> Option<StrongRef<T>> {
-        if !self.upgraded.get() {
-            self.upgraded.set(true);
-            unsafe { self.upgrade_unchecked() }
-        } else {
-            None
-        }
-    }
-    unsafe fn upgrade_unchecked(&self) -> Option<StrongRef<T>> {
         Some(StrongRef(self.reference.upgrade()?))
     }
 }
 
-/// A reference to value `T`.
+/// A strong reference to value `T`.
 ///
-/// This value is *technically* unsafe, but in practice the only way
-/// you could obtain it is by having it passed into a custom function.
+/// This value is *technically* unsafe due to [`UniqueRc`] expecting only one strong reference to its inner value.
+/// However in practice the only way you could obtain it is by having it passed into a custom function.
+/// In which case it is safe (probably).
 ///
 /// ```
 /// use bevy_dev_console::builtin_parser::{Value, StrongRef};
 ///
 /// fn add_to_reference(my_reference: StrongRef<Value>, add: String) {
-///     // currently you can only do it with `Value`
+///     // currently you can only do it with `Value` (TODO)
 ///     if let Value::String(string) = &mut *my_reference.borrow_mut() {
 ///         *string += &add;
 ///     } else {

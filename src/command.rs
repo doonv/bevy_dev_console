@@ -1,9 +1,6 @@
 //! Command execution functionality.
 
-use std::{
-    borrow::Cow,
-    ops::{Bound, Range, RangeBounds},
-};
+use std::{borrow::Cow, ops::Range};
 
 use bevy::{ecs::system::Command, prelude::*};
 
@@ -40,6 +37,7 @@ pub struct CommandHint {
     pub description: Cow<'static, str>,
 }
 impl CommandHint {
+    /// Creates a new [`CommandHint`].
     pub fn new(
         span: Range<usize>,
         color: CommandHintColor,
@@ -102,11 +100,11 @@ impl CommandHints {
     pub(crate) fn reset_hint_added(&mut self) {
         if self.hint_added {
             dbg!("yeah");
-            self.hint_added = false;
         } else {
             dbg!("nah");
             self.push([]);
         }
+        self.hint_added = false;
     }
 }
 

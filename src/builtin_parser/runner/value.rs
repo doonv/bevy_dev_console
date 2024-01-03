@@ -32,10 +32,11 @@ pub enum Value {
     /// A reference.
     ///
     /// References are very similar to rust's ownership and borrowing.
-    /// We achieve this by storing every variable as a [`Rc<RefCell<Value>>`],
-    /// and having only the owner of the value have a strong reference,
+    /// We achieve this by storing every variable as a [`UniqueRc<T>`](super::unique_rc::UniqueRc)
+    /// (which is essentially just [`Rc<RefCell<T>>`]
+    /// but having only the owner of the value have a strong reference,
     /// while every other value has a weak reference. This causes
-    /// [`Rc::try_unwrap`] to succeed every time.
+    /// [`Rc::try_unwrap`] to succeed every time)
     Reference(WeakRef<Value>),
     /// A dynamic [`HashMap`].
     Object(HashMap<String, Rc<RefCell<Value>>>),
@@ -132,6 +133,8 @@ impl Value {
         }
     }
 
+    /// Returns the kind of [`Value`] as a [string slice](str).
+    /// Used for more natural sounding error messages.
     pub fn kind(&self) -> &'static str {
         match self {
             Value::None => "nothing",
@@ -403,7 +406,7 @@ macro_rules! impl_function_param_for_numbers {
 }
 
 impl_function_param_for_numbers!(Float(f32, f64));
-impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, i8, i16, i32, i64));
+impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize));
 
 impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
 impl_function_param_for_value!(impl Number: Value::Number(number) => number);

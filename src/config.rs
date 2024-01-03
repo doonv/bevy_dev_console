@@ -111,6 +111,7 @@ impl ConsoleTheme {
         }
     }
 
+    /// Returns a [`TextFormat`] with a color based on the [`Level`] and the [`ConsoleTheme`].
     pub fn format_level(&self, level: Level) -> TextFormat {
         TextFormat {
             color: self.color_level(level),
@@ -118,6 +119,7 @@ impl ConsoleTheme {
         }
     }
 
+    /// Returns a [`TextFormat`] with the default font and color.
     pub fn format_text(&self) -> TextFormat {
         TextFormat {
             font_id: self.font.clone(),

@@ -76,10 +76,12 @@ pub enum Token {
     #[token("i16")]
     #[token("i32")]
     #[token("i64")]
+    #[token("isize")]
     #[token("u8")]
     #[token("u16")]
     #[token("u32")]
     #[token("u64")]
+    #[token("usize")]
     #[token("f32")]
     #[token("f64")]
     NumberType,

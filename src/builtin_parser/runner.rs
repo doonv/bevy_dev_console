@@ -14,7 +14,7 @@ use self::{
 
 use super::{
     parser::{Ast, Expression, Operator},
-    Number, SpanExtension, Spanned,
+    Number, Spanned,
 };
 use bevy::{
     prelude::*,
@@ -132,6 +132,7 @@ fn eval_expression(
                         registrations,
                     },
                 )?;
+
                 *variable.upgrade().unwrap().borrow_mut() = value;
 
                 Ok(Value::Reference(variable))
