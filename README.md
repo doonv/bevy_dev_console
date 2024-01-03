@@ -43,10 +43,10 @@
 
 ## Togglable Features
 
-`builtin-parser (default)` allows you to optionally remove the built-in parser and replace it with your own.
+`builtin-parser (default)` includes the default parser. Disabling this allows you to remove the built-in parser and replace it with your own (or you could do nothing and make the console into a log reader).
 
 ## Bevy Compatibility
 
 | bevy   | bevy_dev_console |
 | ------ | ---------------- |
-| 0.12.* | 0.1.0            |
+| 0.12.* | git (master)     |
