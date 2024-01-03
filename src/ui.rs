@@ -245,10 +245,10 @@ fn format_line(
             }
             text.append(message.as_str(), 0.0, config.theme.format_text());
             return text;
-        } else { // COMMAND_RESULT_NAME
+        } else {
+            // COMMAND_RESULT_NAME
             text.append(COMMAND_RESULT_PREFIX, 0.0, config.theme.format_dark())
         }
-
     }
     text.append(level.as_str(), 0.0, config.theme.format_level(*level));
     text.append(&format!(" {message}"), 0.0, config.theme.format_text());
