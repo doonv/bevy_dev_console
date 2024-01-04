@@ -350,4 +350,10 @@ impl Environment {
 
         self
     }
+    /// Iterate over all the variables and functions in the current scope of the environment.
+    ///
+    /// Does not include variables and functions from higher scopes.
+    pub fn iter(&self) -> std::collections::hash_map::Iter<String, Variable> {
+        self.variables.iter()
+    }
 }

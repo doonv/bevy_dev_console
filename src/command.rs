@@ -98,10 +98,7 @@ impl CommandHints {
         }
     }
     pub(crate) fn reset_hint_added(&mut self) {
-        if self.hint_added {
-            dbg!("yeah");
-        } else {
-            dbg!("nah");
+        if !self.hint_added {
             self.push([]);
         }
         self.hint_added = false;

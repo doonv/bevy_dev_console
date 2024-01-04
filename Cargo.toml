@@ -18,7 +18,7 @@ tracing-log = "0.2.0"
 tracing-subscriber = "0.3.18"
 web-time = "0.2.4"
 
-# builtin-parser feature
+# builtin-parser features
 logos = { version = "0.13.0", optional = true }
 
 [target.'cfg(target_os = "android")'.dependencies]

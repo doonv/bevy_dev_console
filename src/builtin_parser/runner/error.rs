@@ -16,7 +16,7 @@ pub enum RunError {
     /// A custom text message. Contains very little contextual information, try to find an existing error instead.
     Custom {
         /// The text of the message
-        text: String,
+        text: Cow<'static, str>,
         span: Span,
     },
     VariableNotFound(Spanned<String>),
@@ -24,7 +24,7 @@ pub enum RunError {
     InvalidVariantForResource(String, String),
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
-    CouldntDereferenceValue(Span),
+    CouldntDereferenceValue(Spanned<&'static str>),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
     CannotBorrowValue(Span),
@@ -63,7 +63,7 @@ impl RunError {
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(span) => vec![span.clone()],
             FieldNotFoundInStruct(span) => vec![span.clone()],
-            CouldntDereferenceValue(span) => vec![span.clone()],
+            CouldntDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
             ReferenceToMovedData(span) => vec![span.clone()],
             VariableMoved(Spanned { span, .. }) => vec![span.clone()],
             CannotBorrowValue(span) => vec![span.clone()],
@@ -97,7 +97,10 @@ impl RunError {
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(_) => todo!(),
             FieldNotFoundInStruct(_) => todo!(),
-            CouldntDereferenceValue(_) => todo!(),
+            CouldntDereferenceValue(Spanned { value, .. }) => format!(
+                "Dereferencing {value} is not possible. Only references can be dereferenced."
+            )
+            .into(),
             ReferenceToMovedData(_) => todo!(),
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
             CannotBorrowValue(_) => todo!(),

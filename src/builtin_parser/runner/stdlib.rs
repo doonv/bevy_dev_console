@@ -1,4 +1,4 @@
-use crate::register;
+use crate::{builtin_parser::runner::environment::Variable, register};
 use bevy::{ecs::world::World, log::info, reflect::TypeRegistration};
 use std::{cell::Ref, ops::Range};
 
@@ -54,7 +54,13 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
 }
 
 fn print_env(env: &mut Environment) {
-    info!("{env:?}");
+    for (name, variable) in env.iter() {
+        match variable {
+            Variable::Moved => info!("{name}: Moved"),
+            Variable::Unmoved(rc) => info!("{name}: {:?}", rc.borrow_inner().borrow()),
+            Variable::Function(_) => {}
+        }
+    }
 }
 
 /// Disposes of a [`Value`].

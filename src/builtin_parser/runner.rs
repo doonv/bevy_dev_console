@@ -30,6 +30,22 @@ pub mod value;
 
 pub use value::Value;
 
+/// Temporary macro that prevents panicking by replacing the [`todo!`] panic with an error message.
+macro_rules! todo_error {
+    () => {
+        Err(RunError::Custom {
+            text: "This error message is not yet implemented.".into(),
+            span: 0..0
+        })?
+    };
+    ($($arg:tt)+) => {
+        Err(RunError::Custom {
+            text: format!("This error message is not yet implemented: {}", format_args!($($arg)+)).into(),
+            span: 0..0
+        })?
+    };
+}
+
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'world, 'env, 'reg> {
     world: &'world mut World,
@@ -228,7 +244,7 @@ fn eval_expression(
 
                                 dyn_enum.apply(&new_enum);
                             }
-                            _ => todo!(),
+                            _ => todo_error!(),
                         }
                     }
                     _ => {
@@ -307,14 +323,14 @@ fn eval_expression(
                     Operator::Div => Number::div(left, right, expr.span)?,
                     Operator::Mod => Number::rem(left, right, expr.span)?,
                 })),
-                (left, right) => todo!("{left:#?}, {right:#?}"),
+                (left, right) => todo_error!("{left:#?}, {right:#?}"),
             }
         }
         Expression::ForLoop {
             index_name,
             loop_count,
             block,
-        } => todo!("for loop {index_name}, {loop_count}, {block:#?}"),
+        } => todo_error!("for loop {index_name}, {loop_count}, {block:#?}"),
         Expression::Member { left, right } => eval_member_expression(
             *left,
             right,
@@ -366,9 +382,10 @@ fn eval_expression(
             )?;
             Ok(Value::Object(hashmap))
         }
-        Expression::Dereference(_inner) => {
-            todo!()
-        }
+        Expression::Dereference(_inner) => Err(RunError::Custom {
+            text: "Dereferencing without assignment is not possible at the moment. (TODO)".into(),
+            span: expr.span,
+        }),
         Expression::Borrow(inner) => {
             if let Expression::Variable(variable) = inner.value {
                 if let Some(registration) = registrations
@@ -491,7 +508,7 @@ fn eval_path(
 
             match left.value {
                 Path::Variable(variable) => {
-                    todo!()
+                    todo_error!()
                 }
                 Path::Resource(mut resource) => {
                     resource.path.push('.');
@@ -504,15 +521,19 @@ fn eval_path(
         }
         Expression::Dereference(inner) => {
             if let Expression::Variable(variable) = inner.value {
-                let rc = environment.get(&variable, inner.span)?;
-                let weak = rc.borrow();
-
-                Ok(expr.span.wrap(Path::Variable(weak)))
+                let value = environment.get(&variable, inner.span)?;
+                if let Value::Reference(ref reference) = &*value.borrow_inner().borrow() {
+                    Ok(expr.span.wrap(Path::Variable(reference.clone())))
+                } else {
+                    Err(RunError::CouldntDereferenceValue(
+                        expr.span.wrap(value.borrow_inner().borrow().kind()),
+                    ))
+                }
             } else {
-                Err(RunError::CannotBorrowValue(expr.span))
+                todo_error!()
             }
         }
-        expr => todo!("{expr:#?}"),
+        expr => todo_error!("{expr:#?}"),
     }
 }
 

@@ -66,6 +66,13 @@ impl<T> DerefMut for UniqueRc<T> {
 pub struct WeakRef<T: ?Sized> {
     reference: Weak<RefCell<T>>,
 }
+impl<T: ?Sized> Clone for WeakRef<T> {
+    fn clone(&self) -> Self {
+        Self {
+            reference: self.reference.clone(),
+        }
+    }
+}
 impl<T: ?Sized> WeakRef<T> {
     fn new(unique_rc: &UniqueRc<T>) -> Self {
         // SAFETY: We are not cloning the `Rc`, so this is fine.

@@ -56,7 +56,7 @@ fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), RunError> {
         Ok(())
     } else {
         Err(RunError::Custom {
-            text: "Oh nooo".to_string(),
+            text: "Oh nooo".into(),
             span,
         })
     }
