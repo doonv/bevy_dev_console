@@ -108,7 +108,9 @@ pub fn run(ast: Ast, world: &mut World) {
             match value {
                 Ok(Value::None) => {}
                 Ok(value) => match value.try_format(span, world, &registrations) {
-                    Ok(value) => info!(name: COMMAND_RESULT_NAME, "{value}"),
+                    Ok(value) => {
+                        info!(name: COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX)
+                    }
                     Err(err) => error!("{err:?}"),
                 },
                 Err(err) => {
@@ -520,17 +522,31 @@ fn eval_path(
             }
         }
         Expression::Dereference(inner) => {
-            if let Expression::Variable(variable) = inner.value {
-                let value = environment.get(&variable, inner.span)?;
-                if let Value::Reference(ref reference) = &*value.borrow_inner().borrow() {
-                    Ok(expr.span.wrap(Path::Variable(reference.clone())))
-                } else {
-                    Err(RunError::CouldntDereferenceValue(
-                        expr.span.wrap(value.borrow_inner().borrow().kind()),
-                    ))
+            let path = eval_path(
+                *inner,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            match path.value {
+                Path::Variable(value) => {
+                    let strong = value
+                        .upgrade()
+                        .ok_or(RunError::ReferenceToMovedData(path.span))?;
+                    let borrow = strong.borrow();
+
+                    if let Value::Reference(ref reference) = &*borrow {
+                        Ok(expr.span.wrap(Path::Variable(reference.clone())))
+                    } else {
+                        Err(RunError::CouldntDereferenceValue(
+                            expr.span.wrap(borrow.kind()),
+                        ))
+                    }
                 }
-            } else {
-                todo_error!()
+                Path::NewVariable(_) => todo_error!(),
+                Path::Resource(_) => todo_error!(),
             }
         }
         expr => todo_error!("{expr:#?}"),

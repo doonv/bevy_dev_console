@@ -220,17 +220,19 @@ fn format_line(
 
             *command_index += 1;
 
+            let message_stripped = message
+                .strip_prefix(COMMAND_MESSAGE_PREFIX)
+                .unwrap_or(message);
+            text.append(COMMAND_MESSAGE_PREFIX, 0.0, config.theme.format_dark());
             // TODO: Handle more than just the first element
             if let Some(hint) = hints.first() {
-                const PREFIX_LEN: usize = COMMAND_MESSAGE_PREFIX.len();
-
                 text.append(
-                    &message[..hint.span.start + PREFIX_LEN],
+                    &message_stripped[..hint.span.start],
                     0.,
                     config.theme.format_text(),
                 );
                 text.append(
-                    &message[hint.span.start + PREFIX_LEN..hint.span.end + PREFIX_LEN],
+                    &message_stripped[hint.span.start..hint.span.end],
                     0.,
                     TextFormat {
                         underline: Stroke::new(1.0, config.theme.error.to_color32()),
@@ -238,18 +240,24 @@ fn format_line(
                     },
                 );
                 text.append(
-                    &message[hint.span.end + PREFIX_LEN..],
+                    &message_stripped[hint.span.end..],
                     0.,
                     config.theme.format_text(),
                 );
                 return text;
             }
-            text.append(message.as_str(), 0.0, config.theme.format_text());
+            text.append(message_stripped, 0.0, config.theme.format_text());
             text
         }
         COMMAND_RESULT_NAME => {
             text.append(COMMAND_RESULT_PREFIX, 0.0, config.theme.format_dark());
-            text.append(message.as_str(), 0.0, config.theme.format_text());
+            text.append(
+                message
+                    .strip_prefix(COMMAND_RESULT_PREFIX)
+                    .unwrap_or(message),
+                0.0,
+                config.theme.format_text(),
+            );
             text
         }
         _ => {

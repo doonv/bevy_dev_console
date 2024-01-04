@@ -63,8 +63,6 @@ impl CommandParser for BuiltinCommandParser {
         let ast = parse(&mut tokens, &environment);
         world.insert_non_send_resource(environment);
 
-        dbg!(&ast);
-
         match ast {
             Ok(ast) => {
                 runner::run(ast, world);
