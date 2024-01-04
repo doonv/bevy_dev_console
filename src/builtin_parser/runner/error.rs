@@ -19,14 +19,14 @@ pub enum RunError {
         text: String,
         span: Span,
     },
-    VariableNotFound(Span),
+    VariableNotFound(Spanned<String>),
     ExpectedNumberAfterUnaryOperator(Spanned<Value>),
     InvalidVariantForResource(String, String),
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
     CouldntDereferenceValue(Span),
     ReferenceToMovedData(Span),
-    VariableMoved(Span),
+    VariableMoved(Spanned<String>),
     CannotBorrowValue(Span),
     IncompatibleReflectTypes {
         expected: String,
@@ -58,14 +58,14 @@ impl RunError {
 
         match self {
             Custom { span, .. } => vec![span.clone()],
-            VariableNotFound(span) => vec![span.clone()],
+            VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
             ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(span) => vec![span.clone()],
             FieldNotFoundInStruct(span) => vec![span.clone()],
             CouldntDereferenceValue(span) => vec![span.clone()],
             ReferenceToMovedData(span) => vec![span.clone()],
-            VariableMoved(span) => vec![span.clone()],
+            VariableMoved(Spanned { span, .. }) => vec![span.clone()],
             CannotBorrowValue(span) => vec![span.clone()],
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound { span, .. } => vec![span.clone()],
@@ -86,7 +86,9 @@ impl RunError {
 
         match self {
             Custom { text, .. } => text.clone().into(),
-            VariableNotFound(_) => "Variable not found.".into(),
+            VariableNotFound(Spanned { value, .. }) => {
+                format!("Variable `{value}` not found.").into()
+            }
             ExpectedNumberAfterUnaryOperator(Spanned { value, .. }) => format!(
                 "Expected a number after unary operator (-) but got {} instead.",
                 value.kind()
@@ -97,7 +99,7 @@ impl RunError {
             FieldNotFoundInStruct(_) => todo!(),
             CouldntDereferenceValue(_) => todo!(),
             ReferenceToMovedData(_) => todo!(),
-            VariableMoved(_) => todo!(),
+            VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
             CannotBorrowValue(_) => todo!(),
             IncompatibleReflectTypes {
                 expected,

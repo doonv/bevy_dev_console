@@ -17,12 +17,13 @@ use crate::{
     prelude::ConsoleConfig,
 };
 
-/// The prefix for commands
-const COMMAND_MESSAGE_PREFIX: &str = "$ ";
-const COMMAND_RESULT_PREFIX: &str = "> ";
+/// Prefix for log messages that show a previous command.
+pub const COMMAND_MESSAGE_PREFIX: &str = "$ ";
+/// Prefix for log messages that show the result of a command.
+pub const COMMAND_RESULT_PREFIX: &str = "> ";
 /// Identifier for log messages that show a previous command.
 pub const COMMAND_MESSAGE_NAME: &str = "console_command";
-/// Identifier for log messages that show the result of a history
+/// Identifier for log messages that show the result of a command.
 pub const COMMAND_RESULT_NAME: &str = "console_result";
 
 #[derive(Default, Resource)]
@@ -210,8 +211,8 @@ fn format_line(
         0.0,
         config.theme.format_dark(),
     );
-    if *name == COMMAND_MESSAGE_NAME || *name == COMMAND_RESULT_NAME {
-        if *name == COMMAND_MESSAGE_NAME {
+    match *name {
+        COMMAND_MESSAGE_NAME => {
             if new {
                 hints.reset_hint_added();
             }
@@ -244,14 +245,18 @@ fn format_line(
                 return text;
             }
             text.append(message.as_str(), 0.0, config.theme.format_text());
-            return text;
-        } else {
-            // COMMAND_RESULT_NAME
-            text.append(COMMAND_RESULT_PREFIX, 0.0, config.theme.format_dark())
+            text
+        }
+        COMMAND_RESULT_NAME => {
+            text.append(COMMAND_RESULT_PREFIX, 0.0, config.theme.format_dark());
+            text.append(message.as_str(), 0.0, config.theme.format_text());
+            text
+        }
+        _ => {
+            text.append(level.as_str(), 0.0, config.theme.format_level(*level));
+            text.append(&format!(" {message}"), 0.0, config.theme.format_text());
+
+            text
         }
     }
-    text.append(level.as_str(), 0.0, config.theme.format_level(*level));
-    text.append(&format!(" {message}"), 0.0, config.theme.format_text());
-
-    text
 }

@@ -14,7 +14,7 @@ use self::{
 
 use super::{
     parser::{Ast, Expression, Operator},
-    Number, Spanned,
+    Number, Spanned, SpanExtension,
 };
 use bevy::{
     prelude::*,
@@ -482,7 +482,7 @@ fn eval_path(
                         value: Path::Resource(resource),
                     })
                 }
-                Path::NewVariable(_) => Err(RunError::VariableNotFound(left.span)),
+                Path::NewVariable(name) => Err(RunError::VariableNotFound(left.span.wrap(name))),
             }
         }
         _ => todo!(),

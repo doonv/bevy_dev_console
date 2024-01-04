@@ -5,6 +5,8 @@ use std::collections::HashMap;
 use bevy::{ecs::world::World, log::warn, reflect::TypeRegistration};
 use logos::Span;
 
+use crate::builtin_parser::SpanExtension;
+
 use super::{
     super::{parser::Expression, Spanned},
     error::RunError,
@@ -258,9 +260,9 @@ impl Environment {
 
         match env.variables.get(name) {
             Some(Variable::Unmoved(value)) => Ok(value),
-            Some(Variable::Moved) => Err(RunError::VariableMoved(span)),
+            Some(Variable::Moved) => Err(RunError::VariableMoved(span.wrap(name.to_string()))),
             Some(Variable::Function(_)) => todo!(),
-            None => Err(RunError::VariableNotFound(span)),
+            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 
@@ -272,7 +274,7 @@ impl Environment {
         let (env, span) = self.resolve_mut(name, span)?;
 
         match env.variables.get_mut(name) {
-            Some(Variable::Moved) => Err(RunError::VariableMoved(span)),
+            Some(Variable::Moved) => Err(RunError::VariableMoved(span.wrap(name.to_string()))),
             Some(Variable::Function(_)) => todo!(),
             Some(variable_reference) => {
                 let Variable::Unmoved(reference) = variable_reference else {
@@ -292,7 +294,7 @@ impl Environment {
                 };
                 Ok(value.into_inner())
             }
-            None => Err(RunError::VariableNotFound(span)),
+            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 
@@ -303,7 +305,7 @@ impl Environment {
 
         match &self.parent {
             Some(parent) => parent.resolve(name, span),
-            None => Err(RunError::VariableNotFound(span)),
+            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
     fn resolve_mut(&mut self, name: &str, span: Span) -> Result<(&mut Self, Span), RunError> {
@@ -313,7 +315,7 @@ impl Environment {
 
         match &mut self.parent {
             Some(parent) => parent.resolve_mut(name, span),
-            None => Err(RunError::VariableNotFound(span)),
+            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 

@@ -62,7 +62,7 @@ fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), RunError> {
     }
 }
 
-// For more example take a look at the standard library.
+// For more examples take a look at the standard library.
 
 // Register our functions by creating and inserting our own environment
 fn custom_environment() -> Environment {
