@@ -11,6 +11,7 @@ use std::{
 /// reference.
 ///
 /// **TODO:** This is actually going to be a standard library feature. Use [`alloc::rc::UniqueRc`] when it is stabilized.
+#[derive(Debug)]
 pub struct UniqueRc<T: ?Sized>(Rc<RefCell<T>>);
 impl<T: ?Sized> UniqueRc<T> {
     /// Get a reference to the inner [`Rc`] of [`UniqueRc`].

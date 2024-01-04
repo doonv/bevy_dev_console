@@ -1,6 +1,6 @@
 //! Environment and function registeration
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use bevy::{ecs::world::World, log::warn, reflect::TypeRegistration};
 use logos::Span;
@@ -90,6 +90,13 @@ pub type FunctionType = dyn FnMut(Vec<Spanned<Expression>>, EvalParams) -> Resul
 pub struct Function {
     pub argument_count: usize,
     pub body: Box<FunctionType>,
+}
+impl Debug for Function {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Function")
+            .field("argument_count", &self.argument_count)
+            .finish_non_exhaustive()
+    }
 }
 
 /// Trait that represents a [`Fn`] that can be turned into a [`Function`].
@@ -184,6 +191,7 @@ impl_into_function!(T1, T2, T3, T4, T5, T6, T7);
 impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
 
 /// A variable inside the [`Environment`].
+#[derive(Debug)]
 pub enum Variable {
     Unmoved(UniqueRc<Value>),
     Moved,
@@ -191,6 +199,7 @@ pub enum Variable {
 }
 
 /// The environment stores all variables and functions.
+#[derive(Debug)]
 pub struct Environment {
     parent: Option<Box<Environment>>,
     variables: HashMap<String, Variable>,

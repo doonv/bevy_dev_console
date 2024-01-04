@@ -53,6 +53,10 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
     })
 }
 
+fn print_env(env: &mut Environment) {
+    info!("{env:?}");
+}
+
 /// Disposes of a [`Value`].
 fn drop(_: Value) {}
 
@@ -62,5 +66,6 @@ pub fn register(environment: &mut Environment) {
         fn dbg;
         fn ref_depth;
         fn drop;
+        fn print_env;
     });
 }

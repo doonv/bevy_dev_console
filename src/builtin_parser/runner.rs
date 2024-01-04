@@ -14,7 +14,7 @@ use self::{
 
 use super::{
     parser::{Ast, Expression, Operator},
-    Number, Spanned, SpanExtension,
+    Number, SpanExtension, Spanned,
 };
 use bevy::{
     prelude::*,
@@ -122,7 +122,16 @@ fn eval_expression(
         Expression::VarAssign {
             name,
             value: value_expr,
-        } => match eval_path(*name, environment, registrations)?.value {
+        } => match eval_path(
+            *name,
+            EvalParams {
+                world,
+                environment,
+                registrations,
+            },
+        )?
+        .value
+        {
             Path::Variable(variable) => {
                 let value = eval_expression(
                     *value_expr,
@@ -442,8 +451,11 @@ enum Path {
 
 fn eval_path(
     expr: Spanned<Expression>,
-    environment: &Environment,
-    registrations: &[&TypeRegistration],
+    EvalParams {
+        world,
+        environment,
+        registrations,
+    }: EvalParams,
 ) -> Result<Spanned<Path>, RunError> {
     match expr.value {
         Expression::Variable(variable) => {
@@ -468,7 +480,14 @@ fn eval_path(
             }
         }
         Expression::Member { left, right } => {
-            let left = eval_path(*left, environment, registrations)?;
+            let left = eval_path(
+                *left,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
 
             match left.value {
                 Path::Variable(variable) => {
@@ -477,15 +496,23 @@ fn eval_path(
                 Path::Resource(mut resource) => {
                     resource.path.push('.');
                     resource.path += &right;
-                    Ok(Spanned {
-                        span: left.span,
-                        value: Path::Resource(resource),
-                    })
+
+                    Ok(left.span.wrap(Path::Resource(resource)))
                 }
                 Path::NewVariable(name) => Err(RunError::VariableNotFound(left.span.wrap(name))),
             }
         }
-        _ => todo!(),
+        Expression::Dereference(inner) => {
+            if let Expression::Variable(variable) = inner.value {
+                let rc = environment.get(&variable, inner.span)?;
+                let weak = rc.borrow();
+
+                Ok(expr.span.wrap(Path::Variable(weak)))
+            } else {
+                Err(RunError::CannotBorrowValue(expr.span))
+            }
+        }
+        expr => todo!("{expr:#?}"),
     }
 }
 
