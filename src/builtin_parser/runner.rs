@@ -18,7 +18,10 @@ use super::{
 };
 use bevy::{
     prelude::*,
-    reflect::{DynamicEnum, Enum, ReflectMut, TypeInfo, TypeRegistration},
+    reflect::{
+        DynamicEnum, DynamicStruct, Enum, ReflectMut, ReflectRef, TypeInfo, TypeRegistration,
+        VariantInfo,
+    },
 };
 
 pub mod environment;
@@ -199,38 +202,51 @@ fn eval_expression(
                                 if enum_info.contains_variant(&variable) {
                                     let new_enum = DynamicEnum::new(variable, ());
 
-                                    dyn_enum.set(Box::new(new_enum)).map_err(|new_enum| {
-                                        RunError::IncompatibleReflectTypes {
-                                            span,
-                                            expected: dyn_enum.variant_name().to_string(),
-                                            actual: new_enum
-                                                .downcast::<DynamicEnum>()
-                                                .unwrap()
-                                                .variant_name()
-                                                .to_string(),
-                                        }
-                                    })
+                                    dyn_enum.apply(&new_enum);
                                 } else {
                                     Err(RunError::EnumVariantNotFound {
                                         name: variable,
                                         span,
-                                    })
-                                }?
+                                    })?
+                                }
                             }
                             Expression::StructObject { name, map } => {
-                                let map: HashMap<String, Value> = map
+                                let variant_info = enum_info.variant(&name).ok_or(
+                                    RunError::EnumVariantNotFound {
+                                        name: name.clone(),
+                                        span: span.clone(),
+                                    },
+                                )?;
+                                let VariantInfo::Struct(variant_info) = variant_info else {
+                                    return todo_error!("{variant_info:?}");
+                                };
+
+                                let map: HashMap<_, _> = map
                                     .into_iter()
                                     .map(|(k, v)| {
+                                        let ty = variant_info
+                                            .field(&k)
+                                            .ok_or(RunError::EnumVariantStructFieldNotFound {
+                                                field_name: k.clone(),
+                                                variant_name: name.clone(),
+                                                span: span.clone(),
+                                            })?
+                                            .type_path_table()
+                                            .short_path()
+                                            .to_owned();
                                         Ok((
                                             k,
-                                            eval_expression(
-                                                v,
-                                                EvalParams {
-                                                    world,
-                                                    environment,
-                                                    registrations,
-                                                },
-                                            )?,
+                                            (
+                                                eval_expression(
+                                                    v,
+                                                    EvalParams {
+                                                        world,
+                                                        environment,
+                                                        registrations,
+                                                    },
+                                                )?,
+                                                ty,
+                                            ),
                                         ))
                                     })
                                     .collect::<Result<_, _>>()?;
@@ -251,6 +267,7 @@ fn eval_expression(
                     }
                     _ => {
                         let span = value_expr.span.clone();
+                        let ty = reflect.reflect_short_type_path().to_owned();
                         let value = eval_expression(
                             *value_expr,
                             EvalParams {
@@ -259,7 +276,7 @@ fn eval_expression(
                                 registrations,
                             },
                         )?;
-                        let value_reflect = value.reflect();
+                        let value_reflect = value.reflect(&ty);
 
                         let mut dyn_reflect = resource.mut_dyn_reflect(world, registrations);
 

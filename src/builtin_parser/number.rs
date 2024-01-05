@@ -24,20 +24,18 @@ pub enum Number {
     u32(u32),
     u64(u64),
     usize(usize),
-
     i8(i8),
     i16(i16),
     i32(i32),
     i64(i64),
     isize(isize),
-
     f32(f32),
     f64(f64),
 }
 
 impl Number {
     /// Converts this into a [`Box<dyn Reflect>`](Reflect).
-    pub fn reflect(self) -> Box<dyn Reflect> {
+    pub fn reflect(self, ty: &str) -> Box<dyn Reflect> {
         match self {
             Number::u8(number) => Box::new(number),
             Number::u16(number) => Box::new(number),
@@ -51,8 +49,24 @@ impl Number {
             Number::isize(number) => Box::new(number),
             Number::f32(number) => Box::new(number),
             Number::f64(number) => Box::new(number),
-            Number::Integer(_) => todo!(),
-            Number::Float(_) => todo!(),
+            Number::Integer(number) => match ty {
+                "u8" => Box::new(number as u8),
+                "u16" => Box::new(number as u16),
+                "u32" => Box::new(number as u32),
+                "u64" => Box::new(number as u64),
+                "usize" => Box::new(number as usize),
+                "i8" => Box::new(number as i8),
+                "i16" => Box::new(number as i16),
+                "i32" => Box::new(number as i32),
+                "i64" => Box::new(number as i64),
+                "isize" => Box::new(number as isize),
+                ty => todo!("{ty:?}"),
+            },
+            Number::Float(number) => match ty {
+                "f32" => Box::new(number as f32),
+                "f64" => Box::new(number),
+                ty => todo!("{ty:?}"),
+            },
         }
     }
 

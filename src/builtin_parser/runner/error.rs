@@ -49,6 +49,11 @@ pub enum RunError {
         actual: &'static str,
         span: Span,
     },
+    EnumVariantStructFieldNotFound {
+        field_name: String,
+        variant_name: String,
+        span: Span,
+    },
 }
 
 impl RunError {
@@ -69,6 +74,7 @@ impl RunError {
             CannotBorrowValue(span) => vec![span.clone()],
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound { span, .. } => vec![span.clone()],
+            EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
             CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
             IncompatibleNumberTypes { span, .. } => vec![span.clone()],
@@ -105,11 +111,18 @@ impl RunError {
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
             CannotBorrowValue(_) => todo!(),
             IncompatibleReflectTypes {
-                expected,
-                actual,
-                span,
-            } => todo!(),
+                expected, actual, ..
+            } => format!(
+                "Cannot set incompatible reflect types. Expected `{expected}`, got `{actual}`"
+            )
+            .into(),
             EnumVariantNotFound { name, span } => todo!(),
+            EnumVariantStructFieldNotFound {
+                field_name,
+                variant_name,
+                ..
+            } => format!("Field `{field_name}` doesn't exist on struct variant `{variant_name}`.")
+                .into(),
             CannotMoveOutOfResource(Spanned { value, .. }) => {
                 format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()
             }

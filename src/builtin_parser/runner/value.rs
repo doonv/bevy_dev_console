@@ -53,10 +53,12 @@ pub enum Value {
 
 impl Value {
     /// Converts this value into a [`Box<dyn Reflect>`].
-    pub fn reflect(self) -> Box<dyn Reflect> {
+    ///
+    /// `ty` is used for type inference.
+    pub fn reflect(self, ty: &str) -> Box<dyn Reflect> {
         match self {
             Value::None => Box::new(()),
-            Value::Number(number) => number.reflect(),
+            Value::Number(number) => number.reflect(ty),
             Value::Boolean(boolean) => Box::new(boolean),
             Value::String(string) => Box::new(string),
             Value::Reference(reference) => todo!(),
@@ -64,8 +66,10 @@ impl Value {
                 let mut dyn_struct = DynamicStruct::default();
 
                 for (name, value) in object {
-                    dyn_struct
-                        .insert_boxed(&name, Rc::try_unwrap(value).unwrap().into_inner().reflect());
+                    dyn_struct.insert_boxed(
+                        &name,
+                        Rc::try_unwrap(value).unwrap().into_inner().reflect(ty),
+                    );
                 }
 
                 Box::new(dyn_struct)

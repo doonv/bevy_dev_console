@@ -41,10 +41,10 @@ impl IntoResource {
     }
 }
 
-pub fn object_to_dynamic_struct(hashmap: HashMap<String, Value>) -> DynamicStruct {
+pub fn object_to_dynamic_struct(hashmap: HashMap<String, (Value, String)>) -> DynamicStruct {
     let mut dynamic_struct = DynamicStruct::default();
-    for (key, value) in hashmap {
-        dynamic_struct.insert_boxed(&key, value.reflect());
+    for (key, (value, reflect)) in hashmap {
+        dynamic_struct.insert_boxed(&key, value.reflect(&reflect));
     }
     dynamic_struct
 }

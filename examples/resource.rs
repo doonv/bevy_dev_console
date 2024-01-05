@@ -20,7 +20,7 @@ enum MyEnum {
 #[derive(Resource, Reflect, Default, Debug)]
 struct MyStruct {
     number1: f64,
-    number2: f64,
+    number2: i16,
     number3: f32,
     string: String,
 }
@@ -29,13 +29,13 @@ fn main() {
     App::new()
         .register_type::<MyEnum>()
         .init_resource::<MyEnum>()
-        .register_type::<MyStruct>()
         .insert_resource(MyStruct {
             number1: 52138.0,
-            number2: -123.8,
+            number2: -123,
             number3: 0.0,
             string: "hi there :)".to_string(),
         })
+        .register_type::<MyStruct>()
         .add_plugins((
             ConsoleLogPlugin::default(),
             DefaultPlugins.build().disable::<LogPlugin>(),

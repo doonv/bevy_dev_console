@@ -16,12 +16,12 @@ use super::{
 pub type Ast = Vec<Spanned<Expression>>;
 
 macro_rules! expect {
-    ($tokens:ident, $token:pat, $tokenexpr:expr) => {
+    ($tokens:ident, $($token:tt)+) => {
         match $tokens.next() {
-            Some(Ok($token)) => $tokenexpr,
+            Some(Ok($($token)+)) => ($($token)+) ,
             Some(Ok(token)) => {
                 return Err(ParseError::ExpectedTokenButGot {
-                    expected: $tokenexpr,
+                    expected: $($token)+,
                     got: token,
                     span: $tokens.span(),
                 })
@@ -171,9 +171,9 @@ fn parse_expression(
     })
 }
 fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
-    expect!(tokens, Token::LeftBracket, Token::LeftBracket);
+    expect!(tokens, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
-    expect!(tokens, Token::RightBracket, Token::RightBracket);
+    expect!(tokens, Token::RightBracket);
     Ok(ast)
 }
 fn parse_additive(
@@ -246,7 +246,7 @@ fn parse_primary(
                 })
             } else {
                 let expr = parse_expression(tokens, environment)?;
-                expect!(tokens, Token::RightParen, Token::RightParen);
+                expect!(tokens, Token::RightParen);
                 Ok(expr)
             }
         }
@@ -254,7 +254,7 @@ fn parse_primary(
             Some(Ok(Token::LeftBracket)) => {
                 let name = tokens.slice().to_string();
 
-                expect!(tokens, Token::LeftBracket, Token::LeftBracket);
+                expect!(tokens, Token::LeftBracket);
                 let map = parse_object(tokens, environment)?;
 
                 Ok(Spanned {
@@ -386,7 +386,7 @@ fn parse_primary(
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
         tokens.next(); // skip the dot
-        expect!(tokens, Token::Identifer, Token::Identifer);
+        expect!(tokens, Token::Identifer);
         let right = tokens.slice().to_string();
         expr = Spanned {
             span: expr.span.start..tokens.span().end,
@@ -430,7 +430,7 @@ fn parse_object(
     while let Some(Ok(Token::Identifer)) = tokens.peek() {
         tokens.next();
         let ident = tokens.slice().to_string();
-        expect!(tokens, Token::Colon, Token::Colon);
+        expect!(tokens, Token::Colon);
         let expr = parse_expression(tokens, environment)?;
         map.insert(ident, expr);
         match tokens.peek() {
@@ -441,7 +441,7 @@ fn parse_object(
             token => todo!("{token:?}"),
         }
     }
-    expect!(tokens, Token::RightBracket, Token::RightBracket);
+    expect!(tokens, Token::RightBracket);
     Ok(map)
 }
 
