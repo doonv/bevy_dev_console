@@ -12,7 +12,7 @@ enum MyEnum {
     Numero1,
     Structio {
         a: f64,
-        b: f64,
+        b: String,
     },
     Tupleo(String, f64),
 }

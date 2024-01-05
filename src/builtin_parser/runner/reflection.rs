@@ -7,7 +7,7 @@ use bevy::{
 
 use super::Value;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct IntoResource {
     pub id: TypeId,
     pub path: String,

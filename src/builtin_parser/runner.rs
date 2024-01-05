@@ -37,13 +37,13 @@ pub use value::Value;
 macro_rules! todo_error {
     () => {
         Err(RunError::Custom {
-            text: "This error message is not yet implemented.".into(),
+            text: concat!("todo error invoked at ", file!(), ":", line!(), ":", column!()).into(),
             span: 0..0
         })?
     };
     ($($arg:tt)+) => {
         Err(RunError::Custom {
-            text: format!("This error message is not yet implemented: {}", format_args!($($arg)+)).into(),
+            text: format!(concat!("todo error invoked at ", file!(), ":", line!(), ":", column!(), " : {}"), format_args!($($arg)+)).into(),
             span: 0..0
         })?
     };
@@ -526,9 +526,18 @@ fn eval_path(
             )?;
 
             match left.value {
-                Path::Variable(variable) => {
-                    todo_error!()
-                }
+                Path::Variable(variable) => match &*variable.upgrade().unwrap().borrow() {
+                    Value::Resource(resource) => {
+                        let mut resource = resource.clone();
+
+                        resource.path.push('.');
+                        resource.path += &right;
+
+                        Ok(left.span.wrap(Path::Resource(resource)))
+                    }
+                    Value::Object(object) => todo_error!("todo object indexing"),
+                    value => todo_error!("{value:?}"),
+                },
                 Path::Resource(mut resource) => {
                     resource.path.push('.');
                     resource.path += &right;
