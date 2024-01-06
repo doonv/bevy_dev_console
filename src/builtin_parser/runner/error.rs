@@ -83,17 +83,19 @@ impl RunError {
             ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
         }
     }
+    /// Returns all the hints for this error.
     pub fn hints(&self) -> Vec<CommandHint> {
         self.spans()
             .into_iter()
             .map(|span| CommandHint::new(span, CommandHintColor::Error, self.message()))
             .collect()
     }
+    /// A summary message explaining this error.
     pub fn message(&self) -> Cow<'static, str> {
         use RunError::*;
 
         match self {
-            Custom { text, .. } => text.clone().into(),
+            Custom { text, .. } => text.clone(),
             VariableNotFound(Spanned { value, .. }) => {
                 format!("Variable `{value}` not found.").into()
             }
