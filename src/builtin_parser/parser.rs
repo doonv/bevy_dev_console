@@ -93,9 +93,10 @@ pub enum ParseError {
     },
     ExpectedEndline(Spanned<Token>),
     UnexpectedToken(Spanned<Token>),
-    InvalidSuffixForDecimal(std::ops::Range<usize>),
+    InvalidSuffixForDecimal(Span),
     NegativeIntOverflow(Span),
     PositiveIntOverflow(Span),
+    ExpectObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
 }
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
@@ -381,7 +382,7 @@ fn parse_primary(
         Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
         Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
         Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
-        None => todo!(),
+        None => Err(ParseError::ExpectedMoreTokens(tokens.span())),
     }?;
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
@@ -438,7 +439,9 @@ fn parse_object(
             Some(Ok(Token::Comma)) => {
                 tokens.next();
             }
-            token => todo!("{token:?}"),
+            token => Err(ParseError::ExpectObjectContinuation(
+                tokens.wrap_span(token.clone()),
+            ))?,
         }
     }
     expect!(tokens, Token::RightBracket);

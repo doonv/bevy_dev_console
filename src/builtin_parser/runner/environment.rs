@@ -270,7 +270,9 @@ impl Environment {
         match env.variables.get(name) {
             Some(Variable::Unmoved(value)) => Ok(value),
             Some(Variable::Moved) => Err(RunError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => todo!(),
+            Some(Variable::Function(_)) => Err(RunError::ExpectedVariableGotFunction(
+                span.wrap(name.to_owned()),
+            )),
             None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
@@ -284,7 +286,9 @@ impl Environment {
 
         match env.variables.get_mut(name) {
             Some(Variable::Moved) => Err(RunError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => todo!(),
+            Some(Variable::Function(_)) => Err(RunError::ExpectedVariableGotFunction(
+                span.wrap(name.to_owned()),
+            )),
             Some(variable_reference) => {
                 let Variable::Unmoved(reference) = variable_reference else {
                     unreachable!()

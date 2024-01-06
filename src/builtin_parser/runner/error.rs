@@ -54,6 +54,7 @@ pub enum RunError {
         variant_name: String,
         span: Span,
     },
+    ExpectedVariableGotFunction(Spanned<String>),
 }
 
 impl RunError {
@@ -79,6 +80,7 @@ impl RunError {
             CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
             IncompatibleNumberTypes { span, .. } => vec![span.clone()],
             IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
+            ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
         }
     }
     pub fn hints(&self) -> Vec<CommandHint> {
@@ -140,6 +142,9 @@ impl RunError {
             } => {
                 format!("Mismatched function paramater type. Expected {expected} but got {actual}")
                     .into()
+            }
+            ExpectedVariableGotFunction(Spanned { value, .. }) => {
+                format!("Expected `{value}` to be a variable, but got a function instead.").into()
             }
         }
     }
