@@ -19,7 +19,7 @@ use super::{
 use bevy::{
     prelude::*,
     reflect::{
-        DynamicEnum, DynamicStruct, Enum, ReflectMut, ReflectRef, TypeInfo, TypeRegistration,
+        DynamicEnum, ReflectMut, TypeInfo, TypeRegistration,
         VariantInfo,
     },
 };
