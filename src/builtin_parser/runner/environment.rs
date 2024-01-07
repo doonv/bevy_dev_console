@@ -1,19 +1,20 @@
 //! Environment and function registeration
 
-use std::{collections::HashMap, fmt::Debug};
+use std::collections::HashMap;
+use std::fmt::Debug;
 
-use bevy::{ecs::world::World, log::warn, reflect::TypeRegistration};
+use bevy::ecs::world::World;
+use bevy::log::warn;
+use bevy::reflect::TypeRegistration;
 use logos::Span;
 
 use crate::builtin_parser::SpanExtension;
 
-use super::{
-    super::{parser::Expression, Spanned},
-    error::RunError,
-    eval_expression, stdlib,
-    unique_rc::UniqueRc,
-    EvalParams, Value,
-};
+use super::super::parser::Expression;
+use super::super::Spanned;
+use super::error::RunError;
+use super::unique_rc::UniqueRc;
+use super::{eval_expression, stdlib, EvalParams, Value};
 
 /// Macro for mass registering functions.
 ///

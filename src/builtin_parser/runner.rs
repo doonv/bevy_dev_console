@@ -1,25 +1,22 @@
 //! Executes the abstract syntax tree.
 
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use environment::Environment;
 
-use crate::{command::CommandHints, ui::COMMAND_RESULT_NAME};
+use crate::command::CommandHints;
+use crate::ui::COMMAND_RESULT_NAME;
 
-use self::{
-    error::RunError,
-    reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource},
-    unique_rc::{UniqueRc, WeakRef},
-};
+use self::error::RunError;
+use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
+use self::unique_rc::{UniqueRc, WeakRef};
 
-use super::{
-    parser::{Ast, Expression, Operator},
-    Number, SpanExtension, Spanned,
-};
-use bevy::{
-    prelude::*,
-    reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo},
-};
+use super::parser::{Ast, Expression, Operator};
+use super::{Number, SpanExtension, Spanned};
+use bevy::prelude::*;
+use bevy::reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo};
 
 pub mod environment;
 pub mod error;

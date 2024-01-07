@@ -1,8 +1,13 @@
-use crate::{builtin_parser::runner::environment::Variable, register};
-use bevy::{ecs::world::World, log::info, reflect::TypeRegistration};
-use std::{cell::Ref, ops::Range};
+use crate::builtin_parser::runner::environment::Variable;
+use crate::register;
+use bevy::ecs::world::World;
+use bevy::log::info;
+use bevy::reflect::TypeRegistration;
+use std::cell::Ref;
+use std::ops::Range;
 
-use super::{error::RunError, Environment, Spanned, Value};
+use super::error::RunError;
+use super::{Environment, Spanned, Value};
 
 fn print(
     value: Spanned<Value>,

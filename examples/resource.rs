@@ -2,7 +2,8 @@
 //!
 //! **Warning:** This is very experimental, might not work.
 
-use bevy::{log::LogPlugin, prelude::*};
+use bevy::log::LogPlugin;
+use bevy::prelude::*;
 use bevy_dev_console::prelude::*;
 
 #[derive(Resource, Reflect, Default, Debug)]

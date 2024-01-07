@@ -23,21 +23,21 @@ mod android_tracing;
 static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
+use bevy::ecs::event::{Event, EventWriter};
+use bevy::ecs::system::{Res, Resource};
+use bevy::log::trace;
 use bevy::utils::tracing::Subscriber;
 pub use bevy::utils::tracing::{warn, Level};
-use bevy::{
-    ecs::{
-        event::{Event, EventWriter},
-        system::{Res, Resource},
-    },
-    log::trace,
-};
 
 use bevy::app::{App, Plugin, Update};
 use tracing_log::LogTracer;
+use tracing_subscriber::field::Visit;
 #[cfg(feature = "tracing-chrome")]
 use tracing_subscriber::fmt::{format::DefaultFields, FormattedFields};
-use tracing_subscriber::{field::Visit, layer::Layer, prelude::*, registry::Registry, EnvFilter};
+use tracing_subscriber::layer::Layer;
+use tracing_subscriber::prelude::*;
+use tracing_subscriber::registry::Registry;
+use tracing_subscriber::EnvFilter;
 
 /// [`bevy_dev_console`](crate)'s custom [LogPlugin](bevy::log::LogPlugin).
 /// This plugin allows [`bevy_dev_console`](crate) to access Bevy logs

@@ -1,9 +1,7 @@
 //! A simple example
 
-use bevy::{
-    log::{Level, LogPlugin},
-    prelude::*,
-};
+use bevy::log::{Level, LogPlugin};
+use bevy::prelude::*;
 use bevy_dev_console::prelude::*;
 
 fn main() {

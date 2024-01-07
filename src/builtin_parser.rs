@@ -9,7 +9,8 @@ use logos::Span;
 
 use crate::command::{CommandParser, DefaultCommandParser};
 
-use self::{lexer::TokenStream, parser::parse};
+use self::lexer::TokenStream;
+use self::parser::parse;
 
 pub(crate) mod lexer;
 pub(crate) mod number;
@@ -17,7 +18,10 @@ pub(crate) mod parser;
 pub(crate) mod runner;
 
 pub use number::*;
-pub use runner::{environment::Environment, error::RunError, unique_rc::*, Value};
+pub use runner::environment::Environment;
+pub use runner::error::RunError;
+pub use runner::unique_rc::*;
+pub use runner::Value;
 
 /// Additonal traits for span.
 pub trait SpanExtension {

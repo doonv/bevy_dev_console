@@ -1,14 +1,16 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::{cell::RefCell, rc::Rc};
+use std::rc::Rc;
 
 use crate::builtin_parser::number::Number;
 use crate::builtin_parser::{Environment, StrongRef};
 
+use super::super::Spanned;
 use super::environment::FunctionParam;
+use super::error::RunError;
 use super::reflection::{CreateRegistration, IntoResource};
 use super::unique_rc::WeakRef;
-use super::{super::Spanned, error::RunError};
 
 use bevy::ecs::world::World;
 use bevy::reflect::{

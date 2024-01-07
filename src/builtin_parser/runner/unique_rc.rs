@@ -1,9 +1,7 @@
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    fmt::Debug,
-    ops::{Deref, DerefMut},
-    rc::{Rc, Weak},
-};
+use std::cell::{Ref, RefCell, RefMut};
+use std::fmt::Debug;
+use std::ops::{Deref, DerefMut};
+use std::rc::{Rc, Weak};
 
 /// A uniquely owned [`Rc`] with interior mutability. Interior mutability is abstracted away with [`WeakRef`].
 ///

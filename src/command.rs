@@ -1,8 +1,10 @@
 //! Command execution functionality.
 
-use std::{borrow::Cow, ops::Range};
+use std::borrow::Cow;
+use std::ops::Range;
 
-use bevy::{ecs::system::Command, prelude::*};
+use bevy::ecs::system::Command;
+use bevy::prelude::*;
 
 /// The command parser currrently being used by the dev console.
 #[derive(Resource)]

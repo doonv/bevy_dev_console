@@ -2,10 +2,9 @@ use std::borrow::Cow;
 
 use logos::Span;
 
-use crate::{
-    builtin_parser::{number::Number, Spanned},
-    command::{CommandHint, CommandHintColor},
-};
+use crate::builtin_parser::number::Number;
+use crate::builtin_parser::Spanned;
+use crate::command::{CommandHint, CommandHintColor};
 
 use super::Value;
 

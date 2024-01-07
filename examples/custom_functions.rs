@@ -1,14 +1,10 @@
 //! A simple exmaple
 
-use bevy::{
-    log::{Level, LogPlugin},
-    prelude::*,
-};
-use bevy_dev_console::{
-    builtin_parser::{Environment, Number, RunError, Spanned, StrongRef, Value},
-    prelude::*,
-    register,
-};
+use bevy::log::{Level, LogPlugin};
+use bevy::prelude::*;
+use bevy_dev_console::builtin_parser::{Environment, Number, RunError, Spanned, StrongRef, Value};
+use bevy_dev_console::prelude::*;
+use bevy_dev_console::register;
 
 // Declare the functions we want to create:
 

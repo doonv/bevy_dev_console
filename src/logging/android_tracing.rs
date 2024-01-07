@@ -1,10 +1,11 @@
-use bevy::utils::tracing::{
-    field::Field,
-    span::{Attributes, Record},
-    Event, Id, Level, Subscriber,
-};
+use bevy::utils::tracing::field::Field;
+use bevy::utils::tracing::span::{Attributes, Record};
+use bevy::utils::tracing::{Event, Id, Level, Subscriber};
 use std::fmt::{Debug, Write};
-use tracing_subscriber::{field::Visit, layer::Context, registry::LookupSpan, Layer};
+use tracing_subscriber::field::Visit;
+use tracing_subscriber::layer::Context;
+use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::Layer;
 
 #[derive(Default)]
 pub(crate) struct AndroidLayer;

@@ -3,19 +3,16 @@
 //! Made with [`bevy_egui`].
 
 use bevy::prelude::*;
-use bevy_egui::{
-    egui::{text::LayoutJob, Stroke, TextFormat},
-    *,
-};
+use bevy_egui::egui::text::LayoutJob;
+use bevy_egui::egui::{Stroke, TextFormat};
+use bevy_egui::*;
 use chrono::prelude::*;
 use web_time::SystemTime;
 
-use crate::{
-    command::{CommandHints, ExecuteCommand},
-    config::ToColor32,
-    logging::log_plugin::LogMessage,
-    prelude::ConsoleConfig,
-};
+use crate::command::{CommandHints, ExecuteCommand};
+use crate::config::ToColor32;
+use crate::logging::log_plugin::LogMessage;
+use crate::prelude::ConsoleConfig;
 
 /// Prefix for log messages that show a previous command.
 pub const COMMAND_MESSAGE_PREFIX: &str = "$ ";

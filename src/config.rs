@@ -1,6 +1,7 @@
 //! Configuration structs for the developer console.
 
-use bevy::{log::Level, prelude::*};
+use bevy::log::Level;
+use bevy::prelude::*;
 use bevy_egui::egui::{Color32, FontId, TextFormat};
 
 /// The configuration of the developer console.

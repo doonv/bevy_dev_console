@@ -1,14 +1,13 @@
 //! Generates an abstract syntax tree from a list of tokens.
 
 use logos::Span;
-use std::{collections::HashMap, num::IntErrorKind};
+use std::collections::HashMap;
+use std::num::IntErrorKind;
 
-use super::{
-    lexer::{FailedToLexCharacter, Token, TokenStream},
-    number::Number,
-    runner::environment::Function,
-    Environment, Spanned,
-};
+use super::lexer::{FailedToLexCharacter, Token, TokenStream};
+use super::number::Number;
+use super::runner::environment::Function;
+use super::{Environment, Spanned};
 
 /// An [Abstract Syntax Tree](https://en.wikipedia.org/wiki/Abstract_syntax_tree).
 ///
@@ -456,10 +455,9 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        super::{lexer::TokenStream, Environment},
-        parse,
-    };
+    use super::super::lexer::TokenStream;
+    use super::super::Environment;
+    use super::parse;
 
     #[test]
     fn var_assign() {

@@ -1,9 +1,8 @@
-use std::{any::TypeId, collections::HashMap};
+use std::any::TypeId;
+use std::collections::HashMap;
 
-use bevy::{
-    prelude::*,
-    reflect::{DynamicStruct, ReflectFromPtr, TypeRegistration},
-};
+use bevy::prelude::*;
+use bevy::reflect::{DynamicStruct, ReflectFromPtr, TypeRegistration};
 
 use super::Value;
 
