@@ -19,7 +19,7 @@ use bevy::reflect::{
 use logos::Span;
 
 /// A runtime value
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     /// Nothing at all
     None,
@@ -271,7 +271,7 @@ macro_rules! from_number {
     };
 }
 
-from_number!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);
+from_number!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
 
 from_t!(impl String: string => Value::String(string));
 from_t!(impl bool: bool => Value::Boolean(bool));

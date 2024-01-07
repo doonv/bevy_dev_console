@@ -34,43 +34,49 @@ macro_rules! expect {
     };
 }
 
+/// A type that repreesnts an expression.
 #[derive(Debug, Clone)]
 pub enum Expression {
-    VarAssign {
-        name: Box<Spanned<Expression>>,
-        value: Box<Spanned<Expression>>,
-    },
+    // Primitives
+    None,
+    Boolean(bool),
     Number(Number),
     Variable(String),
+    String(String),
+    Borrow(Box<Spanned<Expression>>),
+    Dereference(Box<Spanned<Expression>>),
+    Object(HashMap<String, Spanned<Expression>>),
+    StructObject {
+        name: String,
+        map: HashMap<String, Spanned<Expression>>,
+    },
+
+    // Expressions
     BinaryOp {
         left: Box<Spanned<Expression>>,
         operator: Operator,
         right: Box<Spanned<Expression>>,
+    },
+    UnaryOp(Box<Spanned<Expression>>),
+    Member {
+        left: Box<Spanned<Expression>>,
+        right: String,
+    },
+
+    // Statement-like
+    VarAssign {
+        name: Box<Spanned<Expression>>,
+        value: Box<Spanned<Expression>>,
+    },
+    Function {
+        name: String,
+        arguments: Vec<Spanned<Expression>>,
     },
     ForLoop {
         index_name: String,
         loop_count: u64,
         block: Ast,
     },
-    Member {
-        left: Box<Spanned<Expression>>,
-        right: String,
-    },
-    UnaryOp(Box<Spanned<Expression>>),
-    Dereference(Box<Spanned<Expression>>),
-    StructObject {
-        name: String,
-        map: HashMap<String, Spanned<Expression>>,
-    },
-    String(String),
-    Borrow(Box<Spanned<Expression>>),
-    None,
-    Function {
-        name: String,
-        arguments: Vec<Spanned<Expression>>,
-    },
-    Object(HashMap<String, Spanned<Expression>>),
-    Boolean(bool),
 }
 
 #[derive(Debug, Clone)]

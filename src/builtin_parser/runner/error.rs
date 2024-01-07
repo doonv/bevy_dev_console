@@ -24,7 +24,7 @@ pub enum RunError {
     InvalidVariantForResource(String, String),
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
-    CouldntDereferenceValue(Spanned<&'static str>),
+    CouldntDereferenceValue(Span),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
     CannotBorrowValue(Span),
@@ -69,7 +69,7 @@ impl RunError {
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(span) => vec![span.clone()],
             FieldNotFoundInStruct(span) => vec![span.clone()],
-            CouldntDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
+            CouldntDereferenceValue(span) => vec![span.clone()],
             ReferenceToMovedData(span) => vec![span.clone()],
             VariableMoved(Spanned { span, .. }) => vec![span.clone()],
             CannotBorrowValue(span) => vec![span.clone()],
@@ -107,10 +107,7 @@ impl RunError {
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(_) => todo!(),
             FieldNotFoundInStruct(_) => todo!(),
-            CouldntDereferenceValue(Spanned { value, .. }) => format!(
-                "Dereferencing {value} is not possible. Only references can be dereferenced."
-            )
-            .into(),
+            CouldntDereferenceValue(_) => "Can't dereference this type.".into(),
             ReferenceToMovedData(_) => todo!(),
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
             CannotBorrowValue(_) => todo!(),

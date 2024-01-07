@@ -18,10 +18,7 @@ use super::{
 };
 use bevy::{
     prelude::*,
-    reflect::{
-        DynamicEnum, ReflectMut, TypeInfo, TypeRegistration,
-        VariantInfo,
-    },
+    reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo},
 };
 
 pub mod environment;
@@ -401,10 +398,23 @@ fn eval_expression(
             )?;
             Ok(Value::Object(hashmap))
         }
-        Expression::Dereference(_inner) => Err(RunError::Custom {
-            text: "Dereferencing without assignment is not possible at the moment. (TODO)".into(),
-            span: expr.span,
-        }),
+        Expression::Dereference(inner) => {
+            if let Expression::Variable(variable) = inner.value {
+                let var = environment.get(&variable, inner.span)?;
+                match &*var.borrow_inner().borrow() {
+                    Value::Reference(reference) => {
+                        let reference = reference
+                            .upgrade()
+                            .ok_or(RunError::ReferenceToMovedData(expr.span))?;
+                        let owned = reference.borrow().clone();
+                        Ok(owned)
+                    }
+                    value => Ok(value.clone()),
+                }
+            } else {
+                Err(RunError::CouldntDereferenceValue(expr.span))
+            }
+        }
         Expression::Borrow(inner) => {
             if let Expression::Variable(variable) = inner.value {
                 if let Some(registration) = registrations
@@ -566,9 +576,7 @@ fn eval_path(
                     if let Value::Reference(ref reference) = &*borrow {
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
-                        Err(RunError::CouldntDereferenceValue(
-                            expr.span.wrap(borrow.kind()),
-                        ))
+                        Err(RunError::CouldntDereferenceValue(expr.span))
                     }
                 }
                 Path::NewVariable(_) => todo_error!(),

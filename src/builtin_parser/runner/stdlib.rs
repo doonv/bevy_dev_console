@@ -23,8 +23,8 @@ fn dbg(any: Value) {
     info!("Value::{any:?}");
 }
 
-fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
-    fn ref_depth_reference(value: Ref<Value>, span: Range<usize>) -> Result<f64, RunError> {
+fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, RunError> {
+    fn ref_depth_reference(value: Ref<Value>, span: Range<usize>) -> Result<usize, RunError> {
         Ok(match &*value {
             Value::Reference(reference) => {
                 ref_depth_reference(
@@ -33,9 +33,9 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
                         .ok_or(RunError::ReferenceToMovedData(span.clone()))?
                         .borrow(),
                     span,
-                )? + 1.0
+                )? + 1
             }
-            _ => 0.0,
+            _ => 0,
         })
     }
 
@@ -47,9 +47,9 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<f64, RunError> {
                     .ok_or(RunError::ReferenceToMovedData(span.clone()))?
                     .borrow(),
                 span,
-            )? + 1.0
+            )? + 1
         }
-        _ => 0.0,
+        _ => 0,
     })
 }
 
