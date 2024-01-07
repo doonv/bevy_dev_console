@@ -24,6 +24,13 @@ struct MyStruct {
     number2: i16,
     number3: f32,
     string: String,
+    struct_in_struct: SubStruct,
+}
+#[derive(Reflect, Default, Debug)]
+
+struct SubStruct {
+    boolean: bool,
+    enume: MyEnum,
 }
 
 fn main() {
@@ -35,6 +42,10 @@ fn main() {
             number2: -123,
             number3: 0.0,
             string: "hi there :)".to_string(),
+            struct_in_struct: SubStruct {
+                boolean: false,
+                enume: MyEnum::Tupleo("nooo".to_string(), 5.),
+            },
         })
         .register_type::<MyStruct>()
         .add_plugins((

@@ -154,6 +154,7 @@ impl Value {
         }
     }
 }
+
 /// A massive function that takes in a type registration and the world and then
 /// does all the hard work of printing out the type nicely.
 fn fancy_debug_print(
@@ -161,10 +162,79 @@ fn fancy_debug_print(
     world: &World,
     registrations: &[&TypeRegistration],
 ) -> String {
+    const TAB: &str = "    ";
     let registration = registrations.create_registration(resource.id);
     let dyn_reflect = resource.ref_dyn_reflect(world, registration);
 
     let reflect = dyn_reflect.reflect_path(resource.path.as_str()).unwrap();
+
+    fn debug_subprint(reflect: &dyn Reflect, indentation: usize) -> String {
+        let mut f = String::new();
+        let reflect_ref = reflect.reflect_ref();
+        let identation_string = TAB.repeat(indentation);
+        match reflect_ref {
+            ReflectRef::Struct(struct_info) => {
+                f += "{\n";
+                for i in 0..struct_info.field_len() {
+                    let field = struct_info.field_at(i).unwrap();
+                    let field_name = struct_info.name_at(i).unwrap();
+
+                    let field_value = debug_subprint(field, indentation + 1);
+                    f += &format!(
+                        "{identation_string}{TAB}{}: {} = {},\n",
+                        field_name,
+                        field.reflect_short_type_path(),
+                        field_value
+                    );
+                }
+                f += &identation_string;
+                f += "}";
+            }
+            ReflectRef::TupleStruct(_) => todo!(),
+            ReflectRef::Tuple(_) => todo!(),
+            ReflectRef::List(_) => todo!(),
+            ReflectRef::Array(_) => todo!(),
+            ReflectRef::Map(_) => todo!(),
+            ReflectRef::Enum(variant) => {
+                // Print out the enum types
+                f += variant.variant_name();
+
+                match variant.variant_type() {
+                    VariantType::Struct => {
+                        f += " {\n";
+                        for field in variant.iter_fields() {
+                            f += &format!(
+                                "{identation_string}{TAB}{}: {} = {},\n",
+                                field.name().unwrap(),
+                                field.value().reflect_short_type_path(),
+                                debug_subprint(field.value(), indentation + 1)
+                            );
+                        }
+                        f += &identation_string;
+                        f += "}";
+                    }
+                    VariantType::Tuple => {
+                        f += "(\n";
+                        for field in variant.iter_fields() {
+                            f += &format!(
+                                "{identation_string}{TAB}{} = {},\n",
+                                field.value().reflect_short_type_path(),
+                                debug_subprint(field.value(), indentation + 1)
+                            );
+                        }
+                        f += &identation_string;
+                        f += ")";
+                    }
+                    VariantType::Unit => {}
+                }
+            }
+            ReflectRef::Value(value) => {
+                f += &format!("{value:?}");
+            }
+        }
+
+        f
+    }
 
     let mut f = String::new();
     let reflect_ref = reflect.reflect_ref();
@@ -174,11 +244,13 @@ fn fancy_debug_print(
             for i in 0..struct_info.field_len() {
                 let field = struct_info.field_at(i).unwrap();
                 let field_name = struct_info.name_at(i).unwrap();
+
+                let field_value = debug_subprint(field, 1);
                 f += &format!(
-                    "\t{}: {} = {:?},\n",
+                    "{TAB}{}: {} = {},\n",
                     field_name,
                     field.reflect_short_type_path(),
-                    field
+                    field_value
                 );
             }
             f += "}";
@@ -207,7 +279,8 @@ fn fancy_debug_print(
                                 field.type_path_table().short_path()
                             );
                         }
-                        f += "\t}";
+                        f += TAB;
+                        f += "}";
                     }
                     VariantInfo::Tuple(variant) => {
                         f += "(";
@@ -264,11 +337,7 @@ macro_rules! from_t {
 macro_rules! from_number {
     ($($number:ident),*$(,)?) => {
         $(
-            impl From<$number> for Value {
-                fn from(number: $number) -> Self {
-                    Value::Number(Number::$number(number))
-                }
-            }
+            from_t!(impl $number: number => Value::Number(Number::$number(number)));
         )*
     };
 }
