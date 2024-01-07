@@ -78,6 +78,28 @@ pub enum Expression {
     },
 }
 
+impl Expression {
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Expression::None => "nothing",
+            Expression::Boolean(..) => "a boolean",
+            Expression::Number(..) => "a number",
+            Expression::Variable(..) => "a variable name",
+            Expression::String(..) => "a string",
+            Expression::Borrow(..) => "a borrow",
+            Expression::Dereference(..) => "a dereference",
+            Expression::Object(..) => "an object",
+            Expression::StructObject { .. } => "a struct object",
+            Expression::BinaryOp { .. } => "a binary operation",
+            Expression::UnaryOp(..) => "a unary operation",
+            Expression::Member { .. } => "a member expression",
+            Expression::VarAssign { .. } => "a variable assignment",
+            Expression::Function { .. } => "a function call",
+            Expression::ForLoop { .. } => "a for loop",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Operator {
     Add,

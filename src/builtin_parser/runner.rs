@@ -409,7 +409,9 @@ fn eval_expression(
                     value => Ok(value.clone()),
                 }
             } else {
-                Err(RunError::CouldntDereferenceValue(expr.span))
+                Err(RunError::CannotDereferenceValue(
+                    expr.span.wrap(inner.value.kind()),
+                ))
             }
         }
         Expression::Borrow(inner) => {
@@ -426,7 +428,9 @@ fn eval_expression(
                     Ok(Value::Reference(weak))
                 }
             } else {
-                Err(RunError::CannotBorrowValue(expr.span))
+                Err(RunError::CannotBorrowValue(
+                    expr.span.wrap(inner.value.kind()),
+                ))
             }
         }
         Expression::None => Ok(Value::None),
@@ -573,7 +577,9 @@ fn eval_path(
                     if let Value::Reference(ref reference) = &*borrow {
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
-                        Err(RunError::CouldntDereferenceValue(expr.span))
+                        Err(RunError::CannotDereferenceValue(
+                            expr.span.wrap(borrow.kind()),
+                        ))
                     }
                 }
                 Path::NewVariable(_) => todo_error!(),

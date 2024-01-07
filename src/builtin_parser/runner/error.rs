@@ -23,10 +23,10 @@ pub enum RunError {
     InvalidVariantForResource(String, String),
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
-    CouldntDereferenceValue(Span),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
-    CannotBorrowValue(Span),
+    CannotDereferenceValue(Spanned<&'static str>),
+    CannotBorrowValue(Spanned<&'static str>),
     IncompatibleReflectTypes {
         expected: String,
         actual: String,
@@ -68,10 +68,10 @@ impl RunError {
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(span) => vec![span.clone()],
             FieldNotFoundInStruct(span) => vec![span.clone()],
-            CouldntDereferenceValue(span) => vec![span.clone()],
+            CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
             ReferenceToMovedData(span) => vec![span.clone()],
             VariableMoved(Spanned { span, .. }) => vec![span.clone()],
-            CannotBorrowValue(span) => vec![span.clone()],
+            CannotBorrowValue(Spanned { span, .. }) => vec![span.clone()],
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound { span, .. } => vec![span.clone()],
             EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
@@ -106,10 +106,14 @@ impl RunError {
             InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(_) => todo!(),
             FieldNotFoundInStruct(_) => todo!(),
-            CouldntDereferenceValue(_) => "Can't dereference this type.".into(),
             ReferenceToMovedData(_) => todo!(),
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
-            CannotBorrowValue(_) => todo!(),
+            CannotDereferenceValue(Spanned { value: kind, .. }) => {
+                format!("Cannot dereference {kind}.").into()
+            }
+            CannotBorrowValue(Spanned { value: kind, .. }) => {
+                format!("Cannot borrow {kind}.").into()
+            }
             IncompatibleReflectTypes {
                 expected, actual, ..
             } => format!(
