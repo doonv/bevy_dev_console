@@ -55,21 +55,21 @@ impl Value {
     /// Converts this value into a [`Box<dyn Reflect>`].
     ///
     /// `ty` is used for type inference.
-    pub fn reflect(self, ty: &str) -> Box<dyn Reflect> {
+    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, RunError> {
         match self {
-            Value::None => Box::new(()),
-            Value::Number(number) => number.reflect(ty),
-            Value::Boolean(boolean) => Box::new(boolean),
-            Value::String(string) => Box::new(string),
-            Value::Reference(reference) => todo!(),
+            Value::None => Ok(Box::new(())),
+            Value::Number(number) => number.reflect(span, ty),
+            Value::Boolean(boolean) => Ok(Box::new(boolean)),
+            Value::String(string) => Ok(Box::new(string)),
+            Value::Reference(_reference) => Err(RunError::CannotReflectReference(span)),
             Value::Object(object) | Value::StructObject { map: object, .. } => {
                 let mut dyn_struct = DynamicStruct::default();
 
                 for (name, value) in object {
-                    dyn_struct.insert_boxed(&name, value.into_inner().reflect(ty));
+                    dyn_struct.insert_boxed(&name, value.into_inner().reflect(span.clone(), ty)?);
                 }
 
-                Box::new(dyn_struct)
+                Ok(Box::new(dyn_struct))
             }
             Value::Resource(_) => todo!(),
         }

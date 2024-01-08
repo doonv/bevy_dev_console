@@ -20,7 +20,6 @@ pub enum RunError {
     },
     VariableNotFound(Spanned<String>),
     ExpectedNumberAfterUnaryOperator(Spanned<Value>),
-    InvalidVariantForResource(String, String),
     CannotIndexValue(Span),
     FieldNotFoundInStruct(Span),
     ReferenceToMovedData(Span),
@@ -54,6 +53,7 @@ pub enum RunError {
         span: Span,
     },
     ExpectedVariableGotFunction(Spanned<String>),
+    CannotReflectReference(std::ops::Range<usize>),
 }
 
 impl RunError {
@@ -65,7 +65,6 @@ impl RunError {
             Custom { span, .. } => vec![span.clone()],
             VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
             ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
-            InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(span) => vec![span.clone()],
             FieldNotFoundInStruct(span) => vec![span.clone()],
             CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
@@ -80,6 +79,7 @@ impl RunError {
             IncompatibleNumberTypes { span, .. } => vec![span.clone()],
             IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
             ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
+            CannotReflectReference(span) => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.
@@ -103,7 +103,6 @@ impl RunError {
                 value.kind()
             )
             .into(),
-            InvalidVariantForResource(_, _) => todo!(),
             CannotIndexValue(_) => todo!(),
             FieldNotFoundInStruct(_) => todo!(),
             ReferenceToMovedData(_) => todo!(),
@@ -147,6 +146,9 @@ impl RunError {
             }
             ExpectedVariableGotFunction(Spanned { value, .. }) => {
                 format!("Expected `{value}` to be a variable, but got a function instead.").into()
+            }
+            CannotReflectReference(_) => {
+                "Cannot reflect a reference. Try dereferencing it instead.".into()
             }
         }
     }

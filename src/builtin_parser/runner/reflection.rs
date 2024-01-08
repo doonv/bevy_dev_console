@@ -3,6 +3,9 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 use bevy::reflect::{DynamicStruct, ReflectFromPtr, TypeRegistration};
+use logos::Span;
+
+use crate::builtin_parser::RunError;
 
 use super::Value;
 
@@ -40,12 +43,16 @@ impl IntoResource {
     }
 }
 
-pub fn object_to_dynamic_struct(hashmap: HashMap<String, (Value, String)>) -> DynamicStruct {
+pub fn object_to_dynamic_struct(
+    hashmap: HashMap<String, (Value, Span, &'static str)>,
+) -> Result<DynamicStruct, RunError> {
     let mut dynamic_struct = DynamicStruct::default();
-    for (key, (value, reflect)) in hashmap {
-        dynamic_struct.insert_boxed(&key, value.reflect(&reflect));
+
+    for (key, (value, span, reflect)) in hashmap {
+        dynamic_struct.insert_boxed(&key, value.reflect(span, &reflect)?);
     }
-    dynamic_struct
+
+    Ok(dynamic_struct)
 }
 
 pub fn mut_dyn_reflect<'a>(

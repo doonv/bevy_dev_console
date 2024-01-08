@@ -1,7 +1,7 @@
 //! Executes the abstract syntax tree.
 
-use std::collections::HashMap;
 use environment::Environment;
+use std::collections::HashMap;
 
 use bevy::prelude::*;
 use bevy::reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo};
@@ -216,16 +216,17 @@ fn eval_expression(
                                 let map: HashMap<_, _> = map
                                     .into_iter()
                                     .map(|(k, v)| {
-                                        let ty = variant_info
-                                            .field(&k)
-                                            .ok_or(RunError::EnumVariantStructFieldNotFound {
+                                        let ty = match variant_info.field(&k) {
+                                            Some(field) => Ok(field.type_path_table().short_path()),
+                                            None => Err(RunError::EnumVariantStructFieldNotFound {
                                                 field_name: k.clone(),
                                                 variant_name: name.clone(),
                                                 span: span.clone(),
-                                            })?
-                                            .type_path_table()
-                                            .short_path()
-                                            .to_owned();
+                                            }),
+                                        }?;
+
+                                        let span = v.span.clone();
+
                                         Ok((
                                             k,
                                             (
@@ -237,13 +238,14 @@ fn eval_expression(
                                                         registrations,
                                                     },
                                                 )?,
+                                                span,
                                                 ty,
                                             ),
                                         ))
                                     })
                                     .collect::<Result<_, _>>()?;
                                 let new_enum =
-                                    DynamicEnum::new(name, object_to_dynamic_struct(map));
+                                    DynamicEnum::new(name, object_to_dynamic_struct(map)?);
 
                                 let mut dyn_reflect =
                                     resource.mut_dyn_reflect(world, registrations);
@@ -268,7 +270,7 @@ fn eval_expression(
                                 registrations,
                             },
                         )?;
-                        let value_reflect = value.reflect(&ty);
+                        let value_reflect = value.reflect(span.clone(), &ty)?;
 
                         let mut dyn_reflect = resource.mut_dyn_reflect(world, registrations);
 
