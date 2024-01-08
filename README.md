@@ -1,6 +1,6 @@
 # bevy_dev_console
 
-`bevy_dev_console` is a [Source](https://en.wikipedia.org/wiki/Source_(game_engine))-like developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
+`bevy_dev_console` is a Source-inspired developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
 
 ![Image of the developer console](doc/console.png)
 

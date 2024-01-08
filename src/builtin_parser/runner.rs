@@ -190,25 +190,28 @@ fn eval_expression(
                         };
                         let Spanned { span, value } = *value_expr;
                         match value {
-                            Expression::Variable(variable) => {
-                                if enum_info.contains_variant(&variable) {
-                                    let new_enum = DynamicEnum::new(variable, ());
+                            Expression::Variable(name) => {
+                                let variant_info = match enum_info.variant(&name) {
+                                    Some(variant_info) => variant_info,
+                                    None => {
+                                        return Err(RunError::EnumVariantNotFound(span.wrap(name)))
+                                    }
+                                };
+                                let VariantInfo::Unit(_) = variant_info else {
+                                    return todo_error!("{variant_info:?}");
+                                };
 
-                                    dyn_enum.apply(&new_enum);
-                                } else {
-                                    Err(RunError::EnumVariantNotFound {
-                                        name: variable,
-                                        span,
-                                    })?
-                                }
+                                let new_enum = DynamicEnum::new(name, ());
+
+                                dyn_enum.apply(&new_enum);
                             }
                             Expression::StructObject { name, map } => {
-                                let variant_info = enum_info.variant(&name).ok_or(
-                                    RunError::EnumVariantNotFound {
-                                        name: name.clone(),
-                                        span: span.clone(),
-                                    },
-                                )?;
+                                let variant_info = match enum_info.variant(&name) {
+                                    Some(variant_info) => variant_info,
+                                    None => {
+                                        return Err(RunError::EnumVariantNotFound(span.wrap(name)))
+                                    }
+                                };
                                 let VariantInfo::Struct(variant_info) = variant_info else {
                                     return todo_error!("{variant_info:?}");
                                 };

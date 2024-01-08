@@ -31,10 +31,7 @@ pub enum RunError {
         actual: String,
         span: Span,
     },
-    EnumVariantNotFound {
-        name: String,
-        span: Span,
-    },
+    EnumVariantNotFound(Spanned<String>),
     CannotMoveOutOfResource(Spanned<String>),
     CannotNegateUnsignedInteger(Spanned<Number>),
     IncompatibleNumberTypes {
@@ -53,7 +50,8 @@ pub enum RunError {
         span: Span,
     },
     ExpectedVariableGotFunction(Spanned<String>),
-    CannotReflectReference(std::ops::Range<usize>),
+    CannotReflectReference(Span),
+    CannotReflectResource(Span),
 }
 
 impl RunError {
@@ -72,7 +70,7 @@ impl RunError {
             VariableMoved(Spanned { span, .. }) => vec![span.clone()],
             CannotBorrowValue(Spanned { span, .. }) => vec![span.clone()],
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
-            EnumVariantNotFound { span, .. } => vec![span.clone()],
+            EnumVariantNotFound(Spanned { span, .. }) => vec![span.clone()],
             EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
             CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
@@ -80,6 +78,7 @@ impl RunError {
             IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
             ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
             CannotReflectReference(span) => vec![span.clone()],
+            CannotReflectResource(span) => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.
@@ -119,7 +118,9 @@ impl RunError {
                 "Cannot set incompatible reflect types. Expected `{expected}`, got `{actual}`"
             )
             .into(),
-            EnumVariantNotFound { name, span } => todo!(),
+            EnumVariantNotFound(Spanned { value: name, .. }) => {
+                format!("Enum variant `{name}` was not found.").into()
+            }
             EnumVariantStructFieldNotFound {
                 field_name,
                 variant_name,
@@ -149,6 +150,9 @@ impl RunError {
             }
             CannotReflectReference(_) => {
                 "Cannot reflect a reference. Try dereferencing it instead.".into()
+            }
+            CannotReflectResource(_) => {
+                "Cannot reflecting resources is not possible at the moment.".into()
             }
         }
     }

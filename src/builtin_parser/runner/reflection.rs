@@ -49,7 +49,7 @@ pub fn object_to_dynamic_struct(
     let mut dynamic_struct = DynamicStruct::default();
 
     for (key, (value, span, reflect)) in hashmap {
-        dynamic_struct.insert_boxed(&key, value.reflect(span, &reflect)?);
+        dynamic_struct.insert_boxed(&key, value.reflect(span, reflect)?);
     }
 
     Ok(dynamic_struct)

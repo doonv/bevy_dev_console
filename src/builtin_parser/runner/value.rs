@@ -71,7 +71,7 @@ impl Value {
 
                 Ok(Box::new(dyn_struct))
             }
-            Value::Resource(_) => todo!(),
+            Value::Resource(_) => Err(RunError::CannotReflectResource(span)),
         }
     }
 
