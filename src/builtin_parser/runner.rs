@@ -476,7 +476,6 @@ fn eval_member_expression(
             let value = map
                 .remove(&right)
                 .ok_or(RunError::FieldNotFoundInStruct(left_span))?;
-            let value = Rc::try_unwrap(value).unwrap();
 
             Ok(value.into_inner())
         }
@@ -546,7 +545,14 @@ fn eval_path(
 
                         Ok(left.span.wrap(Path::Resource(resource)))
                     }
-                    Value::Object(object) => todo_error!("todo object indexing"),
+                    Value::Object(object) => {
+                        let weak = match object.get(&right) {
+                            Some(rc) => Ok(rc.borrow()),
+                            None => todo_error!(),
+                        }?;
+
+                        Ok(left.span.wrap(Path::Variable(weak)))
+                    }
                     value => todo_error!("{value:?}"),
                 },
                 Path::Resource(mut resource) => {
@@ -597,21 +603,21 @@ fn eval_object(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<HashMap<String, Rc<RefCell<Value>>>, RunError> {
+) -> Result<HashMap<String, UniqueRc<Value>>, RunError> {
     let map = map
         .into_iter()
         .map(
-            |(key, expr)| -> Result<(String, Rc<RefCell<Value>>), RunError> {
+            |(key, expr)| -> Result<(String, UniqueRc<Value>), RunError> {
                 Ok((
                     key,
-                    Rc::new(RefCell::new(eval_expression(
+                    UniqueRc::new(eval_expression(
                         expr,
                         EvalParams {
                             world,
                             environment,
                             registrations,
                         },
-                    )?)),
+                    )?),
                 ))
             },
         )

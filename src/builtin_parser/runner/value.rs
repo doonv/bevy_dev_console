@@ -1,10 +1,8 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::rc::Rc;
 
 use crate::builtin_parser::number::Number;
-use crate::builtin_parser::{Environment, StrongRef};
+use crate::builtin_parser::{Environment, StrongRef, UniqueRc};
 
 use super::super::Spanned;
 use super::environment::FunctionParam;
@@ -41,13 +39,13 @@ pub enum Value {
     /// [`Rc::try_unwrap`] to succeed every time)
     Reference(WeakRef<Value>),
     /// A dynamic [`HashMap`].
-    Object(HashMap<String, Rc<RefCell<Value>>>),
+    Object(HashMap<String, UniqueRc<Value>>),
     /// An [`Object`](Value::Object) with a name attached to it.
     StructObject {
         /// The name of the struct
         name: String,
         /// The [`Object`](Value::Object) [`HashMap`].
-        map: HashMap<String, Rc<RefCell<Value>>>,
+        map: HashMap<String, UniqueRc<Value>>,
     },
     /// A reference to a dynamic value. (aka a reference)
     Resource(IntoResource),
@@ -68,10 +66,7 @@ impl Value {
                 let mut dyn_struct = DynamicStruct::default();
 
                 for (name, value) in object {
-                    dyn_struct.insert_boxed(
-                        &name,
-                        Rc::try_unwrap(value).unwrap().into_inner().reflect(ty),
-                    );
+                    dyn_struct.insert_boxed(&name, value.into_inner().reflect(ty));
                 }
 
                 Box::new(dyn_struct)
@@ -107,9 +102,11 @@ impl Value {
                 for (key, value) in map {
                     string += &format!(
                         "\n\t{key}: {},",
-                        value
-                            .borrow()
-                            .try_format(span.clone(), world, registrations)?
+                        value.borrow_inner().borrow().try_format(
+                            span.clone(),
+                            world,
+                            registrations
+                        )?
                     );
                 }
                 if !map.is_empty() {
@@ -124,9 +121,11 @@ impl Value {
                 for (key, value) in map {
                     string += &format!(
                         "\n\t{key}: {},",
-                        value
-                            .borrow()
-                            .try_format(span.clone(), world, registrations)?
+                        value.borrow_inner().borrow().try_format(
+                            span.clone(),
+                            world,
+                            registrations
+                        )?
                     );
                 }
                 if !map.is_empty() {
@@ -347,11 +346,11 @@ from_number!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
 from_t!(impl String: string => Value::String(string));
 from_t!(impl bool: bool => Value::Boolean(bool));
 from_t!(impl Number: number => Value::Number(number));
-from_t!(impl HashMap<String, Rc<RefCell<Value>>>: hashmap => Value::Object(hashmap));
+from_t!(impl HashMap<String, UniqueRc<Value>>: hashmap => Value::Object(hashmap));
 from_t!(impl HashMap<String, Value>: hashmap => Value::Object(
     hashmap
         .into_iter()
-        .map(|(k, v)| (k, Rc::new(RefCell::new(v))))
+        .map(|(k, v)| (k, UniqueRc::new(v)))
         .collect(),
 ));
 
@@ -486,9 +485,9 @@ impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, usize, i8, i16, i32,
 impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
 impl_function_param_for_value!(impl Number: Value::Number(number) => number);
 impl_function_param_for_value!(impl String: Value::String(string) => string);
-impl_function_param_for_value!(impl HashMap<String, Rc<RefCell<Value>>>: Value::Object(object) => object);
+// impl_function_param_for_value!(impl HashMap<String, UniqueRc<Value>>: Value::Object(object) => object);
 impl_function_param_for_value!(impl HashMap<String, Value>: Value::Object(object) => {
-    object.into_iter().map(|(k, v)| (k, Rc::try_unwrap(v).unwrap().into_inner())).collect()
+    object.into_iter().map(|(k, v)| (k, v.into_inner())).collect()
 });
 impl_function_param_for_value!(impl StrongRef<Value>: Value::Reference(reference) => reference.upgrade().unwrap());
 
