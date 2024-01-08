@@ -14,7 +14,8 @@ default = ["builtin-parser"]
 builtin-parser = ["dep:logos"]
 
 [dependencies]
-bevy = "0.12.1"
+# This crate by itself doesn't use any bevy features, but `bevy_egui` (dep) uses "bevy_asset".
+bevy = { version = "0.12.1", default-features = false, features = [] }
 bevy_egui = "0.24.0"
 chrono = "0.4.31"
 tracing-log = "0.2.0"
@@ -23,6 +24,10 @@ web-time = "0.2.4"
 
 # builtin-parser features
 logos = { version = "0.13.0", optional = true }
+
+[dev-dependencies]
+bevy = "0.12.1"
+
 
 [target.'cfg(target_os = "android")'.dependencies]
 android_log-sys = "0.3.0"
