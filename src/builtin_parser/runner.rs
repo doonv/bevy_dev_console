@@ -1,10 +1,10 @@
 //! Executes the abstract syntax tree.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
-
 use environment::Environment;
+
+use bevy::prelude::*;
+use bevy::reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo};
 
 use crate::command::CommandHints;
 use crate::ui::COMMAND_RESULT_NAME;
@@ -15,8 +15,6 @@ use self::unique_rc::{UniqueRc, WeakRef};
 
 use super::parser::{Ast, Expression, Operator};
 use super::{Number, SpanExtension, Spanned};
-use bevy::prelude::*;
-use bevy::reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo};
 
 pub mod environment;
 pub mod error;
