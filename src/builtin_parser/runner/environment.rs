@@ -23,8 +23,8 @@ use super::{eval_expression, stdlib, EvalParams, Value};
 /// fn b() {}
 /// fn c() {}
 ///
-/// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
 /// # use bevy_dev_console::register;
+/// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
 /// register!(environment => {
 ///     fn a;
 ///     fn b;
@@ -42,13 +42,16 @@ macro_rules! register {
     {
         $environment:expr => {
             $(
-                fn $fn_name:ident;
+                fn $fn_name:ident $(as $renamed:expr)?;
             )*
         }
     } => {
-        $environment
         $(
-            .register_fn(stringify!($fn_name), $fn_name)
+            #[allow(unused_mut, unused_assignments)]
+            let mut name = stringify!($fn_name);
+            $(name = $renamed;)?
+
+            $environment.register_fn(name, $fn_name);
         )*
     };
 }
