@@ -309,6 +309,31 @@ fn eval_expression(
                 environment.move_var(&variable, expr.span)
             }
         }
+        Expression::StructObject { name, map } => {
+            let hashmap = eval_object(
+                map,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            Ok(Value::StructObject { name, map: hashmap })
+        }
+        Expression::Object(map) => {
+            let hashmap = eval_object(
+                map,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            Ok(Value::Object(hashmap))
+        }
+        Expression::Tuple(..) => todo_error!(),
+        Expression::StructTuple { .. } => todo_error!(),
+
         Expression::BinaryOp {
             left,
             operator,
@@ -375,28 +400,6 @@ fn eval_expression(
                     value,
                 }))
             }
-        }
-        Expression::StructObject { name, map } => {
-            let hashmap = eval_object(
-                map,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-            Ok(Value::StructObject { name, map: hashmap })
-        }
-        Expression::Object(map) => {
-            let hashmap = eval_object(
-                map,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-            Ok(Value::Object(hashmap))
         }
         Expression::Dereference(inner) => {
             if let Expression::Variable(variable) = inner.value {
