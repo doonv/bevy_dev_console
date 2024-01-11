@@ -32,10 +32,10 @@ pub enum Value {
     /// A reference.
     ///
     /// References are very similar to rust's ownership and borrowing.
-    /// We achieve this by storing every variable as a [`UniqueRc<T>`](super::unique_rc::UniqueRc)
-    /// (which is essentially just [`Rc<RefCell<T>>`]
-    /// but having only the owner of the value have a strong reference,
-    /// while every other value has a weak reference. This causes
+    /// We achieve this by storing every variable as a [`UniqueRc<T>`]
+    /// (which is essentially just [`Rc<RefCell<T>>`] but having only
+    /// the owner of the value have a strong reference, while every
+    /// other value has a weak reference. This causes
     /// [`Rc::try_unwrap`] to succeed every time)
     Reference(WeakRef<Value>),
     /// A dynamic [`HashMap`].
