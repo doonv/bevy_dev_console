@@ -247,6 +247,7 @@ fn eval_expression(
                                         ))
                                     })
                                     .collect::<Result<_, _>>()?;
+                                
                                 let new_enum =
                                     DynamicEnum::new(name, object_to_dynamic_struct(map)?);
 
@@ -331,8 +332,28 @@ fn eval_expression(
             )?;
             Ok(Value::Object(hashmap))
         }
-        Expression::Tuple(..) => todo_error!(),
-        Expression::StructTuple { .. } => todo_error!(),
+        Expression::Tuple(tuple) => {
+            let tuple = eval_tuple(
+                tuple,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            Ok(Value::Tuple(tuple))
+        }
+        Expression::StructTuple { name, tuple } => {
+            let tuple = eval_tuple(
+                tuple,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?;
+            Ok(Value::StructTuple { name, tuple })
+        },
 
         Expression::BinaryOp {
             left,
@@ -628,5 +649,28 @@ fn eval_object(
             },
         )
         .collect::<Result<_, _>>()?;
+
     Ok(map)
+}
+fn eval_tuple(
+    tuple: Vec<Spanned<Expression>>,
+    EvalParams {
+        world,
+        environment,
+        registrations,
+    }: EvalParams,
+) -> Result<Box<[UniqueRc<Value>]>, RunError> {
+    tuple
+        .into_iter()
+        .map(|expr| -> Result<UniqueRc<Value>, RunError> {
+            Ok(UniqueRc::new(eval_expression(
+                expr,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )?))
+        })
+        .collect::<Result<_, _>>()
 }
