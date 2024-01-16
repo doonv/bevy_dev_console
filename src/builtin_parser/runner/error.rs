@@ -137,9 +137,8 @@ impl RunError {
                 field_index,
                 variant_name,
                 ..
-            } => {
-                format!("Field `{field_index}` doesn't exist on tuple variant `{variant_name}`.").into()
-            }
+            } => format!("Field `{field_index}` doesn't exist on tuple variant `{variant_name}`.")
+                .into(),
             CannotMoveOutOfResource(Spanned { value, .. }) => {
                 format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()
             }
