@@ -622,13 +622,16 @@ fn eval_path(
 
                         Ok(left.span.wrap(Path::Resource(resource)))
                     }
-                    Value::Object(object) => {
+                    Value::Object(object) | Value::StructObject { map: object, .. } => {
                         let weak = match object.get(&right) {
                             Some(rc) => Ok(rc.borrow()),
                             None => todo_error!(),
                         }?;
 
                         Ok(left.span.wrap(Path::Variable(weak)))
+                    }
+                    Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
+                        todo_error!("eval_path only takes in a ident so this doesn't really work")
                     }
                     value => todo_error!("{value:?}"),
                 },
