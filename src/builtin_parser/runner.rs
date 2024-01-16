@@ -4,7 +4,9 @@ use environment::Environment;
 use std::collections::HashMap;
 
 use bevy::prelude::*;
-use bevy::reflect::{DynamicEnum, ReflectMut, TypeInfo, TypeRegistration, VariantInfo};
+use bevy::reflect::{
+    DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
+};
 
 use crate::command::CommandHints;
 use crate::ui::COMMAND_RESULT_NAME;
@@ -247,9 +249,57 @@ fn eval_expression(
                                         ))
                                     })
                                     .collect::<Result<_, _>>()?;
-                                
+
                                 let new_enum =
                                     DynamicEnum::new(name, object_to_dynamic_struct(map)?);
+
+                                let mut dyn_reflect =
+                                    resource.mut_dyn_reflect(world, registrations);
+
+                                let dyn_enum = dyn_reflect
+                                    .reflect_path_mut(resource.path.as_str())
+                                    .unwrap();
+
+                                dyn_enum.apply(&new_enum);
+                            }
+                            Expression::StructTuple { name, tuple } => {
+                                let variant_info = match enum_info.variant(&name) {
+                                    Some(variant_info) => variant_info,
+                                    None => {
+                                        return Err(RunError::EnumVariantNotFound(span.wrap(name)))
+                                    }
+                                };
+                                let VariantInfo::Tuple(variant_info) = variant_info else {
+                                    return todo_error!("{variant_info:?}");
+                                };
+
+                                let tuple = eval_tuple(
+                                    tuple,
+                                    EvalParams {
+                                        world,
+                                        environment,
+                                        registrations,
+                                    },
+                                )?;
+
+                                let mut dynamic_tuple = DynamicTuple::default();
+
+                                for (index, element) in tuple.into_vec().into_iter().enumerate() {
+                                    let ty = match variant_info.field_at(index) {
+                                        Some(field) => Ok(field.type_path_table().short_path()),
+                                        None => Err(RunError::EnumVariantTupleFieldNotFound {
+                                            field_index: index,
+                                            variant_name: name.clone(),
+                                            span: span.clone(),
+                                        }),
+                                    }?;
+
+                                    dynamic_tuple.insert_boxed(
+                                        element.value.into_inner().reflect(element.span, ty)?,
+                                    );
+                                }
+
+                                let new_enum = DynamicEnum::new(name, dynamic_tuple);
 
                                 let mut dyn_reflect =
                                     resource.mut_dyn_reflect(world, registrations);
@@ -353,7 +403,7 @@ fn eval_expression(
                 },
             )?;
             Ok(Value::StructTuple { name, tuple })
-        },
+        }
 
         Expression::BinaryOp {
             left,
@@ -659,18 +709,20 @@ fn eval_tuple(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Box<[UniqueRc<Value>]>, RunError> {
+) -> Result<Box<[Spanned<UniqueRc<Value>>]>, RunError> {
     tuple
         .into_iter()
-        .map(|expr| -> Result<UniqueRc<Value>, RunError> {
-            Ok(UniqueRc::new(eval_expression(
+        .map(|expr| {
+            let span = expr.span.clone();
+            let value = UniqueRc::new(eval_expression(
                 expr,
                 EvalParams {
                     world,
                     environment,
                     registrations,
                 },
-            )?))
+            )?);
+            Ok(span.wrap(value))
         })
         .collect::<Result<_, _>>()
 }
