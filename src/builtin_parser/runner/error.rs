@@ -52,6 +52,11 @@ pub enum RunError {
     ExpectedVariableGotFunction(Spanned<String>),
     CannotReflectReference(Span),
     CannotReflectResource(Span),
+    EnumVariantTupleFieldNotFound {
+        field_index: usize,
+        variant_name: String,
+        span: std::ops::Range<usize>,
+    },
 }
 
 impl RunError {
@@ -72,6 +77,7 @@ impl RunError {
             IncompatibleReflectTypes { span, .. } => vec![span.clone()],
             EnumVariantNotFound(Spanned { span, .. }) => vec![span.clone()],
             EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
+            EnumVariantTupleFieldNotFound { span, .. } => vec![span.clone()],
             CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
             CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
             IncompatibleNumberTypes { span, .. } => vec![span.clone()],
@@ -126,6 +132,12 @@ impl RunError {
                 variant_name,
                 ..
             } => format!("Field `{field_name}` doesn't exist on struct variant `{variant_name}`.")
+                .into(),
+            EnumVariantTupleFieldNotFound {
+                field_index,
+                variant_name,
+                ..
+            } => format!("Field `{field_index}` doesn't exist on tuple variant `{variant_name}`.")
                 .into(),
             CannotMoveOutOfResource(Spanned { value, .. }) => {
                 format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()

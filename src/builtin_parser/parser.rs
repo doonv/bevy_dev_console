@@ -49,6 +49,11 @@ pub enum Expression {
         name: String,
         map: HashMap<String, Spanned<Expression>>,
     },
+    Tuple(Vec<Spanned<Expression>>),
+    StructTuple {
+        name: String,
+        tuple: Vec<Spanned<Expression>>,
+    },
 
     // Expressions
     BinaryOp {
@@ -90,6 +95,9 @@ impl Expression {
             Expression::Dereference(..) => "a dereference",
             Expression::Object(..) => "an object",
             Expression::StructObject { .. } => "a struct object",
+            Expression::Tuple(..) => "a tuple",
+            Expression::StructTuple { .. } => "a struct tuple",
+
             Expression::BinaryOp { .. } => "a binary operation",
             Expression::UnaryOp(..) => "a unary operation",
             Expression::Member { .. } => "a member expression",
@@ -265,8 +273,8 @@ fn parse_primary(
 ) -> Result<Spanned<Expression>, ParseError> {
     let mut expr = match tokens.next() {
         Some(Ok(Token::LeftParen)) => {
+            let start = tokens.span().start;
             if let Some(Ok(Token::RightParen)) = tokens.peek() {
-                let start = tokens.span().start;
                 tokens.next();
                 Ok(Spanned {
                     span: start..tokens.span().end,
@@ -274,43 +282,84 @@ fn parse_primary(
                 })
             } else {
                 let expr = parse_expression(tokens, environment)?;
-                expect!(tokens, Token::RightParen);
-                Ok(expr)
-            }
-        }
-        Some(Ok(Token::Identifer)) => match tokens.peek() {
-            Some(Ok(Token::LeftBracket)) => {
-                let name = tokens.slice().to_string();
+                if let Some(Ok(Token::Comma)) = tokens.peek() {
+                    let mut tuple = vec![expr];
 
-                expect!(tokens, Token::LeftBracket);
-                let map = parse_object(tokens, environment)?;
-
-                Ok(Spanned {
-                    span: tokens.span(),
-                    value: Expression::StructObject { name, map },
-                })
-            }
-            _ => {
-                if let Some(Function { argument_count, .. }) =
-                    environment.get_function(tokens.slice())
-                {
-                    dbg!(argument_count);
-                    let name = tokens.slice().to_string();
-                    let start = tokens.span().start;
-                    let mut arguments = Vec::new();
-                    for _ in 0..(*argument_count) {
+                    while let Some(Ok(Token::Comma)) = tokens.peek() {
+                        tokens.next();
                         let expr = parse_expression(tokens, environment)?;
-                        arguments.push(expr);
+
+                        tuple.push(expr);
                     }
+
+                    expect!(tokens, Token::RightParen);
+
                     Ok(Spanned {
                         span: start..tokens.span().end,
-                        value: Expression::Function { name, arguments },
+                        value: Expression::Tuple(tuple),
                     })
                 } else {
-                    Ok(tokens.wrap_span(Expression::Variable(tokens.slice().to_string())))
+                    expect!(tokens, Token::RightParen);
+
+                    Ok(expr)
                 }
             }
-        },
+        }
+        Some(Ok(Token::Identifer)) => {
+            let start = tokens.span().start;
+            let name = tokens.slice().to_string();
+
+            match tokens.peek() {
+                Some(Ok(Token::LeftParen)) => {
+                    tokens.next();
+
+                    let expr = parse_expression(tokens, environment)?;
+
+                    let mut tuple = vec![expr];
+
+                    while let Some(Ok(Token::Comma)) = tokens.peek() {
+                        tokens.next();
+                        let expr = parse_expression(tokens, environment)?;
+
+                        tuple.push(expr);
+                    }
+
+                    expect!(tokens, Token::RightParen);
+
+                    Ok(Spanned {
+                        span: start..tokens.span().end,
+                        value: Expression::StructTuple { name, tuple },
+                    })
+                }
+                Some(Ok(Token::LeftBracket)) => {
+                    tokens.next();
+
+                    let map = parse_object(tokens, environment)?;
+
+                    Ok(Spanned {
+                        span: tokens.span(),
+                        value: Expression::StructObject { name, map },
+                    })
+                }
+                _ => {
+                    if let Some(Function { argument_count, .. }) = environment.get_function(&name) {
+                        dbg!(argument_count);
+
+                        let mut arguments = Vec::new();
+                        for _ in 0..(*argument_count) {
+                            let expr = parse_expression(tokens, environment)?;
+                            arguments.push(expr);
+                        }
+                        Ok(Spanned {
+                            span: start..tokens.span().end,
+                            value: Expression::Function { name, arguments },
+                        })
+                    } else {
+                        Ok(tokens.wrap_span(Expression::Variable(name)))
+                    }
+                }
+            }
+        }
         Some(Ok(Token::LeftBracket)) => {
             let map = parse_object(tokens, environment)?;
 

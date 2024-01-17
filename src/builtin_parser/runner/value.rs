@@ -12,8 +12,8 @@ use super::unique_rc::WeakRef;
 
 use bevy::ecs::world::World;
 use bevy::reflect::{
-    DynamicStruct, GetPath, Reflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo,
-    VariantType,
+    DynamicStruct, DynamicTuple, GetPath, Reflect, ReflectRef, TypeInfo, TypeRegistration,
+    VariantInfo, VariantType,
 };
 
 use logos::Span;
@@ -47,6 +47,15 @@ pub enum Value {
         /// The [`Object`](Value::Object) [`HashMap`].
         map: HashMap<String, UniqueRc<Value>>,
     },
+    /// A fixed size list of values that can have different types.
+    Tuple(Box<[Spanned<UniqueRc<Value>>]>),
+    /// A [`Tuple`](Value::Tuple) with a name attached to it.
+    StructTuple {
+        /// The name of the tuple
+        name: String,
+        /// The [`Object`](Value::Object) slice.
+        tuple: Box<[Spanned<UniqueRc<Value>>]>,
+    },
     /// A reference to a dynamic value. (aka a reference)
     Resource(IntoResource),
 }
@@ -71,6 +80,15 @@ impl Value {
 
                 Ok(Box::new(dyn_struct))
             }
+            Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
+                let mut dyn_tuple = DynamicTuple::default();
+
+                for element in Vec::from(tuple).into_iter() {
+                    dyn_tuple.insert_boxed(element.value.into_inner().reflect(element.span, ty)?);
+                }
+
+                Ok(Box::new(dyn_tuple))
+            }
             Value::Resource(_) => Err(RunError::CannotReflectResource(span)),
         }
     }
@@ -84,6 +102,7 @@ impl Value {
         world: &World,
         registrations: &[&TypeRegistration],
     ) -> Result<String, RunError> {
+        const TAB: &str = "    ";
         match self {
             Value::None => Ok(format!("()")),
             Value::Number(number) => Ok(format!("{number}")),
@@ -101,7 +120,7 @@ impl Value {
                 string.push('{');
                 for (key, value) in map {
                     string += &format!(
-                        "\n\t{key}: {},",
+                        "\n{TAB}{key}: {},",
                         value.borrow_inner().borrow().try_format(
                             span.clone(),
                             world,
@@ -120,7 +139,7 @@ impl Value {
                 string += &format!("{name} {{");
                 for (key, value) in map {
                     string += &format!(
-                        "\n\t{key}: {},",
+                        "\n{TAB}{key}: {},",
                         value.borrow_inner().borrow().try_format(
                             span.clone(),
                             world,
@@ -134,6 +153,45 @@ impl Value {
                 string.push('}');
                 Ok(string)
             }
+            Value::Tuple(tuple) => {
+                let mut string = String::new();
+                string.push('(');
+                for element in tuple.iter() {
+                    string += &format!(
+                        "\n{TAB}{},",
+                        element.value.borrow_inner().borrow().try_format(
+                            span.clone(),
+                            world,
+                            registrations
+                        )?
+                    );
+                }
+                if !tuple.is_empty() {
+                    string.push('\n');
+                }
+                string.push(')');
+                Ok(string)
+            }
+            Value::StructTuple { name, tuple } => {
+                let mut string = String::new();
+                string.push_str(name);
+                string.push('(');
+                for element in tuple.iter() {
+                    string += &format!(
+                        "\n{TAB}{},",
+                        element.value.borrow_inner().borrow().try_format(
+                            span.clone(),
+                            world,
+                            registrations
+                        )?
+                    );
+                }
+                if !tuple.is_empty() {
+                    string.push('\n');
+                }
+                string.push(')');
+                Ok(string)
+            }
             Value::Resource(resource) => Ok(fancy_debug_print(resource, world, registrations)),
         }
     }
@@ -144,12 +202,14 @@ impl Value {
         match self {
             Value::None => "nothing",
             Value::Number(number) => number.kind(),
-            Value::Boolean(_) => "a boolean",
-            Value::String(_) => "a string",
-            Value::Reference(_) => "a reference",
-            Value::Object(_) => "a object",
+            Value::Boolean(..) => "a boolean",
+            Value::String(..) => "a string",
+            Value::Reference(..) => "a reference",
+            Value::Object(..) => "a object",
             Value::StructObject { .. } => "a struct object",
-            Value::Resource(_) => "a resource",
+            Value::Tuple(..) => "a tuple",
+            Value::StructTuple { .. } => "a struct tuple",
+            Value::Resource(..) => "a resource",
         }
     }
 }
@@ -273,7 +333,7 @@ fn fancy_debug_print(
                         f += " {\n";
                         for field in variant.iter() {
                             f += &format!(
-                                "\t\t{}: {},\n",
+                                "{TAB}{TAB}{}: {},\n",
                                 field.name(),
                                 field.type_path_table().short_path()
                             );
@@ -303,11 +363,17 @@ fn fancy_debug_print(
                 VariantType::Struct => {
                     f += " {\n";
                     for field in set_variant_info.iter_fields() {
-                        f += &format!("\t{}: {:?},\n", field.name().unwrap(), field.value());
+                        f += &format!("{TAB}{}: {:?},\n", field.name().unwrap(), field.value());
                     }
                     f += "}";
                 }
-                VariantType::Tuple => todo!(),
+                VariantType::Tuple => {
+                    f += "(\n";
+                    for field in set_variant_info.iter_fields() {
+                        f += &format!("{TAB}{:?},\n", field.value());
+                    }
+                    f += ")";
+                }
                 VariantType::Unit => {}
             }
         }
