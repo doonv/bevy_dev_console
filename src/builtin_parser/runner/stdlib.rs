@@ -68,6 +68,10 @@ fn print_env(env: &mut Environment) {
     }
 }
 
+fn typeof_value(value: Value) -> String {
+    value.kind().to_string()
+}
+
 /// Disposes of a [`Value`].
 fn drop(_: Value) {}
 
@@ -78,5 +82,6 @@ pub fn register(environment: &mut Environment) {
         fn ref_depth;
         fn drop;
         fn print_env;
+        fn typeof_value as "typeof";
     });
 }

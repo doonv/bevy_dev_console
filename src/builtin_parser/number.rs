@@ -78,8 +78,31 @@ impl Number {
         }
     }
 
-    /// Returns a [`&'static str`](str) represents the kind of the number.
+    /// Returns the kind of [`Number`] as a [string slice](str).
+    /// You may want to use [`natural_kind`](Self::natural_kind)
+    /// instead for more natural sounding error messsages
     pub fn kind(&self) -> &'static str {
+        match self {
+            Number::Float(_) => "float",
+            Number::Integer(_) => "integer",
+            Number::u8(_) => "u8",
+            Number::u16(_) => "u16",
+            Number::u32(_) => "u32",
+            Number::u64(_) => "u64",
+            Number::usize(_) => "usize",
+            Number::i8(_) => "i8",
+            Number::i16(_) => "i16",
+            Number::i32(_) => "i32",
+            Number::i64(_) => "i64",
+            Number::isize(_) => "usize",
+            Number::f32(_) => "f32",
+            Number::f64(_) => "f64",
+        }
+    }
+
+    /// Returns the kind of [`Number`] as a [string slice](str) with an `a` or `an` prepended to it.
+    /// Used for more natural sounding error messages.
+    pub fn natural_kind(&self) -> &'static str {
         match self {
             Number::Float(_) => "a float",
             Number::Integer(_) => "an integer",
@@ -167,8 +190,8 @@ macro_rules! impl_op {
                     (Number::f32(left), Number::Float(right)) => Ok(Number::f32(left $op right as f32)),
                     (Number::f64(left), Number::Float(right)) => Ok(Number::f64(left $op right as f64)),
                     _ => Err(RunError::IncompatibleNumberTypes {
-                        left: left.kind(),
-                        right: right.kind(),
+                        left: left.natural_kind(),
+                        right: right.natural_kind(),
                         span
                     })
                 }

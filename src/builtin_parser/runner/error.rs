@@ -105,7 +105,7 @@ impl RunError {
             }
             ExpectedNumberAfterUnaryOperator(Spanned { value, .. }) => format!(
                 "Expected a number after unary operator (-) but got {} instead.",
-                value.kind()
+                value.natural_kind()
             )
             .into(),
             CannotIndexValue(_) => todo!(),
@@ -144,7 +144,7 @@ impl RunError {
             }
             CannotNegateUnsignedInteger(Spanned { value, .. }) => format!(
                 "Unsigned integers cannot be negated. (Type: {})",
-                value.kind()
+                value.natural_kind()
             )
             .into(),
             IncompatibleNumberTypes { left, right, .. } => {

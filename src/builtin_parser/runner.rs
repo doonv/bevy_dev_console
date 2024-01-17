@@ -157,7 +157,10 @@ fn eval_expression(
                     },
                 )?;
 
-                *variable.upgrade().unwrap().borrow_mut() = value;
+                match variable.upgrade() {
+                    Some(strong) => *strong.borrow_mut() = value,
+                    None => todo_error!("cannot "),
+                }
 
                 Ok(Value::Reference(variable))
             }
@@ -664,7 +667,7 @@ fn eval_path(
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
                         Err(RunError::CannotDereferenceValue(
-                            expr.span.wrap(borrow.kind()),
+                            expr.span.wrap(borrow.natural_kind()),
                         ))
                     }
                 }

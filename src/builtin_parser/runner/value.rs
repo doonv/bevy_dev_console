@@ -197,11 +197,29 @@ impl Value {
     }
 
     /// Returns the kind of [`Value`] as a [string slice](str).
-    /// Used for more natural sounding error messages.
+    /// You may want to use [`natural_kind`](Self::natural_kind)
+    /// instead for more natural sounding error messsages
     pub fn kind(&self) -> &'static str {
         match self {
-            Value::None => "nothing",
+            Value::None => "none",
             Value::Number(number) => number.kind(),
+            Value::Boolean(..) => "boolean",
+            Value::String(..) => "string",
+            Value::Reference(..) => "reference",
+            Value::Object(..) => "object",
+            Value::StructObject { .. } => "struct object",
+            Value::Tuple(..) => "tuple",
+            Value::StructTuple { .. } => "struct tuple",
+            Value::Resource(..) => "resource",
+        }
+    }
+
+    /// Returns the kind of [`Value`] as a [string slice](str) with an `a` or `an`  prepended to it.
+    /// Used for more natural sounding error messages.
+    pub fn natural_kind(&self) -> &'static str {
+        match self {
+            Value::None => "nothing",
+            Value::Number(number) => number.natural_kind(),
             Value::Boolean(..) => "a boolean",
             Value::String(..) => "a string",
             Value::Reference(..) => "a reference",
@@ -482,7 +500,7 @@ macro_rules! impl_function_param_for_value {
                 } else {
                     Err(RunError::IncompatibleFunctionParameter {
                         expected: stringify!($type),
-                        actual: value.value.kind(),
+                        actual: value.value.natural_kind(),
                         span: value.span,
                     })
                 }
@@ -520,7 +538,7 @@ macro_rules! impl_function_param_for_numbers {
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
                         _ => Err(RunError::IncompatibleFunctionParameter {
                             expected: concat!("a ", stringify!($number)),
-                            actual: value.value.kind(),
+                            actual: value.value.natural_kind(),
                             span: value.span,
                         })
                     }
@@ -535,7 +553,7 @@ macro_rules! impl_function_param_for_numbers {
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
                         _ => Err(RunError::IncompatibleFunctionParameter {
                             expected: concat!("a ", stringify!($number)),
-                            actual: value.value.kind(),
+                            actual: value.value.natural_kind(),
                             span: value.span
                         })
                     }
