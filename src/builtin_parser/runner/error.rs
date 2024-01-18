@@ -18,6 +18,12 @@ pub enum RunError {
         text: Cow<'static, str>,
         span: Span,
     },
+    InvalidOperation {
+        left: Number,
+        right: Number,
+        operation: &'static str,
+        span: Span,
+    },
     VariableNotFound(Spanned<String>),
     ExpectedNumberAfterUnaryOperator(Spanned<Value>),
     CannotIndexValue(Span),
@@ -85,6 +91,7 @@ impl RunError {
             ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
             CannotReflectReference(span) => vec![span.clone()],
             CannotReflectResource(span) => vec![span.clone()],
+            InvalidOperation { span, .. } => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.
@@ -166,6 +173,12 @@ impl RunError {
             CannotReflectResource(_) => {
                 "Cannot reflecting resources is not possible at the moment.".into()
             }
+            InvalidOperation {
+                left,
+                right,
+                operation,
+                span: _,
+            } => format!("Invalid operation: Cannot {operation} {left} by {right}").into(),
         }
     }
 }
