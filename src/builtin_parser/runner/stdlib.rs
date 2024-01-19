@@ -6,6 +6,8 @@ use bevy::reflect::TypeRegistration;
 use std::cell::Ref;
 use std::ops::Range;
 
+mod math;
+
 use super::error::RunError;
 use super::{Environment, Spanned, Value};
 
@@ -76,6 +78,8 @@ fn typeof_value(value: Value) -> String {
 fn drop(_: Value) {}
 
 pub fn register(environment: &mut Environment) {
+    math::register(environment);
+
     register!(environment => {
         fn print;
         fn dbg;
