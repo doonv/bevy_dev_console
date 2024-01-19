@@ -84,7 +84,7 @@ fn main() {
         .add_plugins((
             ConsoleLogPlugin::default().append_filter(module_path!(), Level::TRACE),
             DefaultPlugins.build().disable::<LogPlugin>(),
-            DevConsolePlugin,
+            DevConsolePlugin::default(),
         ))
         .run();
 }

@@ -17,7 +17,10 @@ pub mod ui;
 /// Adds a Developer Console to your Bevy application.
 ///
 /// Requires [ConsoleLogPlugin](logging::log_plugin::ConsoleLogPlugin).
-pub struct DevConsolePlugin;
+pub struct DevConsolePlugin {
+    /// Modify the theme and 'open console' key here
+    pub console_config: ConsoleConfig,
+}
 impl Plugin for DevConsolePlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<EguiPlugin>() {
@@ -32,7 +35,7 @@ impl Plugin for DevConsolePlugin {
 
         app.init_resource::<ConsoleUiState>()
             .init_resource::<CommandHints>()
-            .init_resource::<ConsoleConfig>()
+            .insert_resource(self.console_config.clone())
             .add_systems(
                 Update,
                 (
@@ -41,5 +44,13 @@ impl Plugin for DevConsolePlugin {
                     ui::render_ui.run_if(|s: Res<ConsoleUiState>| s.open),
                 ),
             );
+    }
+}
+
+impl Default for DevConsolePlugin {
+    fn default() -> Self {
+        Self {
+            console_config: ConsoleConfig::default(),
+        }
     }
 }
