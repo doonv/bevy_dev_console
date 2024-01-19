@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use bevy_egui::egui::{Color32, FontId, TextFormat};
 
 /// The configuration of the developer console.
-#[derive(Resource)]
+#[derive(Resource, Reflect)]
 pub struct ConsoleConfig {
     /// The colors used in the developer console.
     pub theme: ConsoleTheme,
@@ -23,8 +23,10 @@ impl Default for ConsoleConfig {
 }
 
 /// The colors used by the text in the developer console.
+#[derive(Reflect)]
 pub struct ConsoleTheme {
     /// The font used in the developer console.
+    #[reflect(ignore)]
     pub font: FontId,
     /// The default color of text.
     pub text_color: Color,

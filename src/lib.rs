@@ -33,6 +33,7 @@ impl Plugin for DevConsolePlugin {
         app.init_resource::<ConsoleUiState>()
             .init_resource::<CommandHints>()
             .init_resource::<ConsoleConfig>()
+            .register_type::<ConsoleConfig>()
             .add_systems(
                 Update,
                 (
