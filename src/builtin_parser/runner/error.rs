@@ -26,7 +26,7 @@ pub enum RunError {
     },
     VariableNotFound(Spanned<String>),
     ExpectedNumberAfterUnaryOperator(Spanned<Value>),
-    CannotIndexValue(Span),
+    CannotIndexValue(Spanned<Value>),
     FieldNotFoundInStruct(Span),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
@@ -74,7 +74,7 @@ impl RunError {
             Custom { span, .. } => vec![span.clone()],
             VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
             ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
-            CannotIndexValue(span) => vec![span.clone()],
+            CannotIndexValue(Spanned { span, .. }) => vec![span.clone()],
             FieldNotFoundInStruct(span) => vec![span.clone()],
             CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
             ReferenceToMovedData(span) => vec![span.clone()],
@@ -115,7 +115,9 @@ impl RunError {
                 value.natural_kind()
             )
             .into(),
-            CannotIndexValue(_) => todo!(),
+            CannotIndexValue(Spanned { span: _, value }) => {
+                format!("Cannot index {} with a member expression.", value.kind()).into()
+            }
             FieldNotFoundInStruct(_) => todo!(),
             ReferenceToMovedData(_) => todo!(),
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),

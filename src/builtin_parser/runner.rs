@@ -191,7 +191,7 @@ fn eval_expression(
                 match reflect.reflect_mut() {
                     ReflectMut::Enum(dyn_enum) => {
                         let TypeInfo::Enum(enum_info) = registeration.type_info() else {
-                            unreachable!();
+                            unreachable!()
                         };
                         let Spanned { span, value } = *value_expr;
                         match value {
@@ -565,7 +565,7 @@ fn eval_member_expression(
 
             Ok(Value::Resource(resource))
         }
-        _ => Err(RunError::CannotIndexValue(left_span)),
+        _ => Err(RunError::CannotIndexValue(left_span.wrap(left))),
     }
 }
 
