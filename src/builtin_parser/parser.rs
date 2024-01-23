@@ -64,7 +64,7 @@ pub enum Expression {
     UnaryOp(Box<Spanned<Expression>>),
     Member {
         left: Box<Spanned<Expression>>,
-        right: String,
+        right: Spanned<Access>,
     },
 
     // Statement-like
@@ -81,6 +81,28 @@ pub enum Expression {
         loop_count: u64,
         block: Ast,
     },
+}
+
+/// A singular element access within a [`Expression::Member`].
+///
+/// Based on `bevy_reflect`'s `Access`.
+#[derive(Debug, Clone)]
+pub enum Access {
+    /// A name-based field access on a struct.
+    Field(String),
+    // /// An index-based access on a tuple.
+    // TupleIndex(usize),
+    // /// An index-based access on a list.
+    // ListIndex(usize),
+}
+impl Access {
+    /// Returns the kind of [`Access`] as a [string slice](str) with an `a` or `an` prepended to it.
+    /// Used for more natural sounding error messages.
+    pub fn natural_kind(&self) -> &'static str {
+        match self {
+            Access::Field(_) => "a field access",
+        }
+    }
 }
 
 impl Expression {
@@ -385,43 +407,7 @@ fn parse_primary(
             let expr = parse_primary(tokens, environment)?;
             Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
         }
-        Some(Ok(Token::IntegerNumber)) => {
-            if let Some(Ok(Token::NumberType)) = tokens.peek() {
-                let err_map = |error: std::num::ParseIntError| match error.kind() {
-                    IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(tokens.span()),
-                    IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(tokens.span()),
-                    _ => unreachable!("lexer makes sure other errors arent possible"),
-                };
-                let number: Number = match tokens.peek_slice() {
-                    "u8" => Number::u8(tokens.slice().parse().map_err(err_map)?),
-                    "u16" => Number::u16(tokens.slice().parse().map_err(err_map)?),
-                    "u32" => Number::u32(tokens.slice().parse().map_err(err_map)?),
-                    "u64" => Number::u64(tokens.slice().parse().map_err(err_map)?),
-                    "usize" => Number::usize(tokens.slice().parse().map_err(err_map)?),
-                    "i8" => Number::i8(tokens.slice().parse().map_err(err_map)?),
-                    "i16" => Number::i16(tokens.slice().parse().map_err(err_map)?),
-                    "i32" => Number::i32(tokens.slice().parse().map_err(err_map)?),
-                    "isize" => Number::isize(tokens.slice().parse().map_err(err_map)?),
-                    "f32" => Number::f32(tokens.slice().parse().unwrap()),
-                    "f64" => Number::f64(tokens.slice().parse().unwrap()),
-                    _ => unreachable!(),
-                };
-                let start_span = tokens.span().end;
-                tokens.next();
-
-                Ok(Spanned {
-                    span: start_span..tokens.span().end,
-                    value: Expression::Number(number),
-                })
-            } else {
-                let number = Number::Integer(tokens.slice().parse().unwrap());
-
-                Ok(Spanned {
-                    span: tokens.span(),
-                    value: Expression::Number(number),
-                })
-            }
-        }
+        Some(Ok(Token::IntegerNumber)) => parse_number(tokens).map(|s| s.map(Expression::Number)),
         Some(Ok(Token::FloatNumber)) => {
             if let Some(Ok(Token::NumberType)) = tokens.peek() {
                 let number: Number = match tokens.peek_slice() {
@@ -462,18 +448,63 @@ fn parse_primary(
     }?;
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
-        tokens.next(); // skip the dot
-        expect!(tokens, Token::Identifer);
-        let right = tokens.slice().to_string();
-        expr = Spanned {
-            span: expr.span.start..tokens.span().end,
-            value: Expression::Member {
-                left: Box::new(expr),
-                right,
-            },
-        };
+        tokens.next(); // Skip the dot
+        match tokens.next() {
+            Some(Ok(Token::Identifer)) => {
+                let right = tokens.slice().to_string();
+                expr = Spanned {
+                    span: expr.span.start..tokens.span().end,
+                    value: Expression::Member {
+                        left: Box::new(expr),
+                        right: tokens.wrap_span(Access::Field(right)),
+                    },
+                };
+            }
+            Some(Ok(Token::LeftBrace)) => {}
+            _ => todo!(),
+        }
     }
     Ok(expr)
+}
+
+fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
+    if let Some(Ok(Token::NumberType)) = tokens.peek() {
+        let err_map = |error: std::num::ParseIntError| match error.kind() {
+            IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(tokens.span()),
+            IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(tokens.span()),
+            _ => unreachable!(
+                "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
+            ),
+        };
+        let number: Number = match tokens.peek_slice() {
+            "u8" => Number::u8(tokens.slice().parse().map_err(err_map)?),
+            "u16" => Number::u16(tokens.slice().parse().map_err(err_map)?),
+            "u32" => Number::u32(tokens.slice().parse().map_err(err_map)?),
+            "u64" => Number::u64(tokens.slice().parse().map_err(err_map)?),
+            "usize" => Number::usize(tokens.slice().parse().map_err(err_map)?),
+            "i8" => Number::i8(tokens.slice().parse().map_err(err_map)?),
+            "i16" => Number::i16(tokens.slice().parse().map_err(err_map)?),
+            "i32" => Number::i32(tokens.slice().parse().map_err(err_map)?),
+            "isize" => Number::isize(tokens.slice().parse().map_err(err_map)?),
+            "f32" => Number::f32(tokens.slice().parse().unwrap()),
+            "f64" => Number::f64(tokens.slice().parse().unwrap()),
+            _ => unreachable!(),
+        };
+        let start_span = tokens.span().end;
+        tokens.next();
+
+        Ok(Spanned {
+            span: start_span..tokens.span().end,
+            value: number,
+        })
+    } else {
+        let number = Number::Integer(tokens.slice().parse().unwrap());
+
+        Ok(Spanned {
+            span: tokens.span(),
+            value: number,
+        })
+    }
 }
 
 fn parse_var_assign(

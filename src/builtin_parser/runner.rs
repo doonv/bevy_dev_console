@@ -15,7 +15,7 @@ use self::error::RunError;
 use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
 use self::unique_rc::{UniqueRc, WeakRef};
 
-use super::parser::{Ast, Expression, Operator};
+use super::parser::{Access, Ast, Expression, Operator};
 use super::{Number, SpanExtension, Spanned};
 
 pub mod environment;
@@ -446,15 +446,7 @@ fn eval_expression(
             loop_count,
             block,
         } => todo_error!("for loop {index_name}, {loop_count}, {block:#?}"),
-        Expression::Member { left, right } => eval_member_expression(
-            *left,
-            right,
-            EvalParams {
-                world,
-                environment,
-                registrations,
-            },
-        ),
+        Expression::Member { left, right } => todo!(),
         Expression::UnaryOp(sub_expr) => {
             let span = sub_expr.span.clone();
             let value = eval_expression(
@@ -614,24 +606,41 @@ fn eval_path(
                     registrations,
                 },
             )?;
-
             match left.value {
                 Path::Variable(variable) => match &*variable.upgrade().unwrap().borrow() {
                     Value::Resource(resource) => {
-                        let mut resource = resource.clone();
+                        if let Access::Field(right) = right.value {
+                            let mut resource = resource.clone();
 
-                        resource.path.push('.');
-                        resource.path += &right;
+                            resource.path.push('.');
+                            resource.path += &right;
 
-                        Ok(left.span.wrap(Path::Resource(resource)))
+                            Ok(left.span.wrap(Path::Resource(resource)))
+                        } else {
+                            Err(RunError::IncorrectAccessOperation {
+                                span: right.span,
+                                expected_access: &["a field access"],
+                                expected_type: "a resource",
+                                got: right.value,
+                            })
+                        }
                     }
                     Value::Object(object) | Value::StructObject { map: object, .. } => {
-                        let weak = match object.get(&right) {
-                            Some(rc) => Ok(rc.borrow()),
-                            None => todo_error!(),
-                        }?;
+                        if let Access::Field(right) = right.value {
+                            let weak = match object.get(&right) {
+                                Some(rc) => Ok(rc.borrow()),
+                                None => todo_error!(),
+                            }?;
 
-                        Ok(left.span.wrap(Path::Variable(weak)))
+                            Ok(left.span.wrap(Path::Variable(weak)))
+                        } else {
+                            Err(RunError::IncorrectAccessOperation {
+                                span: right.span,
+                                expected_access: &["a field access"],
+                                expected_type: "an object",
+                                got: right.value,
+                            })
+                        }
                     }
                     Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
                         todo_error!("eval_path only takes in a ident so this doesn't really work")
@@ -639,10 +648,19 @@ fn eval_path(
                     value => todo_error!("{value:?}"),
                 },
                 Path::Resource(mut resource) => {
-                    resource.path.push('.');
-                    resource.path += &right;
+                    if let Access::Field(right) = right.value {
+                        resource.path.push('.');
+                        resource.path += &right;
 
-                    Ok(left.span.wrap(Path::Resource(resource)))
+                        Ok(left.span.wrap(Path::Resource(resource)))
+                    } else {
+                        Err(RunError::IncorrectAccessOperation {
+                            span: right.span,
+                            expected_access: &["a field access"],
+                            expected_type: "a resource",
+                            got: right.value,
+                        })
+                    }
                 }
                 Path::NewVariable(name) => Err(RunError::VariableNotFound(left.span.wrap(name))),
             }

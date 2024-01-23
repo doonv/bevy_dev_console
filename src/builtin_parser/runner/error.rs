@@ -3,6 +3,7 @@ use std::borrow::Cow;
 use logos::Span;
 
 use crate::builtin_parser::number::Number;
+use crate::builtin_parser::parser::Access;
 use crate::builtin_parser::Spanned;
 use crate::command::{CommandHint, CommandHintColor};
 
@@ -59,9 +60,15 @@ pub enum RunError {
     CannotReflectReference(Span),
     CannotReflectResource(Span),
     EnumVariantTupleFieldNotFound {
+        span: Span,
         field_index: usize,
         variant_name: String,
-        span: std::ops::Range<usize>,
+    },
+    IncorrectAccessOperation {
+        span: Span,
+        expected_access: &'static [&'static str],
+        expected_type: &'static str,
+        got: Access,
     },
 }
 
@@ -92,6 +99,7 @@ impl RunError {
             CannotReflectReference(span) => vec![span.clone()],
             CannotReflectResource(span) => vec![span.clone()],
             InvalidOperation { span, .. } => vec![span.clone()],
+            IncorrectAccessOperation { span, .. } => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.
@@ -181,6 +189,17 @@ impl RunError {
                 operation,
                 span: _,
             } => format!("Invalid operation: Cannot {operation} {left} by {right}").into(),
+            IncorrectAccessOperation {
+                expected_access,
+                expected_type,
+                got,
+                span: _,
+            } => format!(
+                "{} to access {expected_type} but got {}",
+                expected_access.join(" and "),
+                got.natural_kind()
+            )
+            .into(),
         }
     }
 }
