@@ -38,7 +38,7 @@ pub enum Token {
     #[token("%")]
     Modulo,
 
-    #[token(".")]
+    #[token(".", priority = 10)]
     Dot,
     #[token("&")]
     Ampersand,
@@ -69,7 +69,7 @@ pub enum Token {
 
     #[regex(r#"[0-9]+"#)]
     IntegerNumber,
-    #[regex(r#"[0-9]*\.?[0-9]*"#)]
+    #[regex(r#"[0-9]+\.[0-9]*"#)]
     FloatNumber,
 
     #[token("i8")]

@@ -643,7 +643,21 @@ fn eval_path(
                         }
                     }
                     Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                        todo_error!("eval_path only takes in a ident so this doesn't really work")
+                        if let Access::TupleIndex(right) = right.value {
+                            let weak = match tuple.get(right) {
+                                Some(Spanned { value: rc, span: _ }) => Ok(rc.borrow()),
+                                None => todo_error!(),
+                            }?;
+
+                            Ok(left.span.wrap(Path::Variable(weak)))
+                        } else {
+                            Err(RunError::IncorrectAccessOperation {
+                                span: right.span,
+                                expected_access: &["a tuple access"],
+                                expected_type: "a tuple",
+                                got: right.value,
+                            })
+                        }
                     }
                     value => todo_error!("{value:?}"),
                 },
@@ -656,7 +670,7 @@ fn eval_path(
                     } else {
                         Err(RunError::IncorrectAccessOperation {
                             span: right.span,
-                            expected_access: &["a field access"],
+                            expected_access: &["a field"],
                             expected_type: "a resource",
                             got: right.value,
                         })

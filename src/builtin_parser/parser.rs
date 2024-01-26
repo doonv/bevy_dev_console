@@ -90,8 +90,8 @@ pub enum Expression {
 pub enum Access {
     /// A name-based field access on a struct.
     Field(String),
-    // /// An index-based access on a tuple.
-    // TupleIndex(usize),
+    /// An index-based access on a tuple.
+    TupleIndex(usize),
     // /// An index-based access on a list.
     // ListIndex(usize),
 }
@@ -100,7 +100,8 @@ impl Access {
     /// Used for more natural sounding error messages.
     pub fn natural_kind(&self) -> &'static str {
         match self {
-            Access::Field(_) => "a field access",
+            Access::Field(_) => "a field",
+            Access::TupleIndex(_) => "a tuple",
         }
     }
 }
@@ -176,7 +177,7 @@ fn parse_expression(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    Ok(match tokens.peek() {
+    match tokens.peek() {
         Some(Ok(Token::For)) => {
             let start = tokens.span().start;
             tokens.next();
@@ -205,35 +206,37 @@ fn parse_expression(
             let block = parse_block(tokens, environment)?;
             let end = tokens.span().end;
 
-            Spanned {
+            Ok(Spanned {
                 value: Expression::ForLoop {
                     index_name,
                     loop_count,
                     block,
                 },
                 span: start..end,
-            }
+            })
         }
         Some(Ok(_)) => {
             let expr = parse_additive(tokens, environment)?;
 
             match tokens.peek() {
-                Some(Ok(Token::Equals)) => parse_var_assign(expr, tokens, environment)?,
-                _ => expr,
+                Some(Ok(Token::Equals)) => Ok(parse_var_assign(expr, tokens, environment)?),
+                _ => Ok(expr),
             }
         }
         Some(Err(FailedToLexCharacter)) => {
-            return Err(ParseError::FailedToLexCharacter(tokens.peek_span()))
+            Err(ParseError::FailedToLexCharacter(tokens.peek_span()))
         }
-        None => return Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
-    })
+        None => Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
+    }
 }
+
 fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     expect!(tokens, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket);
     Ok(ast)
 }
+
 fn parse_additive(
     tokens: &mut TokenStream,
     environment: &Environment,
@@ -460,32 +463,93 @@ fn parse_primary(
                     },
                 };
             }
-            Some(Ok(Token::LeftBrace)) => {}
+            Some(Ok(Token::IntegerNumber)) => {
+                let right = tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?;
+                expr = Spanned {
+                    span: expr.span.start..tokens.span().end,
+                    value: Expression::Member {
+                        left: Box::new(expr),
+                        right: tokens.wrap_span(Access::TupleIndex(right)),
+                    },
+                };
+    
+            }
             _ => todo!(),
         }
     }
     Ok(expr)
 }
 
+fn map_parseint_error(span: Span) -> impl Fn(std::num::ParseIntError) -> ParseError {
+    move |error| match error.kind() {
+        IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(span.clone()),
+        IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(span.clone()),
+        _ => unreachable!(
+            "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
+        ),
+    }
+}
+
 fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
     if let Some(Ok(Token::NumberType)) = tokens.peek() {
-        let err_map = |error: std::num::ParseIntError| match error.kind() {
-            IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(tokens.span()),
-            IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(tokens.span()),
-            _ => unreachable!(
-                "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
-            ),
-        };
         let number: Number = match tokens.peek_slice() {
-            "u8" => Number::u8(tokens.slice().parse().map_err(err_map)?),
-            "u16" => Number::u16(tokens.slice().parse().map_err(err_map)?),
-            "u32" => Number::u32(tokens.slice().parse().map_err(err_map)?),
-            "u64" => Number::u64(tokens.slice().parse().map_err(err_map)?),
-            "usize" => Number::usize(tokens.slice().parse().map_err(err_map)?),
-            "i8" => Number::i8(tokens.slice().parse().map_err(err_map)?),
-            "i16" => Number::i16(tokens.slice().parse().map_err(err_map)?),
-            "i32" => Number::i32(tokens.slice().parse().map_err(err_map)?),
-            "isize" => Number::isize(tokens.slice().parse().map_err(err_map)?),
+            "u8" => Number::u8(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "u16" => Number::u16(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "u32" => Number::u32(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "u64" => Number::u64(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "usize" => Number::usize(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "i8" => Number::i8(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "i16" => Number::i16(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "i32" => Number::i32(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "isize" => Number::isize(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
             "f32" => Number::f32(tokens.slice().parse().unwrap()),
             "f64" => Number::f64(tokens.slice().parse().unwrap()),
             _ => unreachable!(),
