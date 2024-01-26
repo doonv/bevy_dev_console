@@ -8,6 +8,7 @@ use bevy::reflect::{
     DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
 };
 
+use crate::builtin_parser::parser::access_unwrap;
 use crate::command::CommandHints;
 use crate::ui::COMMAND_RESULT_NAME;
 
@@ -446,7 +447,15 @@ fn eval_expression(
             loop_count,
             block,
         } => todo_error!("for loop {index_name}, {loop_count}, {block:#?}"),
-        Expression::Member { left, right } => todo!(),
+        Expression::Member { left, right } => eval_member_expression(
+            *left,
+            right,
+            EvalParams {
+                world,
+                environment,
+                registrations,
+            },
+        ),
         Expression::UnaryOp(sub_expr) => {
             let span = sub_expr.span.clone();
             let value = eval_expression(
@@ -524,16 +533,14 @@ fn eval_expression(
 
 fn eval_member_expression(
     left: Spanned<Expression>,
-    right: String,
-    params: EvalParams,
-) -> Result<Value, RunError> {
-    let left_span = left.span.clone();
-    let EvalParams {
+    right: Spanned<Access>,
+    EvalParams {
         world,
         environment,
         registrations,
-    } = params;
-    // TODO: Add ability to borrow from a struct.
+    }: EvalParams,
+) -> Result<Value, RunError> {
+    let span = left.span.start..right.span.end;
     let left = eval_expression(
         left,
         EvalParams {
@@ -545,19 +552,23 @@ fn eval_member_expression(
 
     match left {
         Value::Object(mut map) | Value::StructObject { mut map, .. } => {
-            let value = map
-                .remove(&right)
-                .ok_or(RunError::FieldNotFoundInStruct(left_span))?;
+            access_unwrap!("an object", Field(field) = right => {
+                let value = map
+                    .remove(&field)
+                    .ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
 
-            Ok(value.into_inner())
+                Ok(value.into_inner())
+            })
         }
         Value::Resource(mut resource) => {
-            resource.path.push('.');
-            resource.path += &right;
+            access_unwrap!("a resource", Field(field) = right => {
+                resource.path.push('.');
+                resource.path += &field;
 
-            Ok(Value::Resource(resource))
+                Ok(Value::Resource(resource))
+            })
         }
-        _ => Err(RunError::CannotIndexValue(left_span.wrap(left))),
+        _ => Err(RunError::CannotIndexValue(span.wrap(left))),
     }
 }
 
@@ -626,13 +637,16 @@ fn eval_path(
                         }
                     }
                     Value::Object(object) | Value::StructObject { map: object, .. } => {
-                        if let Access::Field(right) = right.value {
-                            let weak = match object.get(&right) {
-                                Some(rc) => Ok(rc.borrow()),
-                                None => todo_error!(),
-                            }?;
+                        if let Access::Field(field) = right.value {
+                            let span = left.span.join(right.span);
+                            let weak = match object.get(&field) {
+                                Some(rc) => rc.borrow(),
+                                None => {
+                                    return Err(RunError::FieldNotFoundInStruct(span.wrap(field)))
+                                }
+                            };
 
-                            Ok(left.span.wrap(Path::Variable(weak)))
+                            Ok(span.wrap(Path::Variable(weak)))
                         } else {
                             Err(RunError::IncorrectAccessOperation {
                                 span: right.span,
@@ -643,13 +657,20 @@ fn eval_path(
                         }
                     }
                     Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                        if let Access::TupleIndex(right) = right.value {
-                            let weak = match tuple.get(right) {
-                                Some(Spanned { value: rc, span: _ }) => Ok(rc.borrow()),
-                                None => todo_error!(),
-                            }?;
+                        if let Access::TupleIndex(index) = right.value {
+                            let span = left.span.join(right.span);
+                            let weak = match tuple.get(index) {
+                                Some(Spanned { value: rc, span: _ }) => rc.borrow(),
+                                None => {
+                                    return Err(RunError::FieldNotFoundInTuple {
+                                        span,
+                                        field_index: index,
+                                        tuple_size: tuple.len(),
+                                    })
+                                }
+                            };
 
-                            Ok(left.span.wrap(Path::Variable(weak)))
+                            Ok(span.wrap(Path::Variable(weak)))
                         } else {
                             Err(RunError::IncorrectAccessOperation {
                                 span: right.span,
@@ -707,7 +728,7 @@ fn eval_path(
                 Path::Resource(_) => todo_error!(),
             }
         }
-        expr => todo_error!("{expr:#?}"),
+        expr => todo_error!("can't eval path of this expr: {expr:#?}"),
     }
 }
 

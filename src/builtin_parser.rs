@@ -71,9 +71,6 @@ pub struct BuiltinCommandParser;
 impl CommandParser for BuiltinCommandParser {
     fn parse(&self, command: &str, world: &mut World) {
         let mut tokens = TokenStream::new(command);
-        for a in TokenStream::new(command) {
-            dbg!(a);
-        }
 
         let environment = world.remove_non_send_resource::<Environment>().unwrap();
         let ast = parse(&mut tokens, &environment);

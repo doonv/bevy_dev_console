@@ -28,7 +28,6 @@ pub enum RunError {
     VariableNotFound(Spanned<String>),
     ExpectedNumberAfterUnaryOperator(Spanned<Value>),
     CannotIndexValue(Spanned<Value>),
-    FieldNotFoundInStruct(Span),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
     CannotDereferenceValue(Spanned<&'static str>),
@@ -70,6 +69,12 @@ pub enum RunError {
         expected_type: &'static str,
         got: Access,
     },
+    FieldNotFoundInStruct(Spanned<String>),
+    FieldNotFoundInTuple {
+        span: Span,
+        field_index: usize,
+        tuple_size: usize,
+    },
 }
 
 impl RunError {
@@ -82,7 +87,7 @@ impl RunError {
             VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
             ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
             CannotIndexValue(Spanned { span, .. }) => vec![span.clone()],
-            FieldNotFoundInStruct(span) => vec![span.clone()],
+            FieldNotFoundInStruct(Spanned { span, value: _ }) => vec![span.clone()],
             CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
             ReferenceToMovedData(span) => vec![span.clone()],
             VariableMoved(Spanned { span, .. }) => vec![span.clone()],
@@ -100,6 +105,7 @@ impl RunError {
             CannotReflectResource(span) => vec![span.clone()],
             InvalidOperation { span, .. } => vec![span.clone()],
             IncorrectAccessOperation { span, .. } => vec![span.clone()],
+            FieldNotFoundInTuple { span, .. } => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.
@@ -126,14 +132,13 @@ impl RunError {
             CannotIndexValue(Spanned { span: _, value }) => {
                 format!("Cannot index {} with a member expression.", value.kind()).into()
             }
-            FieldNotFoundInStruct(_) => todo!(),
             ReferenceToMovedData(_) => todo!(),
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
             CannotDereferenceValue(Spanned { value: kind, .. }) => {
                 format!("Cannot dereference {kind}.").into()
             }
             CannotBorrowValue(Spanned { value: kind, .. }) => {
-                format!("Cannot borrow {kind}.").into()
+                format!("Cannot borrow {kind}. Only variables can be borrowed.").into()
             }
             IncompatibleReflectTypes {
                 expected, actual, ..
@@ -200,6 +205,15 @@ impl RunError {
                 got.natural_kind()
             )
             .into(),
+            FieldNotFoundInStruct(Spanned { span: _, value }) => {
+                format!("Field {value} not found in struct").into()
+            }
+            FieldNotFoundInTuple {
+                field_index,
+                tuple_size,
+                span: _,
+            } => format!("Field {field_index} is out of bounds for tuple of size {tuple_size}")
+                .into(),
         }
     }
 }
