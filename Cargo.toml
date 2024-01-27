@@ -20,11 +20,10 @@ bevy_egui = "0.24.0"
 chrono = "0.4.31"
 tracing-log = "0.2.0"
 tracing-subscriber = "0.3.18"
-web-time = "0.2.4"
+web-time = "1.0.0"
 
 # builtin-parser features
 logos = { version = "0.13.0", optional = true }
-const_format = "0.2.32"
 
 [dev-dependencies]
 bevy = "0.12.1"
