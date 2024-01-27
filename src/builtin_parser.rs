@@ -47,7 +47,16 @@ pub struct Spanned<T> {
     /// The value of `T`.
     pub value: T,
 }
-
+impl<T> Spanned<T> {
+    /// Maps a `Spanned<T>` to `Spanned<U>` by applying a function to a
+    /// contained `T` value, leaving the [`Span`] value untouched.
+    pub fn map<U>(self, f: impl Fn(T) -> U) -> Spanned<U> {
+        Spanned {
+            span: self.span,
+            value: f(self.value),
+        }
+    }
+}
 impl Default for DefaultCommandParser {
     fn default() -> Self {
         Self(Box::new(BuiltinCommandParser))

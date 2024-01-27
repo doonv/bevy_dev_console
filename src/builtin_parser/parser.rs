@@ -64,7 +64,7 @@ pub enum Expression {
     UnaryOp(Box<Spanned<Expression>>),
     Member {
         left: Box<Spanned<Expression>>,
-        right: String,
+        right: Spanned<Access>,
     },
 
     // Statement-like
@@ -82,6 +82,71 @@ pub enum Expression {
         block: Ast,
     },
 }
+
+/// A singular element access within a [`Expression::Member`].
+///
+/// Based on `bevy_reflect`'s `Access`.
+#[derive(Debug, Clone)]
+pub enum Access {
+    /// A name-based field access on a struct.
+    Field(String),
+    /// An index-based access on a tuple.
+    TupleIndex(usize),
+    // /// An index-based access on a list.
+    // ListIndex(usize),
+}
+pub enum AccessKind {
+    Field,
+    TupleIndex,
+}
+impl Access {
+    pub const fn kind(&self) -> AccessKind {
+        match self {
+            Access::Field(_) => AccessKind::Field,
+            Access::TupleIndex(_) => AccessKind::TupleIndex,
+        }
+    }
+    /// Returns the kind of [`Access`] as a [string slice](str) with an `a` or `an` prepended to it.
+    /// Used for more natural sounding error messages.
+    pub const fn natural_kind(&self) -> &'static str {
+        self.kind().natural()
+    }
+}
+
+impl AccessKind {
+    /// Returns the kind of [`Access`] as a [string slice](str) with an `a` or `an` prepended to it.
+    /// Used for more natural sounding error messages.
+    pub const fn natural(&self) -> &'static str {
+        match self {
+            AccessKind::Field => "a field",
+            AccessKind::TupleIndex => "a tuple",
+        }
+    }
+}
+
+/// Get the access if its of a certain type, if not, return a [`RunError`](super::runner::error::RunError).
+///
+/// For examples, take a look at existing uses in the code.
+macro_rules! access_unwrap {
+    ($expected:literal, $($variant:ident($variant_inner:ident))|+ = $val:expr => $block:block) => {{
+        let val = $val;
+        if let $(Access::$variant($variant_inner))|+ = val.value $block else {
+            use $crate::builtin_parser::parser::AccessKind;
+            use $crate::builtin_parser::runner::error::RunError;
+
+            // We have to put this in a `const` first to avoid a
+            // `temporary value dropped while borrowed` error.
+            const EXPECTED_ACCESS: &[&str] = &[$(AccessKind::$variant.natural()),+];
+            Err(RunError::IncorrectAccessOperation {
+                span: val.span,
+                expected_access: EXPECTED_ACCESS,
+                expected_type: $expected,
+                got: val.value,
+            })?
+        }
+    }};
+}
+pub(crate) use access_unwrap;
 
 impl Expression {
     pub fn kind(&self) -> &'static str {
@@ -154,7 +219,7 @@ fn parse_expression(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    Ok(match tokens.peek() {
+    match tokens.peek() {
         Some(Ok(Token::For)) => {
             let start = tokens.span().start;
             tokens.next();
@@ -183,35 +248,37 @@ fn parse_expression(
             let block = parse_block(tokens, environment)?;
             let end = tokens.span().end;
 
-            Spanned {
+            Ok(Spanned {
                 value: Expression::ForLoop {
                     index_name,
                     loop_count,
                     block,
                 },
                 span: start..end,
-            }
+            })
         }
         Some(Ok(_)) => {
             let expr = parse_additive(tokens, environment)?;
 
             match tokens.peek() {
-                Some(Ok(Token::Equals)) => parse_var_assign(expr, tokens, environment)?,
-                _ => expr,
+                Some(Ok(Token::Equals)) => Ok(parse_var_assign(expr, tokens, environment)?),
+                _ => Ok(expr),
             }
         }
         Some(Err(FailedToLexCharacter)) => {
-            return Err(ParseError::FailedToLexCharacter(tokens.peek_span()))
+            Err(ParseError::FailedToLexCharacter(tokens.peek_span()))
         }
-        None => return Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
-    })
+        None => Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
+    }
 }
+
 fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     expect!(tokens, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket);
     Ok(ast)
 }
+
 fn parse_additive(
     tokens: &mut TokenStream,
     environment: &Environment,
@@ -271,209 +338,291 @@ fn parse_primary(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    let mut expr = match tokens.next() {
-        Some(Ok(Token::LeftParen)) => {
-            let start = tokens.span().start;
-            if let Some(Ok(Token::RightParen)) = tokens.peek() {
-                tokens.next();
-                Ok(Spanned {
-                    span: start..tokens.span().end,
-                    value: Expression::None,
-                })
-            } else {
-                let expr = parse_expression(tokens, environment)?;
-                if let Some(Ok(Token::Comma)) = tokens.peek() {
-                    let mut tuple = vec![expr];
-
-                    while let Some(Ok(Token::Comma)) = tokens.peek() {
-                        tokens.next();
-                        let expr = parse_expression(tokens, environment)?;
-
-                        tuple.push(expr);
-                    }
-
-                    expect!(tokens, Token::RightParen);
-
+    /// Parses a primary without member expressions
+    fn parse_subprimary(
+        tokens: &mut TokenStream,
+        environment: &Environment,
+    ) -> Result<Spanned<Expression>, ParseError> {
+        match tokens.next() {
+            Some(Ok(Token::LeftParen)) => {
+                let start = tokens.span().start;
+                if let Some(Ok(Token::RightParen)) = tokens.peek() {
+                    tokens.next();
                     Ok(Spanned {
                         span: start..tokens.span().end,
-                        value: Expression::Tuple(tuple),
+                        value: Expression::None,
                     })
                 } else {
-                    expect!(tokens, Token::RightParen);
+                    let expr = parse_expression(tokens, environment)?;
+                    if let Some(Ok(Token::Comma)) = tokens.peek() {
+                        let mut tuple = vec![expr];
 
-                    Ok(expr)
+                        while let Some(Ok(Token::Comma)) = tokens.peek() {
+                            tokens.next();
+                            let expr = parse_expression(tokens, environment)?;
+
+                            tuple.push(expr);
+                        }
+
+                        expect!(tokens, Token::RightParen);
+
+                        Ok(Spanned {
+                            span: start..tokens.span().end,
+                            value: Expression::Tuple(tuple),
+                        })
+                    } else {
+                        expect!(tokens, Token::RightParen);
+
+                        Ok(expr)
+                    }
                 }
             }
-        }
-        Some(Ok(Token::Identifer)) => {
-            let start = tokens.span().start;
-            let name = tokens.slice().to_string();
+            Some(Ok(Token::Identifer)) => {
+                let start = tokens.span().start;
+                let name = tokens.slice().to_string();
 
-            match tokens.peek() {
-                Some(Ok(Token::LeftParen)) => {
-                    tokens.next();
-
-                    let expr = parse_expression(tokens, environment)?;
-
-                    let mut tuple = vec![expr];
-
-                    while let Some(Ok(Token::Comma)) = tokens.peek() {
+                match tokens.peek() {
+                    Some(Ok(Token::LeftParen)) => {
                         tokens.next();
+
                         let expr = parse_expression(tokens, environment)?;
 
-                        tuple.push(expr);
+                        let mut tuple = vec![expr];
+
+                        while let Some(Ok(Token::Comma)) = tokens.peek() {
+                            tokens.next();
+                            let expr = parse_expression(tokens, environment)?;
+
+                            tuple.push(expr);
+                        }
+
+                        expect!(tokens, Token::RightParen);
+
+                        Ok(Spanned {
+                            span: start..tokens.span().end,
+                            value: Expression::StructTuple { name, tuple },
+                        })
                     }
+                    Some(Ok(Token::LeftBracket)) => {
+                        tokens.next();
 
-                    expect!(tokens, Token::RightParen);
+                        let map = parse_object(tokens, environment)?;
 
-                    Ok(Spanned {
-                        span: start..tokens.span().end,
-                        value: Expression::StructTuple { name, tuple },
-                    })
+                        Ok(Spanned {
+                            span: tokens.span(),
+                            value: Expression::StructObject { name, map },
+                        })
+                    }
+                    _ => {
+                        if let Some(Function { argument_count, .. }) =
+                            environment.get_function(&name)
+                        {
+                            dbg!(argument_count);
+
+                            let mut arguments = Vec::new();
+                            for _ in 0..(*argument_count) {
+                                let expr = parse_expression(tokens, environment)?;
+                                arguments.push(expr);
+                            }
+                            Ok(Spanned {
+                                span: start..tokens.span().end,
+                                value: Expression::Function { name, arguments },
+                            })
+                        } else {
+                            Ok(tokens.wrap_span(Expression::Variable(name)))
+                        }
+                    }
                 }
-                Some(Ok(Token::LeftBracket)) => {
+            }
+            Some(Ok(Token::LeftBracket)) => {
+                let map = parse_object(tokens, environment)?;
+
+                Ok(Spanned {
+                    span: tokens.span(),
+                    value: Expression::Object(map),
+                })
+            }
+            Some(Ok(Token::String)) => {
+                let slice = tokens.slice();
+                let string = slice[1..slice.len() - 1].to_string();
+                Ok(tokens.wrap_span(Expression::String(string)))
+            }
+            Some(Ok(Token::Minus)) => {
+                let expr = parse_primary(tokens, environment)?;
+                Ok(tokens.wrap_span(Expression::UnaryOp(Box::new(expr))))
+            }
+            Some(Ok(Token::Ampersand)) => {
+                let expr = parse_subprimary(tokens, environment)?;
+                dbg!(&expr);
+                Ok(tokens.wrap_span(Expression::Borrow(Box::new(expr))))
+            }
+            Some(Ok(Token::Asterisk)) => {
+                let expr = parse_primary(tokens, environment)?;
+                Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
+            }
+            Some(Ok(Token::IntegerNumber)) => {
+                parse_number(tokens).map(|s| s.map(Expression::Number))
+            }
+            Some(Ok(Token::FloatNumber)) => {
+                if let Some(Ok(Token::NumberType)) = tokens.peek() {
+                    let number: Number = match tokens.peek_slice() {
+                        "u8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "u16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "u32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "u64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "i8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "i16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "i32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "i64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
+                        "f32" => Number::f32(tokens.slice().parse().unwrap()),
+                        "f64" => Number::f64(tokens.slice().parse().unwrap()),
+                        _ => unreachable!(),
+                    };
+                    let start_span = tokens.span().end;
+
                     tokens.next();
 
-                    let map = parse_object(tokens, environment)?;
+                    Ok(Spanned {
+                        span: start_span..tokens.span().end,
+                        value: Expression::Number(number),
+                    })
+                } else {
+                    let number = Number::Float(tokens.slice().parse().unwrap());
 
                     Ok(Spanned {
                         span: tokens.span(),
-                        value: Expression::StructObject { name, map },
+                        value: Expression::Number(number),
                     })
                 }
-                _ => {
-                    if let Some(Function { argument_count, .. }) = environment.get_function(&name) {
-                        dbg!(argument_count);
-
-                        let mut arguments = Vec::new();
-                        for _ in 0..(*argument_count) {
-                            let expr = parse_expression(tokens, environment)?;
-                            arguments.push(expr);
-                        }
-                        Ok(Spanned {
-                            span: start..tokens.span().end,
-                            value: Expression::Function { name, arguments },
-                        })
-                    } else {
-                        Ok(tokens.wrap_span(Expression::Variable(name)))
-                    }
-                }
             }
+            Some(Ok(Token::True)) => Ok(tokens.wrap_span(Expression::Boolean(true))),
+            Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
+            Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
+            Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
+            None => Err(ParseError::ExpectedMoreTokens(tokens.span())),
         }
-        Some(Ok(Token::LeftBracket)) => {
-            let map = parse_object(tokens, environment)?;
+    }
 
-            Ok(Spanned {
-                span: tokens.span(),
-                value: Expression::Object(map),
-            })
-        }
-        Some(Ok(Token::String)) => {
-            let slice = tokens.slice();
-            let string = slice[1..slice.len() - 1].to_string();
-            Ok(tokens.wrap_span(Expression::String(string)))
-        }
-        Some(Ok(Token::Minus)) => {
-            let expr = parse_primary(tokens, environment)?;
-            Ok(tokens.wrap_span(Expression::UnaryOp(Box::new(expr))))
-        }
-        Some(Ok(Token::Ampersand)) => {
-            let expr = parse_primary(tokens, environment)?;
-            Ok(tokens.wrap_span(Expression::Borrow(Box::new(expr))))
-        }
-        Some(Ok(Token::Asterisk)) => {
-            let expr = parse_primary(tokens, environment)?;
-            Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
-        }
-        Some(Ok(Token::IntegerNumber)) => {
-            if let Some(Ok(Token::NumberType)) = tokens.peek() {
-                let err_map = |error: std::num::ParseIntError| match error.kind() {
-                    IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(tokens.span()),
-                    IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(tokens.span()),
-                    _ => unreachable!("lexer makes sure other errors arent possible"),
-                };
-                let number: Number = match tokens.peek_slice() {
-                    "u8" => Number::u8(tokens.slice().parse().map_err(err_map)?),
-                    "u16" => Number::u16(tokens.slice().parse().map_err(err_map)?),
-                    "u32" => Number::u32(tokens.slice().parse().map_err(err_map)?),
-                    "u64" => Number::u64(tokens.slice().parse().map_err(err_map)?),
-                    "usize" => Number::usize(tokens.slice().parse().map_err(err_map)?),
-                    "i8" => Number::i8(tokens.slice().parse().map_err(err_map)?),
-                    "i16" => Number::i16(tokens.slice().parse().map_err(err_map)?),
-                    "i32" => Number::i32(tokens.slice().parse().map_err(err_map)?),
-                    "isize" => Number::isize(tokens.slice().parse().map_err(err_map)?),
-                    "f32" => Number::f32(tokens.slice().parse().unwrap()),
-                    "f64" => Number::f64(tokens.slice().parse().unwrap()),
-                    _ => unreachable!(),
-                };
-                let start_span = tokens.span().end;
-                tokens.next();
-
-                Ok(Spanned {
-                    span: start_span..tokens.span().end,
-                    value: Expression::Number(number),
-                })
-            } else {
-                let number = Number::Integer(tokens.slice().parse().unwrap());
-
-                Ok(Spanned {
-                    span: tokens.span(),
-                    value: Expression::Number(number),
-                })
-            }
-        }
-        Some(Ok(Token::FloatNumber)) => {
-            if let Some(Ok(Token::NumberType)) = tokens.peek() {
-                let number: Number = match tokens.peek_slice() {
-                    "u8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "u16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "u32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "u64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "i8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "i16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "i32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "i64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                    "f32" => Number::f32(tokens.slice().parse().unwrap()),
-                    "f64" => Number::f64(tokens.slice().parse().unwrap()),
-                    _ => unreachable!(),
-                };
-                let start_span = tokens.span().end;
-
-                tokens.next();
-
-                Ok(Spanned {
-                    span: start_span..tokens.span().end,
-                    value: Expression::Number(number),
-                })
-            } else {
-                let number = Number::Float(tokens.slice().parse().unwrap());
-
-                Ok(Spanned {
-                    span: tokens.span(),
-                    value: Expression::Number(number),
-                })
-            }
-        }
-        Some(Ok(Token::True)) => Ok(tokens.wrap_span(Expression::Boolean(true))),
-        Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
-        Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
-        Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
-        None => Err(ParseError::ExpectedMoreTokens(tokens.span())),
-    }?;
+    let mut expr = parse_subprimary(tokens, environment)?;
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
-        tokens.next(); // skip the dot
-        expect!(tokens, Token::Identifer);
-        let right = tokens.slice().to_string();
-        expr = Spanned {
-            span: expr.span.start..tokens.span().end,
-            value: Expression::Member {
-                left: Box::new(expr),
-                right,
-            },
-        };
+        tokens.next(); // Skip the dot
+        match tokens.next() {
+            Some(Ok(Token::Identifer)) => {
+                let right = tokens.slice().to_string();
+                expr = Spanned {
+                    span: expr.span.start..tokens.span().end,
+                    value: Expression::Member {
+                        left: Box::new(expr),
+                        right: tokens.wrap_span(Access::Field(right)),
+                    },
+                };
+            }
+            Some(Ok(Token::IntegerNumber)) => {
+                let right = tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?;
+                expr = Spanned {
+                    span: expr.span.start..tokens.span().end,
+                    value: Expression::Member {
+                        left: Box::new(expr),
+                        right: tokens.wrap_span(Access::TupleIndex(right)),
+                    },
+                };
+            }
+            _ => todo!(),
+        }
     }
     Ok(expr)
+}
+
+fn map_parseint_error(span: Span) -> impl Fn(std::num::ParseIntError) -> ParseError {
+    move |error| match error.kind() {
+        IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(span.clone()),
+        IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(span.clone()),
+        _ => unreachable!(
+            "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
+        ),
+    }
+}
+
+fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
+    if let Some(Ok(Token::NumberType)) = tokens.peek() {
+        let number: Number = match tokens.peek_slice() {
+            "u8" => Number::u8(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "u16" => Number::u16(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "u32" => Number::u32(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "u64" => Number::u64(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "usize" => Number::usize(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "i8" => Number::i8(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "i16" => Number::i16(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "i32" => Number::i32(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "isize" => Number::isize(
+                tokens
+                    .slice()
+                    .parse()
+                    .map_err(map_parseint_error(tokens.span()))?,
+            ),
+            "f32" => Number::f32(tokens.slice().parse().unwrap()),
+            "f64" => Number::f64(tokens.slice().parse().unwrap()),
+            _ => unreachable!(),
+        };
+        let start_span = tokens.span().end;
+        tokens.next();
+
+        Ok(Spanned {
+            span: start_span..tokens.span().end,
+            value: number,
+        })
+    } else {
+        let number = Number::Integer(tokens.slice().parse().unwrap());
+
+        Ok(Spanned {
+            span: tokens.span(),
+            value: number,
+        })
+    }
 }
 
 fn parse_var_assign(

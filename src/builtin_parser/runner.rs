@@ -12,18 +12,20 @@ use crate::command::CommandHints;
 use crate::ui::COMMAND_RESULT_NAME;
 
 use self::error::RunError;
+use self::member::{eval_member_expression, eval_path, Path};
 use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
-use self::unique_rc::{UniqueRc, WeakRef};
+use self::unique_rc::UniqueRc;
 
 use super::parser::{Ast, Expression, Operator};
 use super::{Number, SpanExtension, Spanned};
 
-pub mod environment;
-pub mod error;
-pub mod reflection;
-pub mod stdlib;
-pub mod unique_rc;
-pub mod value;
+pub(super) mod environment;
+pub(super) mod error;
+pub(super) mod member;
+pub(super) mod reflection;
+pub(super) mod stdlib;
+pub(super) mod unique_rc;
+pub(super) mod value;
 
 pub use value::Value;
 
@@ -42,6 +44,8 @@ macro_rules! todo_error {
         })?
     };
 }
+// This makes `todo_error` accessible to the runners submodules
+use todo_error;
 
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'world, 'env, 'reg> {
@@ -527,155 +531,6 @@ fn eval_expression(
                 )
             })
         }
-    }
-}
-
-fn eval_member_expression(
-    left: Spanned<Expression>,
-    right: String,
-    params: EvalParams,
-) -> Result<Value, RunError> {
-    let left_span = left.span.clone();
-    let EvalParams {
-        world,
-        environment,
-        registrations,
-    } = params;
-    // TODO: Add ability to borrow from a struct.
-    let left = eval_expression(
-        left,
-        EvalParams {
-            world,
-            environment,
-            registrations,
-        },
-    )?;
-
-    match left {
-        Value::Object(mut map) | Value::StructObject { mut map, .. } => {
-            let value = map
-                .remove(&right)
-                .ok_or(RunError::FieldNotFoundInStruct(left_span))?;
-
-            Ok(value.into_inner())
-        }
-        Value::Resource(mut resource) => {
-            resource.path.push('.');
-            resource.path += &right;
-
-            Ok(Value::Resource(resource))
-        }
-        _ => Err(RunError::CannotIndexValue(left_span.wrap(left))),
-    }
-}
-
-enum Path {
-    Variable(WeakRef<Value>),
-    NewVariable(String),
-    Resource(IntoResource),
-}
-
-fn eval_path(
-    expr: Spanned<Expression>,
-    EvalParams {
-        world,
-        environment,
-        registrations,
-    }: EvalParams,
-) -> Result<Spanned<Path>, RunError> {
-    match expr.value {
-        Expression::Variable(variable) => {
-            if let Some(registration) = registrations
-                .iter()
-                .find(|v| v.type_info().type_path_table().short_path() == variable)
-            {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::Resource(IntoResource::new(registration.type_id())),
-                })
-            } else if let Ok(variable) = environment.get(&variable, expr.span.clone()) {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::Variable(variable.borrow()),
-                })
-            } else {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::NewVariable(variable),
-                })
-            }
-        }
-        Expression::Member { left, right } => {
-            let left = eval_path(
-                *left,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-
-            match left.value {
-                Path::Variable(variable) => match &*variable.upgrade().unwrap().borrow() {
-                    Value::Resource(resource) => {
-                        let mut resource = resource.clone();
-
-                        resource.path.push('.');
-                        resource.path += &right;
-
-                        Ok(left.span.wrap(Path::Resource(resource)))
-                    }
-                    Value::Object(object) | Value::StructObject { map: object, .. } => {
-                        let weak = match object.get(&right) {
-                            Some(rc) => Ok(rc.borrow()),
-                            None => todo_error!(),
-                        }?;
-
-                        Ok(left.span.wrap(Path::Variable(weak)))
-                    }
-                    Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                        todo_error!("eval_path only takes in a ident so this doesn't really work")
-                    }
-                    value => todo_error!("{value:?}"),
-                },
-                Path::Resource(mut resource) => {
-                    resource.path.push('.');
-                    resource.path += &right;
-
-                    Ok(left.span.wrap(Path::Resource(resource)))
-                }
-                Path::NewVariable(name) => Err(RunError::VariableNotFound(left.span.wrap(name))),
-            }
-        }
-        Expression::Dereference(inner) => {
-            let path = eval_path(
-                *inner,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-            match path.value {
-                Path::Variable(value) => {
-                    let strong = value
-                        .upgrade()
-                        .ok_or(RunError::ReferenceToMovedData(path.span))?;
-                    let borrow = strong.borrow();
-
-                    if let Value::Reference(ref reference) = &*borrow {
-                        Ok(expr.span.wrap(Path::Variable(reference.clone())))
-                    } else {
-                        Err(RunError::CannotDereferenceValue(
-                            expr.span.wrap(borrow.natural_kind()),
-                        ))
-                    }
-                }
-                Path::NewVariable(_) => todo_error!(),
-                Path::Resource(_) => todo_error!(),
-            }
-        }
-        expr => todo_error!("{expr:#?}"),
     }
 }
 
