@@ -66,7 +66,7 @@ impl<T> DerefMut for UniqueRc<T> {
     }
 }
 
-/// A weak reference to a [`UniqueRc`] may or may not exist.
+/// A weak reference to a [`UniqueRc`] that may or may not exist.
 #[derive(Debug)]
 pub struct WeakRef<T: ?Sized> {
     reference: Weak<RefCell<T>>,

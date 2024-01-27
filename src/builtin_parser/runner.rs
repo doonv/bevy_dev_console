@@ -8,23 +8,24 @@ use bevy::reflect::{
     DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
 };
 
-use crate::builtin_parser::parser::access_unwrap;
 use crate::command::CommandHints;
 use crate::ui::COMMAND_RESULT_NAME;
 
 use self::error::RunError;
+use self::member::{eval_member_expression, eval_path, Path};
 use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
-use self::unique_rc::{UniqueRc, WeakRef};
+use self::unique_rc::UniqueRc;
 
-use super::parser::{Access, Ast, Expression, Operator};
+use super::parser::{Ast, Expression, Operator};
 use super::{Number, SpanExtension, Spanned};
 
-pub mod environment;
-pub mod error;
-pub mod reflection;
-pub mod stdlib;
-pub mod unique_rc;
-pub mod value;
+pub(super) mod environment;
+pub(super) mod error;
+pub(super) mod member;
+pub(super) mod reflection;
+pub(super) mod stdlib;
+pub(super) mod unique_rc;
+pub(super) mod value;
 
 pub use value::Value;
 
@@ -43,6 +44,8 @@ macro_rules! todo_error {
         })?
     };
 }
+// This makes `todo_error` accessible to the runners submodules
+use todo_error;
 
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'world, 'env, 'reg> {
@@ -528,242 +531,6 @@ fn eval_expression(
                 )
             })
         }
-    }
-}
-
-fn eval_member_expression(
-    left: Spanned<Expression>,
-    right: Spanned<Access>,
-    EvalParams {
-        world,
-        environment,
-        registrations,
-    }: EvalParams,
-) -> Result<Value, RunError> {
-    let left_span = left.span.clone();
-    let span = left.span.start..right.span.end;
-    let left = eval_expression(
-        left,
-        EvalParams {
-            world,
-            environment,
-            registrations,
-        },
-    )?;
-
-    match left {
-        Value::Reference(reference) => {
-            let Some(strong) = reference.upgrade() else {
-                return Err(RunError::ReferenceToMovedData(left_span));
-            };
-            let reference = strong.borrow();
-            match &&*reference {
-                Value::Object(map) | Value::StructObject { map, .. } => {
-                    access_unwrap!("an object reference", Field(field) = right => {
-                        let value = map.get(&field).ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
-
-                        Ok(Value::Reference(value.borrow()))
-                    })
-                }
-                Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                    access_unwrap!("a tuple reference", TupleIndex(index) = right => {
-                        let Spanned { span: _, value } =
-                            tuple.get(index).ok_or(RunError::FieldNotFoundInTuple {
-                                span,
-                                field_index: index,
-                                tuple_size: tuple.len(),
-                            })?;
-
-                        Ok(Value::Reference(value.borrow()))
-                    })
-                }
-                Value::Resource(resource) => {
-                    access_unwrap!("a resource", Field(field) = right => {
-                        let mut resource = resource.clone();
-
-                        resource.path.push('.');
-                        resource.path += &field;
-
-                        Ok(Value::Resource(resource))
-                    })
-                }
-                var => Err(RunError::CannotIndexValue(left_span.wrap((*var).clone()))),
-            }
-        }
-        Value::Object(mut map) | Value::StructObject { mut map, .. } => {
-            access_unwrap!("an object", Field(field) = right => {
-                let value = map
-                    .remove(&field)
-                    .ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
-
-                Ok(value.into_inner())
-            })
-        }
-        Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-            access_unwrap!("a tuple reference", TupleIndex(field_index) = right => {
-                let tuple_size = tuple.len();
-                let Spanned { span: _, value } =
-                    tuple
-                        .into_vec()
-                        .into_iter()
-                        .nth(field_index)
-                        .ok_or(RunError::FieldNotFoundInTuple {
-                            span,
-                            field_index,
-                            tuple_size,
-                        })?;
-
-                Ok(value.into_inner())
-            })
-        }
-        Value::Resource(mut resource) => {
-            access_unwrap!("a resource", Field(field) = right => {
-                resource.path.push('.');
-                resource.path += &field;
-
-                Ok(Value::Resource(resource))
-            })
-        }
-        _ => Err(RunError::CannotIndexValue(left_span.wrap(left))),
-    }
-}
-
-enum Path {
-    Variable(WeakRef<Value>),
-    NewVariable(String),
-    Resource(IntoResource),
-}
-
-fn eval_path(
-    expr: Spanned<Expression>,
-    EvalParams {
-        world,
-        environment,
-        registrations,
-    }: EvalParams,
-) -> Result<Spanned<Path>, RunError> {
-    match expr.value {
-        Expression::Variable(variable) => {
-            if let Some(registration) = registrations
-                .iter()
-                .find(|v| v.type_info().type_path_table().short_path() == variable)
-            {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::Resource(IntoResource::new(registration.type_id())),
-                })
-            } else if let Ok(variable) = environment.get(&variable, expr.span.clone()) {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::Variable(variable.borrow()),
-                })
-            } else {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::NewVariable(variable),
-                })
-            }
-        }
-        Expression::Member { left, right } => {
-            let left = eval_path(
-                *left,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-            match left.value {
-                Path::Variable(variable) => match &*variable.upgrade().unwrap().borrow() {
-                    Value::Resource(resource) => {
-                        access_unwrap!("a resource", Field(field) = right => {
-                            let mut resource = resource.clone();
-
-                            resource.path.push('.');
-                            resource.path += &field;
-
-                            Ok(left.span.wrap(Path::Resource(resource)))
-                        })
-                    }
-                    Value::Object(object) | Value::StructObject { map: object, .. } => {
-                        let span = left.span.start..right.span.end;
-                        access_unwrap!("an object", Field(field) = right => {
-                            let weak = match object.get(&field) {
-                                Some(rc) => rc.borrow(),
-                                None => {
-                                    return Err(RunError::FieldNotFoundInStruct(span.wrap(field)))
-                                }
-                            };
-
-                            Ok(span.wrap(Path::Variable(weak)))
-                        })
-                    }
-                    Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                        let span = left.span.start..right.span.end;
-                        access_unwrap!("a tupple", TupleIndex(index) = right => {
-                            let weak = match tuple.get(index) {
-                                Some(Spanned { value: rc, span: _ }) => rc.borrow(),
-                                None => {
-                                    return Err(RunError::FieldNotFoundInTuple {
-                                        span,
-                                        field_index: index,
-                                        tuple_size: tuple.len(),
-                                    })
-                                }
-                            };
-
-                            Ok(span.wrap(Path::Variable(weak)))
-                        })
-                    }
-                    value => todo_error!("{value:?}"),
-                },
-                Path::Resource(mut resource) => {
-                    if let Access::Field(right) = right.value {
-                        resource.path.push('.');
-                        resource.path += &right;
-
-                        Ok(left.span.wrap(Path::Resource(resource)))
-                    } else {
-                        Err(RunError::IncorrectAccessOperation {
-                            span: right.span,
-                            expected_access: &["a field"],
-                            expected_type: "a resource",
-                            got: right.value,
-                        })
-                    }
-                }
-                Path::NewVariable(name) => Err(RunError::VariableNotFound(left.span.wrap(name))),
-            }
-        }
-        Expression::Dereference(inner) => {
-            let path = eval_path(
-                *inner,
-                EvalParams {
-                    world,
-                    environment,
-                    registrations,
-                },
-            )?;
-            match path.value {
-                Path::Variable(value) => {
-                    let strong = value
-                        .upgrade()
-                        .ok_or(RunError::ReferenceToMovedData(path.span))?;
-                    let borrow = strong.borrow();
-
-                    if let Value::Reference(ref reference) = &*borrow {
-                        Ok(expr.span.wrap(Path::Variable(reference.clone())))
-                    } else {
-                        Err(RunError::CannotDereferenceValue(
-                            expr.span.wrap(borrow.natural_kind()),
-                        ))
-                    }
-                }
-                Path::NewVariable(_) => todo_error!(),
-                Path::Resource(_) => todo_error!(),
-            }
-        }
-        expr => todo_error!("can't eval path of this expr: {expr:#?}"),
     }
 }
 
