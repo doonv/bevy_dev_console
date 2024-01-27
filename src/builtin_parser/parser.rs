@@ -149,7 +149,7 @@ macro_rules! access_unwrap {
 pub(crate) use access_unwrap;
 
 impl Expression {
-    pub fn kind(&self) -> &'static str {
+    pub const fn kind(&self) -> &'static str {
         match self {
             Expression::None => "nothing",
             Expression::Boolean(..) => "a boolean",

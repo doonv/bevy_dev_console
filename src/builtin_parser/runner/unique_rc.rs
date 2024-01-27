@@ -18,7 +18,7 @@ impl<T: ?Sized> UniqueRc<T> {
     ///
     /// This function is unsafe because it allows direct access to the [`Rc`].
     /// If cloned then the gurantee that there is only ever one strong reference is no longer satisfied.
-    unsafe fn get_rc(&self) -> &Rc<RefCell<T>> {
+    const unsafe fn get_rc(&self) -> &Rc<RefCell<T>> {
         &self.0
     }
     pub(crate) fn borrow_inner(&self) -> &RefCell<T> {

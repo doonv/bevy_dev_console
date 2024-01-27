@@ -15,7 +15,7 @@ pub struct IntoResource {
     pub path: String,
 }
 impl IntoResource {
-    pub fn new(id: TypeId) -> Self {
+    pub const fn new(id: TypeId) -> Self {
         Self {
             id,
             path: String::new(),
