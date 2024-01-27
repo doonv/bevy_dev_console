@@ -577,7 +577,16 @@ fn eval_member_expression(
                         Ok(Value::Reference(value.borrow()))
                     })
                 }
-                Value::Resource(resource) => todo_error!("todo resource reference"),
+                Value::Resource(resource) => {
+                    access_unwrap!("a resource", Field(field) = right => {
+                        let mut resource = resource.clone();
+
+                        resource.path.push('.');
+                        resource.path += &field;
+
+                        Ok(Value::Resource(resource))
+                    })
+                }
                 var => Err(RunError::CannotIndexValue(left_span.wrap((*var).clone()))),
             }
         }
