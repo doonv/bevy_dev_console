@@ -281,7 +281,7 @@ impl<S: Subscriber> Layer<S> for LogEventLayer {
 
 /// A [`Visit`]or that records log messages that are transfered to [`LogEventLayer`].
 struct LogEventVisitor<'a>(&'a mut Option<String>);
-impl<'a> Visit for LogEventVisitor<'a> {
+impl Visit for LogEventVisitor<'_> {
     fn record_debug(
         &mut self,
         field: &bevy::utils::tracing::field::Field,

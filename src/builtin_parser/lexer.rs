@@ -172,7 +172,7 @@ impl<'a> TokenStream<'a> {
     }
 }
 
-impl<'a> Iterator for TokenStream<'a> {
+impl Iterator for TokenStream<'_> {
     type Item = Result<Token, FailedToLexCharacter>;
 
     #[inline]
