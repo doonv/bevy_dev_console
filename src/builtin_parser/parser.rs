@@ -125,7 +125,7 @@ impl AccessKind {
 }
 
 /// Get the access if its of a certain type, if not, return a [`RunError`](super::runner::error::RunError).
-/// 
+///
 /// For examples, take a look at existing uses in the code.
 macro_rules! access_unwrap {
     ($expected:literal, $($variant:ident($variant_inner:ident))|+ = $val:expr => $block:block) => {{

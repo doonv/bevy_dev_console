@@ -540,6 +540,7 @@ fn eval_member_expression(
         registrations,
     }: EvalParams,
 ) -> Result<Value, RunError> {
+    let left_span = left.span.clone();
     let span = left.span.start..right.span.end;
     let left = eval_expression(
         left,
@@ -551,11 +552,57 @@ fn eval_member_expression(
     )?;
 
     match left {
+        Value::Reference(reference) => {
+            let Some(strong) = reference.upgrade() else {
+                return Err(RunError::ReferenceToMovedData(left_span));
+            };
+            let reference = strong.borrow();
+            match &&*reference {
+                Value::Object(map) | Value::StructObject { map, .. } => {
+                    access_unwrap!("an object reference", Field(field) = right => {
+                        let value = map.get(&field).ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
+
+                        Ok(Value::Reference(value.borrow()))
+                    })
+                }
+                Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
+                    access_unwrap!("a tuple reference", TupleIndex(index) = right => {
+                        let Spanned { span: _, value } =
+                            tuple.get(index).ok_or(RunError::FieldNotFoundInTuple {
+                                span,
+                                field_index: index,
+                                tuple_size: tuple.len(),
+                            })?;
+
+                        Ok(Value::Reference(value.borrow()))
+                    })
+                }
+                Value::Resource(resource) => todo_error!("todo resource reference"),
+                var => Err(RunError::CannotIndexValue(left_span.wrap((*var).clone()))),
+            }
+        }
         Value::Object(mut map) | Value::StructObject { mut map, .. } => {
             access_unwrap!("an object", Field(field) = right => {
                 let value = map
                     .remove(&field)
                     .ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
+
+                Ok(value.into_inner())
+            })
+        }
+        Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
+            access_unwrap!("a tuple reference", TupleIndex(field_index) = right => {
+                let tuple_size = tuple.len();
+                let Spanned { span: _, value } =
+                    tuple
+                        .into_vec()
+                        .into_iter()
+                        .nth(field_index)
+                        .ok_or(RunError::FieldNotFoundInTuple {
+                            span,
+                            field_index,
+                            tuple_size,
+                        })?;
 
                 Ok(value.into_inner())
             })
@@ -568,7 +615,7 @@ fn eval_member_expression(
                 Ok(Value::Resource(resource))
             })
         }
-        _ => Err(RunError::CannotIndexValue(span.wrap(left))),
+        _ => Err(RunError::CannotIndexValue(left_span.wrap(left))),
     }
 }
 
@@ -620,25 +667,18 @@ fn eval_path(
             match left.value {
                 Path::Variable(variable) => match &*variable.upgrade().unwrap().borrow() {
                     Value::Resource(resource) => {
-                        if let Access::Field(right) = right.value {
+                        access_unwrap!("a resource", Field(field) = right => {
                             let mut resource = resource.clone();
 
                             resource.path.push('.');
-                            resource.path += &right;
+                            resource.path += &field;
 
                             Ok(left.span.wrap(Path::Resource(resource)))
-                        } else {
-                            Err(RunError::IncorrectAccessOperation {
-                                span: right.span,
-                                expected_access: &["a field access"],
-                                expected_type: "a resource",
-                                got: right.value,
-                            })
-                        }
+                        })
                     }
                     Value::Object(object) | Value::StructObject { map: object, .. } => {
-                        if let Access::Field(field) = right.value {
-                            let span = left.span.join(right.span);
+                        let span = left.span.start..right.span.end;
+                        access_unwrap!("an object", Field(field) = right => {
                             let weak = match object.get(&field) {
                                 Some(rc) => rc.borrow(),
                                 None => {
@@ -647,18 +687,11 @@ fn eval_path(
                             };
 
                             Ok(span.wrap(Path::Variable(weak)))
-                        } else {
-                            Err(RunError::IncorrectAccessOperation {
-                                span: right.span,
-                                expected_access: &["a field access"],
-                                expected_type: "an object",
-                                got: right.value,
-                            })
-                        }
+                        })
                     }
                     Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                        if let Access::TupleIndex(index) = right.value {
-                            let span = left.span.join(right.span);
+                        let span = left.span.start..right.span.end;
+                        access_unwrap!("a tupple", TupleIndex(index) = right => {
                             let weak = match tuple.get(index) {
                                 Some(Spanned { value: rc, span: _ }) => rc.borrow(),
                                 None => {
@@ -671,14 +704,7 @@ fn eval_path(
                             };
 
                             Ok(span.wrap(Path::Variable(weak)))
-                        } else {
-                            Err(RunError::IncorrectAccessOperation {
-                                span: right.span,
-                                expected_access: &["a tuple access"],
-                                expected_type: "a tuple",
-                                got: right.value,
-                            })
-                        }
+                        })
                     }
                     value => todo_error!("{value:?}"),
                 },
