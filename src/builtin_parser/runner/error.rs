@@ -200,7 +200,7 @@ impl RunError {
                 got,
                 span: _,
             } => format!(
-                "{} to access {expected_type} but got {}",
+                "Expected {} access to access {expected_type} but got {}",
                 expected_access.join(" and "),
                 got.natural_kind()
             )

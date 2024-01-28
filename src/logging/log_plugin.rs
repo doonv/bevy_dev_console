@@ -197,9 +197,9 @@ impl Plugin for ConsoleLogPlugin {
             (true, true) => warn!(
                 "Could not set global logger and tracing subscriber as they are already set. Consider disabling ConsoleLogPlugin."
             ),
-            (true, _) => warn!("Could not set global logger as it is already set. Consider disabling ConsoleLogPlugin."),
-            (_, true) => warn!("Could not set global tracing subscriber as it is already set. Consider disabling ConsoleLogPlugin."),
-            _ => (),
+            (true, false) => warn!("Could not set global logger as it is already set. Consider disabling ConsoleLogPlugin."),
+            (false, true) => warn!("Could not set global tracing subscriber as it is already set. Consider disabling ConsoleLogPlugin."),
+            (false, false) => (),
         }
     }
 }

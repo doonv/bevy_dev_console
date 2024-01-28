@@ -20,14 +20,13 @@ enum MyEnum {
 
 #[derive(Resource, Reflect, Default, Debug)]
 struct MyStruct {
-    number1: f64,
-    number2: i16,
-    number3: f32,
+    number: f64,
     string: String,
     struct_in_struct: SubStruct,
+    tuple: (i32, u8)
 }
-#[derive(Reflect, Default, Debug)]
 
+#[derive(Reflect, Default, Debug)]
 struct SubStruct {
     boolean: bool,
     enume: MyEnum,
@@ -38,14 +37,13 @@ fn main() {
         .register_type::<MyEnum>()
         .init_resource::<MyEnum>()
         .insert_resource(MyStruct {
-            number1: 52138.0,
-            number2: -123,
-            number3: 0.0,
+            number: 5.6,
             string: "hi there :)".to_string(),
             struct_in_struct: SubStruct {
                 boolean: false,
                 enume: MyEnum::Tupleo("nooo".to_string(), 5.),
             },
+            tuple: (-5, 255)
         })
         .register_type::<MyStruct>()
         .add_plugins((

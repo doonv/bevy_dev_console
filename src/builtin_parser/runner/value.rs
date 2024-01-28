@@ -258,17 +258,23 @@ fn fancy_debug_print(
 
                     let field_value = debug_subprint(field, indentation + 1);
                     f += &format!(
-                        "{identation_string}{TAB}{}: {} = {},\n",
-                        field_name,
+                        "{identation_string}{TAB}{field_name}: {} = {field_value},\n",
                         field.reflect_short_type_path(),
-                        field_value
                     );
                 }
                 f += &identation_string;
                 f += "}";
             }
             ReflectRef::TupleStruct(_) => todo!(),
-            ReflectRef::Tuple(_) => todo!(),
+            ReflectRef::Tuple(tuple_info) => {
+                f += "(\n";
+                for field in tuple_info.iter_fields() {
+                    let field_value = debug_subprint(field, indentation + 1);
+                    f += &format!("{identation_string}{TAB}{field_value},\n",);
+                }
+                f += &identation_string;
+                f += ")";
+            }
             ReflectRef::List(_) => todo!(),
             ReflectRef::Array(_) => todo!(),
             ReflectRef::Map(_) => todo!(),
@@ -305,8 +311,8 @@ fn fancy_debug_print(
                     VariantType::Unit => {}
                 }
             }
-            ReflectRef::Value(value) => {
-                f += &format!("{value:?}");
+            ReflectRef::Value(_) => {
+                f += &format!("{reflect:?}");
             }
         }
 
