@@ -9,6 +9,8 @@ use crate::builtin_parser::RunError;
 
 use super::Value;
 
+/// [`IntoResource`] allows `bevy_dev_console` to create a long-lasting resource "reference"
+/// that can be "unwrapped" into the appropriate resource.
 #[derive(Debug, Clone)]
 pub struct IntoResource {
     pub id: TypeId,
