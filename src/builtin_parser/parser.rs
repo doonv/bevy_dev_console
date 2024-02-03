@@ -675,19 +675,95 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
+    use logos::Span;
+
+    use crate::builtin_parser::Spanned;
+
     use super::super::lexer::TokenStream;
     use super::super::Environment;
-    use super::parse;
+    use super::{parse, Expression};
 
     #[test]
     fn var_assign() {
         let mut lexer = TokenStream::new("x = 1 + 2 - 30 + y");
         let environment = Environment::default();
 
-        let ast = parse(&mut lexer, &environment);
+        let ast = parse(&mut lexer, &environment).unwrap();
 
-        assert!(ast.is_ok());
+        let mut stmts = ast.into_iter();
 
-        // TODO: figure out how to assert ast
+        use crate::builtin_parser::parser::Operator::*;
+        use crate::builtin_parser::Number::*;
+        use Expression::*;
+
+        assert!(matches!(
+            stmts.next(),
+            Some(Spanned {
+                span: Span { start: 0, end: 18 },
+                value:
+                    VarAssign {
+                        name:
+                            box Spanned {
+                                span: Span { start: 0, end: 1 },
+                                value: Variable(_),
+                            },
+                        value:
+                            box Spanned {
+                                span: Span { start: 4, end: 18 },
+                                value:
+                                    BinaryOp {
+                                        left:
+                                            box Spanned {
+                                                span: Span { start: 4, end: 14 },
+                                                value:
+                                                    BinaryOp {
+                                                        left:
+                                                            box Spanned {
+                                                                span: Span { start: 4, end: 9 },
+                                                                value:
+                                                                    BinaryOp {
+                                                                        left:
+                                                                            box Spanned {
+                                                                                span:
+                                                                                    Span {
+                                                                                        start: 4,
+                                                                                        end: 5,
+                                                                                    },
+                                                                                value:
+                                                                                    Number(Integer(1)),
+                                                                            },
+                                                                        operator: Add,
+                                                                        right:
+                                                                            box Spanned {
+                                                                                span:
+                                                                                    Span {
+                                                                                        start: 8,
+                                                                                        end: 9,
+                                                                                    },
+                                                                                value:
+                                                                                    Number(Integer(2)),
+                                                                            },
+                                                                    },
+                                                            },
+                                                        operator: Sub,
+                                                        right:
+                                                            box Spanned {
+                                                                span: Span { start: 12, end: 14 },
+                                                                value: Number(Integer(30)),
+                                                            },
+                                                    },
+                                            },
+                                        operator: Add,
+                                        right:
+                                            box Spanned {
+                                                span: Span { start: 17, end: 18 },
+                                                value: Variable(_),
+                                            },
+                                    },
+                            },
+                    },
+            })
+        ));
+        // println!("{:#?}", stmts.next());
     }
 }
