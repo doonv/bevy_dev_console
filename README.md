@@ -4,7 +4,8 @@
 
 ![Image of the developer console](doc/console.png)
 
-> **Warning:** `bevy_dev_console` is currently in its early development stages. Expect breaking changes in the near future (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
+> [!WARNING]  
+> `bevy_dev_console` is currently in its early development stages. Expect breaking changes in the near future (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
 
 ## Features
 
