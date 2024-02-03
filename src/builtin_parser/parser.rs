@@ -225,7 +225,7 @@ fn parse_expression(
             tokens.next();
 
             let index_name = tokens.slice().to_string();
-            
+
             tokens.next();
 
             match tokens.next() {

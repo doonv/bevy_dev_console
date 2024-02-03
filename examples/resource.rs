@@ -23,7 +23,7 @@ struct MyStruct {
     number: f64,
     string: String,
     struct_in_struct: SubStruct,
-    tuple: (i32, u8)
+    tuple: (i32, u8),
 }
 
 #[derive(Reflect, Default, Debug)]
@@ -43,7 +43,7 @@ fn main() {
                 boolean: false,
                 enume: MyEnum::Tupleo("nooo".to_string(), 5.),
             },
-            tuple: (-5, 255)
+            tuple: (-5, 255),
         })
         .register_type::<MyStruct>()
         .add_plugins((

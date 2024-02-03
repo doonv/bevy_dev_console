@@ -132,7 +132,7 @@ impl RunError {
             CannotIndexValue(Spanned { span: _, value }) => {
                 format!("Cannot index {} with a member expression.", value.kind()).into()
             }
-            ReferenceToMovedData(_) => todo!(),
+            ReferenceToMovedData(_) => "Cannot access reference to moved data.".into(),
             VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
             CannotDereferenceValue(Spanned { value: kind, .. }) => {
                 format!("Cannot dereference {kind}.").into()

@@ -112,7 +112,11 @@ pub fn run(ast: Ast, world: &mut World) {
                     Ok(value) => {
                         info!(name: COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX)
                     }
-                    Err(err) => error!("{err:?}"),
+                    Err(err) => {
+                        hints.push(err.hints());
+
+                        error!("{}", err.message());
+                    }
                 },
                 Err(err) => {
                     hints.push(err.hints());
