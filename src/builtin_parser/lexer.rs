@@ -139,16 +139,19 @@ impl<'a> TokenStream<'a> {
     // }
 
     /// Returns a reference to next [`Token`] without advancing the iterator
+    #[inline]
     pub fn peek(&self) -> &Option<Result<Token, FailedToLexCharacter>> {
         &self.next
     }
 
     /// Get the range for the current [`Token`] in `Source`.
+    #[inline]
     pub fn span(&self) -> Span {
         self.current_span.clone()
     }
 
     /// Get a [`str`] slice of the current [`Token`].
+    #[inline]
     pub fn slice(&self) -> &str {
         self.current_slice
     }

@@ -4,7 +4,7 @@ use std::ops::*;
 use bevy::reflect::Reflect;
 use logos::Span;
 
-use super::{RunError, SpanExtension, Spanned};
+use super::{EvalError, SpanExtension, Spanned};
 
 /// An enum that contains any type of number.
 ///
@@ -35,7 +35,7 @@ pub enum Number {
 
 impl Number {
     /// Converts this into a [`Box<dyn Reflect>`](Reflect).
-    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, RunError> {
+    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, EvalError> {
         match self {
             Number::u8(number) => Ok(Box::new(number)),
             Number::u16(number) => Ok(Box::new(number)),
@@ -60,7 +60,7 @@ impl Number {
                 "i32" => Ok(Box::new(number as i32)),
                 "i64" => Ok(Box::new(number as i64)),
                 "isize" => Ok(Box::new(number as isize)),
-                ty => Err(RunError::IncompatibleReflectTypes {
+                ty => Err(EvalError::IncompatibleReflectTypes {
                     expected: "integer".to_string(),
                     actual: ty.to_string(),
                     span,
@@ -69,7 +69,7 @@ impl Number {
             Number::Float(number) => match ty {
                 "f32" => Ok(Box::new(number as f32)),
                 "f64" => Ok(Box::new(number)),
-                ty => Err(RunError::IncompatibleReflectTypes {
+                ty => Err(EvalError::IncompatibleReflectTypes {
                     expected: "float".to_string(),
                     actual: ty.to_string(),
                     span,
@@ -147,8 +147,8 @@ macro_rules! impl_op {
     ($fn:ident, $op:tt, $checked:ident)=> {
         impl Number {
             #[doc = concat!("Performs the `", stringify!($op), "` calculation.")]
-            pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, RunError> {
-                let op_err = || RunError::InvalidOperation {
+            pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, EvalError> {
+                let op_err = || EvalError::InvalidOperation {
                     left,
                     right,
                     operation: stringify!($fn),
@@ -195,7 +195,7 @@ macro_rules! impl_op {
                     (Number::Float(left), Number::Float(right)) => Ok(Number::Float(left $op right)),
                     (Number::f32(left), Number::Float(right)) => Ok(Number::f32(left $op right as f32)),
                     (Number::f64(left), Number::Float(right)) => Ok(Number::f64(left $op right as f64)),
-                    _ => Err(RunError::IncompatibleNumberTypes {
+                    _ => Err(EvalError::IncompatibleNumberTypes {
                         left: left.natural_kind(),
                         right: right.natural_kind(),
                         span
@@ -215,7 +215,7 @@ impl_op!(rem, %, checked_rem);
 macro_rules! impl_op_spanned {
     ($trait:ident, $method:ident) => {
         impl $trait<Self> for Spanned<Number> {
-            type Output = Result<Number, RunError>;
+            type Output = Result<Number, EvalError>;
             fn $method(self, rhs: Self) -> Self::Output {
                 let span = self.span.join(rhs.span);
 
@@ -232,25 +232,25 @@ impl_op_spanned!(Rem, rem);
 
 impl Number {
     /// Performs the unary `-` operation.
-    pub fn neg(self, span: Span) -> Result<Number, RunError> {
+    pub fn neg(self, span: Span) -> Result<Number, EvalError> {
         match self {
-            Number::u8(_) => Err(RunError::CannotNegateUnsignedInteger(Spanned {
+            Number::u8(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
                 span,
                 value: self,
             })),
-            Number::u16(_) => Err(RunError::CannotNegateUnsignedInteger(Spanned {
+            Number::u16(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
                 span,
                 value: self,
             })),
-            Number::u32(_) => Err(RunError::CannotNegateUnsignedInteger(Spanned {
+            Number::u32(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
                 span,
                 value: self,
             })),
-            Number::u64(_) => Err(RunError::CannotNegateUnsignedInteger(Spanned {
+            Number::u64(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
                 span,
                 value: self,
             })),
-            Number::usize(_) => Err(RunError::CannotNegateUnsignedInteger(Spanned {
+            Number::usize(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
                 span,
                 value: self,
             })),

@@ -9,9 +9,6 @@ use logos::Span;
 
 use crate::command::{CommandParser, DefaultCommandParser};
 
-use self::lexer::TokenStream;
-use self::parser::parse;
-
 pub(crate) mod lexer;
 pub(crate) mod number;
 pub(crate) mod parser;
@@ -19,7 +16,7 @@ pub(crate) mod runner;
 
 pub use number::*;
 pub use runner::environment::Environment;
-pub use runner::error::RunError;
+pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
 pub use runner::Value;
 
@@ -70,17 +67,17 @@ impl Default for DefaultCommandParser {
 pub struct BuiltinCommandParser;
 impl CommandParser for BuiltinCommandParser {
     fn parse(&self, command: &str, world: &mut World) {
-        let mut tokens = TokenStream::new(command);
+        let mut tokens = lexer::TokenStream::new(command);
 
-        let environment = world.remove_non_send_resource::<Environment>().unwrap();
-        let ast = parse(&mut tokens, &environment);
-        world.insert_non_send_resource(environment);
+        let environment = world.non_send_resource::<Environment>();
+        let ast = parser::parse(&mut tokens, environment);
 
         dbg!(&ast);
         match ast {
-            Ok(ast) => {
-                runner::run(ast, world);
-            }
+            Ok(ast) => match runner::run(ast, world) {
+                Ok(()) => (),
+                Err(err) => error!("{err}"),
+            },
             Err(err) => error!("{err:#?}"),
         }
     }

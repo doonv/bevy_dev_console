@@ -12,7 +12,7 @@ use super::Value;
 /// An error occuring during the while executing the [`AST`](Ast) of the command.
 #[derive(Debug)]
 #[allow(missing_docs)]
-pub enum RunError {
+pub enum EvalError {
     /// A custom text message. Contains very little contextual information, try to find an existing error instead.
     Custom {
         /// The text of the message
@@ -77,10 +77,10 @@ pub enum RunError {
     },
 }
 
-impl RunError {
+impl EvalError {
     /// Get all the locations of the error in the source.
     pub fn spans(&self) -> Vec<Span> {
-        use RunError::*;
+        use EvalError::*;
 
         match self {
             Custom { span, .. } => vec![span.clone()],
@@ -117,7 +117,7 @@ impl RunError {
     }
     /// A summary message explaining this error.
     pub fn message(&self) -> Cow<'static, str> {
-        use RunError::*;
+        use EvalError::*;
 
         match self {
             Custom { text, .. } => text.clone(),
@@ -217,3 +217,11 @@ impl RunError {
         }
     }
 }
+
+impl std::fmt::Display for EvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message())
+    }
+}
+
+impl std::error::Error for EvalError {}

@@ -8,10 +8,9 @@ use bevy::reflect::{
     DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
 };
 
-use crate::command::CommandHints;
 use crate::ui::COMMAND_RESULT_NAME;
 
-use self::error::RunError;
+use self::error::EvalError;
 use self::member::{eval_member_expression, eval_path, Path};
 use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
 use self::unique_rc::UniqueRc;
@@ -32,13 +31,13 @@ pub use value::Value;
 /// Temporary macro that prevents panicking by replacing the [`todo!`] panic with an error message.
 macro_rules! todo_error {
     () => {
-        Err(RunError::Custom {
+        Err(EvalError::Custom {
             text: concat!("todo error invoked at ", file!(), ":", line!(), ":", column!()).into(),
             span: 0..0
         })?
     };
     ($($arg:tt)+) => {
-        Err(RunError::Custom {
+        Err(EvalError::Custom {
             text: format!(concat!("todo error invoked at ", file!(), ":", line!(), ":", column!(), " : {}"), format_args!($($arg)+)).into(),
             span: 0..0
         })?
@@ -54,24 +53,53 @@ pub struct EvalParams<'world, 'env, 'reg> {
     registrations: &'reg [&'reg TypeRegistration],
 }
 
-pub fn run(ast: Ast, world: &mut World) {
+#[derive(Debug)]
+pub enum ExecutionError {
+    NoEnvironment,
+    NoTypeRegistry,
+    Eval(EvalError),
+}
+
+impl std::fmt::Display for ExecutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NoEnvironment => write!(
+                f,
+                "Environment resource doesn't exist, not executing command."
+            ),
+            Self::NoTypeRegistry => write!(
+                f,
+                "The AppTypeRegistry doesn't exist, not executing command. "
+            ),
+            Self::Eval(run_error) => <EvalError as std::fmt::Display>::fmt(run_error, f),
+        }
+    }
+}
+impl std::error::Error for ExecutionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            ExecutionError::Eval(eval) => Some(eval),
+            _ => None,
+        }
+    }
+}
+impl From<EvalError> for ExecutionError {
+    fn from(value: EvalError) -> Self {
+        Self::Eval(value)
+    }
+}
+
+pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
     // Temporarily remove the [`Environment`] resource to gain
     // mutability without needing a mutable reference.
-    let Some(mut environment) = world.remove_non_send_resource::<Environment>() else {
-        error!("Environment resource doesn't exist, not executing command.");
-        return;
-    };
+    let mut environment = world
+        .remove_non_send_resource::<Environment>()
+        .ok_or(ExecutionError::NoEnvironment)?;
 
     // Same thing here (this time we are doing it because we are passing a `&mut World` to `eval_expression`)
-    let Some(registry) = world.remove_resource::<AppTypeRegistry>() else {
-        error!("The AppTypeRegistry doesn't exist, not executing command. (What have you done to cause this? o_O)");
-        return;
-    };
-
-    let Some(mut hints) = world.remove_resource::<CommandHints>() else {
-        error!("CommandHints don't exist, not executing commands. (Seriously how did this happen)");
-        return;
-    };
+    let registry = world
+        .remove_resource::<AppTypeRegistry>()
+        .ok_or(ExecutionError::NoTypeRegistry)?;
 
     {
         let registry_read = registry.read();
@@ -104,33 +132,24 @@ pub fn run(ast: Ast, world: &mut World) {
                     environment: &mut environment,
                     registrations: &registrations,
                 },
-            );
+            )?;
 
             match value {
-                Ok(Value::None) => {}
-                Ok(value) => match value.try_format(span, world, &registrations) {
-                    Ok(value) => {
-                        info!(name: COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX)
-                    }
-                    Err(err) => {
-                        hints.push(err.hints());
+                Value::None => {}
+                value => {
+                    let value = value.try_format(span, world, &registrations)?;
 
-                        error!("{}", err.message());
-                    }
-                },
-                Err(err) => {
-                    hints.push(err.hints());
-
-                    error!("{}", err.message());
+                    info!(name: COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX);
                 }
             }
         }
     }
 
     // Add back the resources
-    world.insert_resource(hints);
     world.insert_resource(registry);
     world.insert_non_send_resource(environment);
+
+    Ok(())
 }
 
 fn eval_expression(
@@ -140,7 +159,7 @@ fn eval_expression(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Value, RunError> {
+) -> Result<Value, EvalError> {
     match expr.value {
         Expression::VarAssign {
             name,
@@ -207,7 +226,7 @@ fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(RunError::EnumVariantNotFound(span.wrap(name)))
+                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
                                     }
                                 };
                                 let VariantInfo::Unit(_) = variant_info else {
@@ -222,7 +241,7 @@ fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(RunError::EnumVariantNotFound(span.wrap(name)))
+                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
                                     }
                                 };
                                 let VariantInfo::Struct(variant_info) = variant_info else {
@@ -234,11 +253,13 @@ fn eval_expression(
                                     .map(|(k, v)| {
                                         let ty = match variant_info.field(&k) {
                                             Some(field) => Ok(field.type_path_table().short_path()),
-                                            None => Err(RunError::EnumVariantStructFieldNotFound {
-                                                field_name: k.clone(),
-                                                variant_name: name.clone(),
-                                                span: span.clone(),
-                                            }),
+                                            None => {
+                                                Err(EvalError::EnumVariantStructFieldNotFound {
+                                                    field_name: k.clone(),
+                                                    variant_name: name.clone(),
+                                                    span: span.clone(),
+                                                })
+                                            }
                                         }?;
 
                                         let span = v.span.clone();
@@ -277,7 +298,7 @@ fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(RunError::EnumVariantNotFound(span.wrap(name)))
+                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
                                     }
                                 };
                                 let VariantInfo::Tuple(variant_info) = variant_info else {
@@ -298,7 +319,7 @@ fn eval_expression(
                                 for (index, element) in tuple.into_vec().into_iter().enumerate() {
                                     let ty = match variant_info.field_at(index) {
                                         Some(field) => Ok(field.type_path_table().short_path()),
-                                        None => Err(RunError::EnumVariantTupleFieldNotFound {
+                                        None => Err(EvalError::EnumVariantTupleFieldNotFound {
                                             field_index: index,
                                             variant_name: name.clone(),
                                             span: span.clone(),
@@ -344,7 +365,7 @@ fn eval_expression(
                             .unwrap();
 
                         reflect.set(value_reflect).map_err(|value_reflect| {
-                            RunError::IncompatibleReflectTypes {
+                            EvalError::IncompatibleReflectTypes {
                                 span,
                                 expected: reflect.reflect_type_path().to_string(),
                                 actual: value_reflect.reflect_type_path().to_string(),
@@ -363,7 +384,7 @@ fn eval_expression(
                 .iter()
                 .any(|v| v.type_info().type_path_table().short_path() == variable)
             {
-                Err(RunError::CannotMoveOutOfResource(Spanned {
+                Err(EvalError::CannotMoveOutOfResource(Spanned {
                     span: expr.span,
                     value: variable,
                 }))
@@ -477,7 +498,7 @@ fn eval_expression(
             if let Value::Number(number) = value {
                 Ok(Value::Number(number.neg(span)?))
             } else {
-                Err(RunError::ExpectedNumberAfterUnaryOperator(Spanned {
+                Err(EvalError::ExpectedNumberAfterUnaryOperator(Spanned {
                     span,
                     value,
                 }))
@@ -490,14 +511,14 @@ fn eval_expression(
                     Value::Reference(reference) => {
                         let reference = reference
                             .upgrade()
-                            .ok_or(RunError::ReferenceToMovedData(expr.span))?;
+                            .ok_or(EvalError::ReferenceToMovedData(expr.span))?;
                         let owned = reference.borrow().clone();
                         Ok(owned)
                     }
                     value => Ok(value.clone()),
                 }
             } else {
-                Err(RunError::CannotDereferenceValue(
+                Err(EvalError::CannotDereferenceValue(
                     expr.span.wrap(inner.value.kind()),
                 ))
             }
@@ -516,7 +537,7 @@ fn eval_expression(
                     Ok(Value::Reference(weak))
                 }
             } else {
-                Err(RunError::CannotBorrowValue(
+                Err(EvalError::CannotBorrowValue(
                     expr.span.wrap(inner.value.kind()),
                 ))
             }
@@ -545,11 +566,11 @@ fn eval_object(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<HashMap<String, UniqueRc<Value>>, RunError> {
+) -> Result<HashMap<String, UniqueRc<Value>>, EvalError> {
     let map = map
         .into_iter()
         .map(
-            |(key, expr)| -> Result<(String, UniqueRc<Value>), RunError> {
+            |(key, expr)| -> Result<(String, UniqueRc<Value>), EvalError> {
                 Ok((
                     key,
                     UniqueRc::new(eval_expression(
@@ -574,7 +595,7 @@ fn eval_tuple(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Box<[Spanned<UniqueRc<Value>>]>, RunError> {
+) -> Result<Box<[Spanned<UniqueRc<Value>>]>, EvalError> {
     tuple
         .into_iter()
         .map(|expr| {

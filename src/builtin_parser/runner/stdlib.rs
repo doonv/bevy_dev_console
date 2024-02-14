@@ -8,14 +8,14 @@ use std::ops::Range;
 
 mod math;
 
-use super::error::RunError;
+use super::error::EvalError;
 use super::{Environment, Spanned, Value};
 
 fn print(
     value: Spanned<Value>,
     world: &mut World,
     registrations: &[&TypeRegistration],
-) -> Result<(), RunError> {
+) -> Result<(), EvalError> {
     match value.value {
         Value::String(string) => info!("{string}"),
         _ => {
@@ -30,14 +30,14 @@ fn dbg(any: Value) {
     info!("Value::{any:?}");
 }
 
-fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, RunError> {
-    fn ref_depth_reference(value: Ref<Value>, span: Range<usize>) -> Result<usize, RunError> {
+fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, EvalError> {
+    fn ref_depth_reference(value: Ref<Value>, span: Range<usize>) -> Result<usize, EvalError> {
         Ok(match &*value {
             Value::Reference(reference) => {
                 ref_depth_reference(
                     reference
                         .upgrade()
-                        .ok_or(RunError::ReferenceToMovedData(span.clone()))?
+                        .ok_or(EvalError::ReferenceToMovedData(span.clone()))?
                         .borrow(),
                     span,
                 )? + 1
@@ -51,7 +51,7 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, RunError>
             ref_depth_reference(
                 reference
                     .upgrade()
-                    .ok_or(RunError::ReferenceToMovedData(span.clone()))?
+                    .ok_or(EvalError::ReferenceToMovedData(span.clone()))?
                     .borrow(),
                 span,
             )? + 1

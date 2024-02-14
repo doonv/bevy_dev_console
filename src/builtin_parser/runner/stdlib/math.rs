@@ -1,14 +1,14 @@
-use crate::builtin_parser::{Environment, Number, RunError, Spanned};
+use crate::builtin_parser::{Environment, EvalError, Number, Spanned};
 use crate::register;
 
 macro_rules! float_calc_op {
     ($fn:ident, $name:expr) => {
-        fn $fn(number: Spanned<Number>) -> Result<Number, RunError> {
+        fn $fn(number: Spanned<Number>) -> Result<Number, EvalError> {
             match number.value {
                 Number::Float(number) => Ok(Number::Float(number.$fn())),
                 Number::f32(number) => Ok(Number::f32(number.$fn())),
                 Number::f64(number) => Ok(Number::f64(number.$fn())),
-                _ => Err(RunError::Custom {
+                _ => Err(EvalError::Custom {
                     text: concat!("Cannot calculate the ", $name, " of a non-float value").into(),
                     span: number.span,
                 }),

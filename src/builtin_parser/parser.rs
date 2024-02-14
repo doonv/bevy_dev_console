@@ -124,7 +124,7 @@ impl AccessKind {
     }
 }
 
-/// Get the access if its of a certain type, if not, return a [`RunError`](super::runner::error::RunError).
+/// Get the access if its of a certain type, if not, return a [`EvalError`](super::runner::error::EvalError).
 ///
 /// For examples, take a look at existing uses in the code.
 macro_rules! access_unwrap {
@@ -132,12 +132,12 @@ macro_rules! access_unwrap {
         let val = $val;
         if let $(Access::$variant($variant_inner))|+ = val.value $block else {
             use $crate::builtin_parser::parser::AccessKind;
-            use $crate::builtin_parser::runner::error::RunError;
+            use $crate::builtin_parser::runner::error::EvalError;
 
             // We have to put this in a `const` first to avoid a
             // `temporary value dropped while borrowed` error.
             const EXPECTED_ACCESS: &[&str] = &[$(AccessKind::$variant.natural()),+];
-            Err(RunError::IncorrectAccessOperation {
+            Err(EvalError::IncorrectAccessOperation {
                 span: val.span,
                 expected_access: EXPECTED_ACCESS,
                 expected_type: $expected,
@@ -201,8 +201,10 @@ pub enum ParseError {
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     let mut ast = Vec::new();
+
     while tokens.peek().is_some() {
         ast.push(parse_expression(tokens, environment)?);
+
         match tokens.next() {
             Some(Ok(Token::SemiColon)) => continue,
             Some(Ok(token)) => return Err(ParseError::ExpectedEndline(tokens.wrap_span(token))),
@@ -212,6 +214,7 @@ pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast,
             None => break,
         }
     }
+
     Ok(ast)
 }
 
