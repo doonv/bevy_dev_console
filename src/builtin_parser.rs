@@ -7,7 +7,8 @@
 use bevy::prelude::*;
 use logos::Span;
 
-use crate::command::{CommandParser, DefaultCommandParser};
+use crate::builtin_parser::runner::ExecutionError;
+use crate::command::{CommandHints, CommandParser, DefaultCommandParser};
 
 pub(crate) mod lexer;
 pub(crate) mod number;
@@ -76,7 +77,15 @@ impl CommandParser for BuiltinCommandParser {
         match ast {
             Ok(ast) => match runner::run(ast, world) {
                 Ok(()) => (),
-                Err(err) => error!("{err}"),
+                Err(error) => {
+                    if let ExecutionError::Eval(eval_error) = &error {
+                        world
+                            .resource_mut::<CommandHints>()
+                            .push(eval_error.hints());
+                    }
+
+                    error!("{error}")
+                }
             },
             Err(err) => error!("{err:#?}"),
         }
