@@ -192,12 +192,36 @@ pub enum ParseError {
         span: Span,
     },
     ExpectedEndline(Spanned<Token>),
-    UnexpectedToken(Spanned<Token>),
-    InvalidSuffixForDecimal(Span),
+    ExpectedLiteral(Spanned<Token>),
+    InvalidSuffixForDecimal(Spanned<String>),
     NegativeIntOverflow(Span),
     PositiveIntOverflow(Span),
     ExpectObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
 }
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParseError::FailedToLexCharacter(_) => write!(f, "Invalid character"),
+            ParseError::ExpectedMoreTokens(_) => write!(f, "Expected more tokens, got nothing."),
+            ParseError::ExpectedTokenButGot {
+                expected,
+                got,
+                span: _,
+            } => write!(f, "Expected token {expected:?}, got token {got:?} instead."),
+            ParseError::ExpectedEndline(_) => write!(f, "Expected a semicolon or endline after a complete statement, but got more tokens than expected."),
+            ParseError::ExpectedLiteral(Spanned { span: _, value }) => write!(f, "Expected a literal token, got {value:?} which is not a valid literal."),
+            ParseError::InvalidSuffixForDecimal(_) => write!(f, ""),
+            ParseError::NegativeIntOverflow(_) => todo!(),
+            ParseError::PositiveIntOverflow(_) => todo!(),
+            ParseError::ExpectObjectContinuation(_) => todo!(),
+        }
+    }
+}
+
+const FLOAT_PARSE_EXPECT_REASON: &str = "Float parse errors only occur d";
+const NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON: &str =
+    "Lexer gurantees `NumberType`'s slice to be included one of the match arms.";
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     let mut ast = Vec::new();
@@ -313,7 +337,7 @@ fn parse_multiplicitive(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    let mut node = parse_primary(tokens, environment)?;
+    let mut node = parse_value(tokens, environment)?;
 
     while let Some(Ok(Token::Asterisk | Token::Slash | Token::Modulo)) = tokens.peek() {
         let operator = match tokens.next() {
@@ -323,7 +347,7 @@ fn parse_multiplicitive(
             _ => unreachable!(),
         };
 
-        let right = parse_primary(tokens, environment)?;
+        let right = parse_value(tokens, environment)?;
 
         node = Spanned {
             span: node.span.start..right.span.end,
@@ -337,12 +361,13 @@ fn parse_multiplicitive(
 
     Ok(node)
 }
-fn parse_primary(
+
+fn parse_value(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    /// Parses a primary without member expressions
-    fn parse_subprimary(
+    /// Parses a literal (value without member expressions)
+    fn parse_literal(
         tokens: &mut TokenStream,
         environment: &Environment,
     ) -> Result<Spanned<Expression>, ParseError> {
@@ -451,16 +476,16 @@ fn parse_primary(
                 Ok(tokens.wrap_span(Expression::String(string)))
             }
             Some(Ok(Token::Minus)) => {
-                let expr = parse_primary(tokens, environment)?;
+                let expr = parse_literal(tokens, environment)?;
                 Ok(tokens.wrap_span(Expression::UnaryOp(Box::new(expr))))
             }
             Some(Ok(Token::Ampersand)) => {
-                let expr = parse_subprimary(tokens, environment)?;
-                dbg!(&expr);
+                let expr = parse_literal(tokens, environment)?;
+
                 Ok(tokens.wrap_span(Expression::Borrow(Box::new(expr))))
             }
             Some(Ok(Token::Asterisk)) => {
-                let expr = parse_primary(tokens, environment)?;
+                let expr = parse_literal(tokens, environment)?;
                 Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
             }
             Some(Ok(Token::IntegerNumber)) => {
@@ -469,17 +494,17 @@ fn parse_primary(
             Some(Ok(Token::FloatNumber)) => {
                 if let Some(Ok(Token::NumberType)) = tokens.peek() {
                     let number: Number = match tokens.peek_slice() {
-                        "u8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "u16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "u32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "u64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "f32" => Number::f32(tokens.slice().parse().unwrap()),
-                        "f64" => Number::f64(tokens.slice().parse().unwrap()),
-                        _ => unreachable!(),
+                        "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
+                        | "isize" => Err(ParseError::InvalidSuffixForDecimal(
+                            tokens.wrap_span(tokens.slice().to_string()),
+                        ))?,
+                        "f32" => {
+                            Number::f32(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON))
+                        }
+                        "f64" => {
+                            Number::f64(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON))
+                        }
+                        _ => unreachable!("{NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON}"),
                     };
                     let start_span = tokens.span().end;
 
@@ -500,13 +525,13 @@ fn parse_primary(
             }
             Some(Ok(Token::True)) => Ok(tokens.wrap_span(Expression::Boolean(true))),
             Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
-            Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
+            Some(Ok(token)) => Err(ParseError::ExpectedLiteral(tokens.wrap_span(token))),
             Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
             None => Err(ParseError::ExpectedMoreTokens(tokens.span())),
         }
     }
 
-    let mut expr = parse_subprimary(tokens, environment)?;
+    let mut expr = parse_literal(tokens, environment)?;
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
         tokens.next(); // Skip the dot
@@ -544,9 +569,10 @@ fn map_parseint_error(span: Span) -> impl Fn(std::num::ParseIntError) -> ParseEr
     move |error| match error.kind() {
         IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(span.clone()),
         IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(span.clone()),
-        _ => unreachable!(
+        IntErrorKind::Empty | IntErrorKind::InvalidDigit | IntErrorKind::Zero => unreachable!(
             "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
         ),
+        _ => unimplemented!(), // Required due to IntErrorKind being #[non_exhaustive]
     }
 }
 
@@ -607,9 +633,9 @@ fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError>
                     .parse()
                     .map_err(map_parseint_error(tokens.span()))?,
             ),
-            "f32" => Number::f32(tokens.slice().parse().unwrap()),
-            "f64" => Number::f64(tokens.slice().parse().unwrap()),
-            _ => unreachable!(),
+            "f32" => Number::f32(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+            "f64" => Number::f64(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+            _ => unreachable!("{}", NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON),
         };
         let start_span = tokens.span().end;
         tokens.next();
