@@ -24,14 +24,18 @@ pub use runner::Value;
 /// Additonal traits for span.
 pub trait SpanExtension {
     /// Wrap this value with a [`Spanned`].
+    #[must_use]
     fn wrap<T>(self, value: T) -> Spanned<T>;
     /// Combine two [`Span`]s into one.
+    #[must_use]
     fn join(self, span: Self) -> Self;
 }
 impl SpanExtension for Span {
+    #[inline]
     fn wrap<T>(self, value: T) -> Spanned<T> {
         Spanned { span: self, value }
     }
+    #[inline]
     fn join(self, span: Self) -> Self {
         self.start..span.end
     }
@@ -48,13 +52,15 @@ pub struct Spanned<T> {
 impl<T> Spanned<T> {
     /// Maps a `Spanned<T>` to `Spanned<U>` by applying a function to a
     /// contained `T` value, leaving the [`Span`] value untouched.
-    pub fn map<U>(self, f: impl Fn(T) -> U) -> Spanned<U> {
+    #[must_use]
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
         Spanned {
             span: self.span,
             value: f(self.value),
         }
     }
 }
+
 impl Default for DefaultCommandParser {
     fn default() -> Self {
         Self(Box::new(BuiltinCommandParser))
@@ -87,7 +93,7 @@ impl CommandParser for BuiltinCommandParser {
                     error!("{error}")
                 }
             },
-            Err(err) => error!("{err:#?}"),
+            Err(err) => error!("{err}"),
         }
     }
 }
