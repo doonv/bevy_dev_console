@@ -4,6 +4,8 @@ use logos::Span;
 use std::collections::HashMap;
 use std::num::IntErrorKind;
 
+use crate::command::{CommandHint, CommandHintColor};
+
 use super::lexer::{FailedToLexCharacter, Token, TokenStream};
 use super::number::Number;
 use super::runner::environment::Function;
@@ -205,6 +207,31 @@ pub enum ParseError {
         number_kind: &'static str,
     },
     ExpectedObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
+}
+
+impl ParseError {
+    pub fn span(&self) -> Span {
+        match self {
+            ParseError::FailedToLexCharacters(Spanned { span, value: _ }) => span,
+            ParseError::ExpectedMoreTokens(span) => span,
+            ParseError::ExpectedTokenButGot { span, .. } => span,
+            ParseError::ExpectedEndline(Spanned { span, value: _ }) => span,
+            ParseError::ExpectedLiteral(Spanned { span, value: _ }) => span,
+            ParseError::InvalidSuffixForFloat(Spanned { span, value: _ }) => span,
+            ParseError::PositiveIntOverflow { span, .. } => span,
+            ParseError::NegativeIntOverflow { span, .. } => span,
+            ParseError::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
+        }
+        .clone()
+    }
+
+    pub fn hint(&self) -> CommandHint {
+        CommandHint {
+            color: CommandHintColor::Error,
+            span: self.span(),
+            description: self.to_string().into(),
+        }
+    }
 }
 
 impl std::fmt::Display for ParseError {

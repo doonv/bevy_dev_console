@@ -93,7 +93,11 @@ impl CommandParser for BuiltinCommandParser {
                     error!("{error}")
                 }
             },
-            Err(err) => error!("{err}"),
+            Err(err) => {
+                world.resource_mut::<CommandHints>().push([err.hint()]);
+
+                error!("{err}")
+            }
         }
     }
 }
