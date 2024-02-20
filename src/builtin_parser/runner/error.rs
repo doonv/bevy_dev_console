@@ -80,32 +80,32 @@ pub enum EvalError {
 impl EvalError {
     /// Get all the locations of the error in the source.
     pub fn spans(&self) -> Vec<Span> {
-        use EvalError::*;
+        use EvalError as E;
 
         match self {
-            Custom { span, .. } => vec![span.clone()],
-            VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
-            ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
-            CannotIndexValue(Spanned { span, .. }) => vec![span.clone()],
-            FieldNotFoundInStruct(Spanned { span, value: _ }) => vec![span.clone()],
-            CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
-            ReferenceToMovedData(span) => vec![span.clone()],
-            VariableMoved(Spanned { span, .. }) => vec![span.clone()],
-            CannotBorrowValue(Spanned { span, .. }) => vec![span.clone()],
-            IncompatibleReflectTypes { span, .. } => vec![span.clone()],
-            EnumVariantNotFound(Spanned { span, .. }) => vec![span.clone()],
-            EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
-            EnumVariantTupleFieldNotFound { span, .. } => vec![span.clone()],
-            CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
-            CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
-            IncompatibleNumberTypes { span, .. } => vec![span.clone()],
-            IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
-            ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
-            CannotReflectReference(span) => vec![span.clone()],
-            CannotReflectResource(span) => vec![span.clone()],
-            InvalidOperation { span, .. } => vec![span.clone()],
-            IncorrectAccessOperation { span, .. } => vec![span.clone()],
-            FieldNotFoundInTuple { span, .. } => vec![span.clone()],
+            E::Custom { span, .. } => vec![span.clone()],
+            E::VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
+            E::ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
+            E::CannotIndexValue(Spanned { span, .. }) => vec![span.clone()],
+            E::FieldNotFoundInStruct(Spanned { span, value: _ }) => vec![span.clone()],
+            E::CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
+            E::ReferenceToMovedData(span) => vec![span.clone()],
+            E::VariableMoved(Spanned { span, .. }) => vec![span.clone()],
+            E::CannotBorrowValue(Spanned { span, .. }) => vec![span.clone()],
+            E::IncompatibleReflectTypes { span, .. } => vec![span.clone()],
+            E::EnumVariantNotFound(Spanned { span, .. }) => vec![span.clone()],
+            E::EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
+            E::EnumVariantTupleFieldNotFound { span, .. } => vec![span.clone()],
+            E::CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
+            E::CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
+            E::IncompatibleNumberTypes { span, .. } => vec![span.clone()],
+            E::IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
+            E::ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
+            E::CannotReflectReference(span) => vec![span.clone()],
+            E::CannotReflectResource(span) => vec![span.clone()],
+            E::InvalidOperation { span, .. } => vec![span.clone()],
+            E::IncorrectAccessOperation { span, .. } => vec![span.clone()],
+            E::FieldNotFoundInTuple { span, .. } => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.

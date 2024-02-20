@@ -211,16 +211,18 @@ pub enum ParseError {
 
 impl ParseError {
     pub fn span(&self) -> Span {
+        use ParseError as E;
+
         match self {
-            ParseError::FailedToLexCharacters(Spanned { span, value: _ }) => span,
-            ParseError::ExpectedMoreTokens(span) => span,
-            ParseError::ExpectedTokenButGot { span, .. } => span,
-            ParseError::ExpectedEndline(Spanned { span, value: _ }) => span,
-            ParseError::ExpectedLiteral(Spanned { span, value: _ }) => span,
-            ParseError::InvalidSuffixForFloat(Spanned { span, value: _ }) => span,
-            ParseError::PositiveIntOverflow { span, .. } => span,
-            ParseError::NegativeIntOverflow { span, .. } => span,
-            ParseError::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
+            E::FailedToLexCharacters(Spanned { span, value: _ }) => span,
+            E::ExpectedMoreTokens(span) => span,
+            E::ExpectedTokenButGot { span, .. } => span,
+            E::ExpectedEndline(Spanned { span, value: _ }) => span,
+            E::ExpectedLiteral(Spanned { span, value: _ }) => span,
+            E::InvalidSuffixForFloat(Spanned { span, value: _ }) => span,
+            E::PositiveIntOverflow { span, .. } => span,
+            E::NegativeIntOverflow { span, .. } => span,
+            E::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
         }
         .clone()
     }
@@ -236,20 +238,22 @@ impl ParseError {
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ParseError as E;
+
         match self {
-            ParseError::FailedToLexCharacters(Spanned { span: _, value }) => write!(f, "Invalid character(s) \"{value}\" (Did you mean to use a string?)"),
-            ParseError::ExpectedMoreTokens(_) => write!(f, "Expected more tokens, got nothing."),
-            ParseError::ExpectedTokenButGot {
+            E::FailedToLexCharacters(Spanned { span: _, value }) => write!(f, "Invalid character(s) \"{value}\" (Did you mean to use a string?)"),
+            E::ExpectedMoreTokens(_) => write!(f, "Expected more tokens, got nothing."),
+            E::ExpectedTokenButGot {
                 expected,
                 got,
                 span: _,
             } => write!(f, "Expected token {expected:?}, got token {got:?} instead."),
-            ParseError::ExpectedEndline(_) => write!(f, "Expected a semicolon or endline after a complete statement, but got more tokens than expected."),
-            ParseError::ExpectedLiteral(Spanned { span: _, value }) => write!(f, "Expected a literal token, got {value:?} which is not a valid literal."),
-            ParseError::InvalidSuffixForFloat(Spanned { span: _, value: suffix }) => write!(f, r#""{suffix}" is an invalid suffix for a float. The only valid suffixes are "f32" and "f64"."#),
-            ParseError::NegativeIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too small."),
-            ParseError::PositiveIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too large."),
-            ParseError::ExpectedObjectContinuation(Spanned { span: _, value: got }) => write!(f, "Expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."),
+            E::ExpectedEndline(_) => write!(f, "Expected a semicolon or endline after a complete statement, but got more tokens than expected."),
+            E::ExpectedLiteral(Spanned { span: _, value }) => write!(f, "Expected a literal token, got {value:?} which is not a valid literal."),
+            E::InvalidSuffixForFloat(Spanned { span: _, value: suffix }) => write!(f, r#""{suffix}" is an invalid suffix for a float. The only valid suffixes are "f32" and "f64"."#),
+            E::NegativeIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too small."),
+            E::PositiveIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too large."),
+            E::ExpectedObjectContinuation(Spanned { span: _, value: got }) => write!(f, "Expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."),
         }
     }
 }
