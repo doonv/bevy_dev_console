@@ -112,115 +112,127 @@ impl EvalError {
     pub fn hints(&self) -> Vec<CommandHint> {
         self.spans()
             .into_iter()
-            .map(|span| CommandHint::new(span, CommandHintColor::Error, self.message()))
+            .map(|span| CommandHint::new(span, CommandHintColor::Error, self.to_string()))
             .collect()
-    }
-    /// A summary message explaining this error.
-    pub fn message(&self) -> Cow<'static, str> {
-        use EvalError::*;
-
-        match self {
-            Custom { text, .. } => text.clone(),
-            VariableNotFound(Spanned { value, .. }) => {
-                format!("Variable `{value}` not found.").into()
-            }
-            ExpectedNumberAfterUnaryOperator(Spanned { value, .. }) => format!(
-                "Expected a number after unary operator (-) but got {} instead.",
-                value.natural_kind()
-            )
-            .into(),
-            CannotIndexValue(Spanned { span: _, value }) => {
-                format!("Cannot index {} with a member expression.", value.kind()).into()
-            }
-            ReferenceToMovedData(_) => "Cannot access reference to moved data.".into(),
-            VariableMoved(Spanned { value, .. }) => format!("Variable `{value}` was moved.").into(),
-            CannotDereferenceValue(Spanned { value: kind, .. }) => {
-                format!("Cannot dereference {kind}.").into()
-            }
-            CannotBorrowValue(Spanned { value: kind, .. }) => {
-                format!("Cannot borrow {kind}. Only variables can be borrowed.").into()
-            }
-            IncompatibleReflectTypes {
-                expected, actual, ..
-            } => format!(
-                "Cannot set incompatible reflect types. Expected `{expected}`, got `{actual}`"
-            )
-            .into(),
-            EnumVariantNotFound(Spanned { value: name, .. }) => {
-                format!("Enum variant `{name}` was not found.").into()
-            }
-            EnumVariantStructFieldNotFound {
-                field_name,
-                variant_name,
-                ..
-            } => format!("Field `{field_name}` doesn't exist on struct variant `{variant_name}`.")
-                .into(),
-            EnumVariantTupleFieldNotFound {
-                field_index,
-                variant_name,
-                ..
-            } => format!("Field `{field_index}` doesn't exist on tuple variant `{variant_name}`.")
-                .into(),
-            CannotMoveOutOfResource(Spanned { value, .. }) => {
-                format!("Cannot move out of resource `{value}`, try borrowing it instead.").into()
-            }
-            CannotNegateUnsignedInteger(Spanned { value, .. }) => format!(
-                "Unsigned integers cannot be negated. (Type: {})",
-                value.natural_kind()
-            )
-            .into(),
-            IncompatibleNumberTypes { left, right, .. } => {
-                format!("Incompatible number types; `{left}` and `{right}` are incompatible.")
-                    .into()
-            }
-            IncompatibleFunctionParameter {
-                expected, actual, ..
-            } => {
-                format!("Mismatched function paramater type. Expected {expected} but got {actual}")
-                    .into()
-            }
-            ExpectedVariableGotFunction(Spanned { value, .. }) => {
-                format!("Expected `{value}` to be a variable, but got a function instead.").into()
-            }
-            CannotReflectReference(_) => {
-                "Cannot reflect a reference. Try dereferencing it instead.".into()
-            }
-            CannotReflectResource(_) => {
-                "Cannot reflecting resources is not possible at the moment.".into()
-            }
-            InvalidOperation {
-                left,
-                right,
-                operation,
-                span: _,
-            } => format!("Invalid operation: Cannot {operation} {left} by {right}").into(),
-            IncorrectAccessOperation {
-                expected_access,
-                expected_type,
-                got,
-                span: _,
-            } => format!(
-                "Expected {} access to access {expected_type} but got {}",
-                expected_access.join(" and "),
-                got.natural_kind()
-            )
-            .into(),
-            FieldNotFoundInStruct(Spanned { span: _, value }) => {
-                format!("Field {value} not found in struct").into()
-            }
-            FieldNotFoundInTuple {
-                field_index,
-                tuple_size,
-                span: _,
-            } => format!("Field {field_index} is out of bounds for tuple of size {tuple_size}")
-                .into(),
-        }
     }
 }
 
 impl std::fmt::Display for EvalError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.message())
+        use EvalError as E;
+
+        match self {
+            E::Custom { text, .. } => f.write_str(text),
+            E::VariableNotFound(Spanned { value, .. }) => {
+                write!(f, "Variable `{value}` not found.")
+            }
+            E::ExpectedNumberAfterUnaryOperator(Spanned { value, .. }) => write!(
+                f,
+                "Expected a number after unary operator (-) but got {} instead.",
+                value.natural_kind()
+            ),
+            E::CannotIndexValue(Spanned { span: _, value }) => {
+                write!(f, "Cannot index {} with a member expression.", value.kind())
+            }
+            E::ReferenceToMovedData(_) => write!(f, "Cannot access reference to moved data."),
+            E::VariableMoved(Spanned { value, .. }) => {
+                write!(f, "Variable `{value}` was moved.")
+            }
+            E::CannotDereferenceValue(Spanned { value: kind, .. }) => {
+                write!(f, "Cannot dereference {kind}.")
+            }
+            E::CannotBorrowValue(Spanned { value: kind, .. }) => {
+                write!(f, "Cannot borrow {kind}. Only variables can be borrowed.")
+            }
+            E::IncompatibleReflectTypes {
+                expected, actual, ..
+            } => write!(
+                f,
+                "Cannot set incompatible reflect types. Expected `{expected}`, got `{actual}`"
+            ),
+            E::EnumVariantNotFound(Spanned { value: name, .. }) => {
+                write!(f, "Enum variant `{name}` was not found.")
+            }
+            E::EnumVariantStructFieldNotFound {
+                field_name,
+                variant_name,
+                ..
+            } => write!(
+                f,
+                "Field `{field_name}` doesn't exist on struct variant `{variant_name}`."
+            ),
+            E::EnumVariantTupleFieldNotFound {
+                field_index,
+                variant_name,
+                ..
+            } => write!(
+                f,
+                "Field `{field_index}` doesn't exist on tuple variant `{variant_name}`."
+            ),
+            E::CannotMoveOutOfResource(Spanned { value, .. }) => write!(
+                f,
+                "Cannot move out of resource `{value}`, try borrowing it instead."
+            ),
+            E::CannotNegateUnsignedInteger(Spanned { value, .. }) => write!(
+                f,
+                "Unsigned integers cannot be negated. (Type: {})",
+                value.natural_kind()
+            ),
+            E::IncompatibleNumberTypes { left, right, .. } => write!(
+                f,
+                "Incompatible number types; `{left}` and `{right}` are incompatible."
+            ),
+            E::IncompatibleFunctionParameter {
+                expected, actual, ..
+            } => write!(
+                f,
+                "Mismatched function paramater type. Expected {expected} but got {actual}"
+            ),
+            E::ExpectedVariableGotFunction(Spanned { value, .. }) => write!(
+                f,
+                "Expected `{value}` to be a variable, but got a function instead."
+            ),
+            E::CannotReflectReference(_) => {
+                write!(
+                    f,
+                    "Cannot reflect a reference. Try dereferencing it instead."
+                )
+            }
+            E::CannotReflectResource(_) => {
+                write!(
+                    f,
+                    "Cannot reflecting resources is not possible at the moment."
+                )
+            }
+            E::InvalidOperation {
+                left,
+                right,
+                operation,
+                span: _,
+            } => write!(f, "Invalid operation: Cannot {operation} {left} by {right}"),
+            E::IncorrectAccessOperation {
+                expected_access,
+                expected_type,
+                got,
+                span: _,
+            } => write!(
+                f,
+                "Expected {} access to access {expected_type} but got {}",
+                expected_access.join(" and "),
+                got.natural_kind()
+            ),
+            E::FieldNotFoundInStruct(Spanned { span: _, value }) => {
+                write!(f, "Field {value} not found in struct")
+            }
+            E::FieldNotFoundInTuple {
+                field_index,
+                tuple_size,
+                span: _,
+            } => write!(
+                f,
+                "Field {field_index} is out of bounds for tuple of size {tuple_size}"
+            ),
+        }
     }
 }
 
