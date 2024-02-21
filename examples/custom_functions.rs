@@ -2,7 +2,7 @@
 
 use bevy::log::{Level, LogPlugin};
 use bevy::prelude::*;
-use bevy_dev_console::builtin_parser::{Environment, Number, RunError, Spanned, StrongRef, Value};
+use bevy_dev_console::builtin_parser::{Environment, EvalError, Number, Spanned, StrongRef, Value};
 use bevy_dev_console::prelude::*;
 use bevy_dev_console::register;
 
@@ -44,14 +44,14 @@ fn increment_global_counter(world: &mut World) -> u32 {
 }
 
 // Function with reference (Syntax subject to change soon)
-fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), RunError> {
+fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), EvalError> {
     let span = number.span;
     let mut reference = number.value.borrow_mut();
     if let Value::Number(number) = &mut *reference {
         *number = Number::add(*number, Number::Integer(1), span).unwrap();
         Ok(())
     } else {
-        Err(RunError::Custom {
+        Err(EvalError::Custom {
             text: "Oh nooo".into(),
             span,
         })

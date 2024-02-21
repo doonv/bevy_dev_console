@@ -4,10 +4,12 @@ use logos::Span;
 use std::collections::HashMap;
 use std::num::IntErrorKind;
 
+use crate::command::{CommandHint, CommandHintColor};
+
 use super::lexer::{FailedToLexCharacter, Token, TokenStream};
 use super::number::Number;
 use super::runner::environment::Function;
-use super::{Environment, Spanned};
+use super::{Environment, SpanExtension, Spanned};
 
 /// An [Abstract Syntax Tree](https://en.wikipedia.org/wiki/Abstract_syntax_tree).
 ///
@@ -26,7 +28,7 @@ macro_rules! expect {
                 })
             }
             Some(Err(FailedToLexCharacter)) => {
-                return Err(ParseError::FailedToLexCharacter($tokens.span()))
+                return Err(ParseError::FailedToLexCharacters($tokens.span().wrap($tokens.slice().to_string())))
             }
             None => return Err(ParseError::ExpectedMoreTokens($tokens.span())),
         }
@@ -124,7 +126,7 @@ impl AccessKind {
     }
 }
 
-/// Get the access if its of a certain type, if not, return a [`RunError`](super::runner::error::RunError).
+/// Get the access if its of a certain type, if not, return a [`EvalError`](super::runner::error::EvalError).
 ///
 /// For examples, take a look at existing uses in the code.
 macro_rules! access_unwrap {
@@ -132,12 +134,12 @@ macro_rules! access_unwrap {
         let val = $val;
         if let $(Access::$variant($variant_inner))|+ = val.value $block else {
             use $crate::builtin_parser::parser::AccessKind;
-            use $crate::builtin_parser::runner::error::RunError;
+            use $crate::builtin_parser::runner::error::EvalError;
 
             // We have to put this in a `const` first to avoid a
             // `temporary value dropped while borrowed` error.
             const EXPECTED_ACCESS: &[&str] = &[$(AccessKind::$variant.natural()),+];
-            Err(RunError::IncorrectAccessOperation {
+            Err(EvalError::IncorrectAccessOperation {
                 span: val.span,
                 expected_access: EXPECTED_ACCESS,
                 expected_type: $expected,
@@ -184,7 +186,7 @@ pub enum Operator {
 
 #[derive(Debug)]
 pub enum ParseError {
-    FailedToLexCharacter(Span),
+    FailedToLexCharacters(Spanned<String>),
     ExpectedMoreTokens(Span),
     ExpectedTokenButGot {
         expected: Token,
@@ -192,26 +194,94 @@ pub enum ParseError {
         span: Span,
     },
     ExpectedEndline(Spanned<Token>),
-    UnexpectedToken(Spanned<Token>),
-    InvalidSuffixForDecimal(Span),
-    NegativeIntOverflow(Span),
-    PositiveIntOverflow(Span),
-    ExpectObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
+    ExpectedLiteral(Spanned<Token>),
+    InvalidSuffixForFloat(Spanned<String>),
+    NegativeIntOverflow {
+        span: Span,
+        number: String,
+        number_kind: &'static str,
+    },
+    PositiveIntOverflow {
+        span: Span,
+        number: String,
+        number_kind: &'static str,
+    },
+    ExpectedObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
 }
+
+impl ParseError {
+    pub fn span(&self) -> Span {
+        use ParseError as E;
+
+        match self {
+            E::FailedToLexCharacters(Spanned { span, value: _ }) => span,
+            E::ExpectedMoreTokens(span) => span,
+            E::ExpectedTokenButGot { span, .. } => span,
+            E::ExpectedEndline(Spanned { span, value: _ }) => span,
+            E::ExpectedLiteral(Spanned { span, value: _ }) => span,
+            E::InvalidSuffixForFloat(Spanned { span, value: _ }) => span,
+            E::PositiveIntOverflow { span, .. } => span,
+            E::NegativeIntOverflow { span, .. } => span,
+            E::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
+        }
+        .clone()
+    }
+
+    pub fn hint(&self) -> CommandHint {
+        CommandHint {
+            color: CommandHintColor::Error,
+            span: self.span(),
+            description: self.to_string().into(),
+        }
+    }
+}
+
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ParseError as E;
+
+        match self {
+            E::FailedToLexCharacters(Spanned { span: _, value }) => write!(f, "Invalid character(s) \"{value}\" (Did you mean to use a string?)"),
+            E::ExpectedMoreTokens(_) => write!(f, "Expected more tokens, got nothing."),
+            E::ExpectedTokenButGot {
+                expected,
+                got,
+                span: _,
+            } => write!(f, "Expected token {expected:?}, got token {got:?} instead."),
+            E::ExpectedEndline(_) => write!(f, "Expected a semicolon or endline after a complete statement, but got more tokens than expected."),
+            E::ExpectedLiteral(Spanned { span: _, value }) => write!(f, "Expected a literal token, got {value:?} which is not a valid literal."),
+            E::InvalidSuffixForFloat(Spanned { span: _, value: suffix }) => write!(f, r#""{suffix}" is an invalid suffix for a float. The only valid suffixes are "f32" and "f64"."#),
+            E::NegativeIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too small."),
+            E::PositiveIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too large."),
+            E::ExpectedObjectContinuation(Spanned { span: _, value: got }) => write!(f, "Expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."),
+        }
+    }
+}
+impl std::error::Error for ParseError {}
+
+const FLOAT_PARSE_EXPECT_REASON: &str =
+    "Float parsing errors are handled by the lexer, and floats cannot overflow.";
+const NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON: &str =
+    "Lexer gurantees `NumberType`'s slice to be included one of the match arms.";
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     let mut ast = Vec::new();
+
     while tokens.peek().is_some() {
         ast.push(parse_expression(tokens, environment)?);
+
         match tokens.next() {
             Some(Ok(Token::SemiColon)) => continue,
-            Some(Ok(token)) => return Err(ParseError::ExpectedEndline(tokens.wrap_span(token))),
+            Some(Ok(token)) => return Err(ParseError::ExpectedEndline(tokens.span().wrap(token))),
             Some(Err(FailedToLexCharacter)) => {
-                return Err(ParseError::FailedToLexCharacter(tokens.span()))
+                return Err(ParseError::FailedToLexCharacters(
+                    tokens.span().wrap(tokens.slice().to_string()),
+                ))
             }
             None => break,
         }
     }
+
     Ok(ast)
 }
 
@@ -265,9 +335,9 @@ fn parse_expression(
                 _ => Ok(expr),
             }
         }
-        Some(Err(FailedToLexCharacter)) => {
-            Err(ParseError::FailedToLexCharacter(tokens.peek_span()))
-        }
+        Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacters(
+            tokens.peek_span().wrap(tokens.slice().to_string()),
+        )),
         None => Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
     }
 }
@@ -310,7 +380,7 @@ fn parse_multiplicitive(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    let mut node = parse_primary(tokens, environment)?;
+    let mut node = parse_value(tokens, environment)?;
 
     while let Some(Ok(Token::Asterisk | Token::Slash | Token::Modulo)) = tokens.peek() {
         let operator = match tokens.next() {
@@ -320,7 +390,7 @@ fn parse_multiplicitive(
             _ => unreachable!(),
         };
 
-        let right = parse_primary(tokens, environment)?;
+        let right = parse_value(tokens, environment)?;
 
         node = Spanned {
             span: node.span.start..right.span.end,
@@ -334,12 +404,13 @@ fn parse_multiplicitive(
 
     Ok(node)
 }
-fn parse_primary(
+
+fn parse_value(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    /// Parses a primary without member expressions
-    fn parse_subprimary(
+    /// Parses a literal (value without member expressions)
+    fn parse_literal(
         tokens: &mut TokenStream,
         environment: &Environment,
     ) -> Result<Spanned<Expression>, ParseError> {
@@ -429,7 +500,7 @@ fn parse_primary(
                                 value: Expression::Function { name, arguments },
                             })
                         } else {
-                            Ok(tokens.wrap_span(Expression::Variable(name)))
+                            Ok(tokens.span().wrap(Expression::Variable(name)))
                         }
                     }
                 }
@@ -445,20 +516,20 @@ fn parse_primary(
             Some(Ok(Token::String)) => {
                 let slice = tokens.slice();
                 let string = slice[1..slice.len() - 1].to_string();
-                Ok(tokens.wrap_span(Expression::String(string)))
+                Ok(tokens.span().wrap(Expression::String(string)))
             }
             Some(Ok(Token::Minus)) => {
-                let expr = parse_primary(tokens, environment)?;
-                Ok(tokens.wrap_span(Expression::UnaryOp(Box::new(expr))))
+                let expr = parse_literal(tokens, environment)?;
+                Ok(tokens.span().wrap(Expression::UnaryOp(Box::new(expr))))
             }
             Some(Ok(Token::Ampersand)) => {
-                let expr = parse_subprimary(tokens, environment)?;
-                dbg!(&expr);
-                Ok(tokens.wrap_span(Expression::Borrow(Box::new(expr))))
+                let expr = parse_literal(tokens, environment)?;
+
+                Ok(tokens.span().wrap(Expression::Borrow(Box::new(expr))))
             }
             Some(Ok(Token::Asterisk)) => {
-                let expr = parse_primary(tokens, environment)?;
-                Ok(tokens.wrap_span(Expression::Dereference(Box::new(expr))))
+                let expr = parse_literal(tokens, environment)?;
+                Ok(tokens.span().wrap(Expression::Dereference(Box::new(expr))))
             }
             Some(Ok(Token::IntegerNumber)) => {
                 parse_number(tokens).map(|s| s.map(Expression::Number))
@@ -466,17 +537,17 @@ fn parse_primary(
             Some(Ok(Token::FloatNumber)) => {
                 if let Some(Ok(Token::NumberType)) = tokens.peek() {
                     let number: Number = match tokens.peek_slice() {
-                        "u8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "u16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "u32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "u64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i8" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i16" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i32" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "i64" => Err(ParseError::InvalidSuffixForDecimal(tokens.span()))?,
-                        "f32" => Number::f32(tokens.slice().parse().unwrap()),
-                        "f64" => Number::f64(tokens.slice().parse().unwrap()),
-                        _ => unreachable!(),
+                        "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
+                        | "isize" => Err(ParseError::InvalidSuffixForFloat(
+                            tokens.span().wrap(tokens.slice().to_string()),
+                        ))?,
+                        "f32" => {
+                            Number::f32(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON))
+                        }
+                        "f64" => {
+                            Number::f64(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON))
+                        }
+                        _ => unreachable!("{NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON}"),
                     };
                     let start_span = tokens.span().end;
 
@@ -495,15 +566,17 @@ fn parse_primary(
                     })
                 }
             }
-            Some(Ok(Token::True)) => Ok(tokens.wrap_span(Expression::Boolean(true))),
-            Some(Ok(Token::False)) => Ok(tokens.wrap_span(Expression::Boolean(false))),
-            Some(Ok(token)) => Err(ParseError::UnexpectedToken(tokens.wrap_span(token))),
-            Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacter(tokens.span())),
+            Some(Ok(Token::True)) => Ok(tokens.span().wrap(Expression::Boolean(true))),
+            Some(Ok(Token::False)) => Ok(tokens.span().wrap(Expression::Boolean(false))),
+            Some(Ok(token)) => Err(ParseError::ExpectedLiteral(tokens.span().wrap(token))),
+            Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacters(
+                tokens.span().wrap(tokens.slice().to_string()),
+            )),
             None => Err(ParseError::ExpectedMoreTokens(tokens.span())),
         }
     }
 
-    let mut expr = parse_subprimary(tokens, environment)?;
+    let mut expr = parse_literal(tokens, environment)?;
     // If theres a dot after the expression, do a member expression:
     while let Some(Ok(Token::Dot)) = tokens.peek() {
         tokens.next(); // Skip the dot
@@ -514,20 +587,22 @@ fn parse_primary(
                     span: expr.span.start..tokens.span().end,
                     value: Expression::Member {
                         left: Box::new(expr),
-                        right: tokens.wrap_span(Access::Field(right)),
+                        right: tokens.span().wrap(Access::Field(right)),
                     },
                 };
             }
             Some(Ok(Token::IntegerNumber)) => {
-                let right = tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?;
+                let right = tokens.slice().parse().map_err(map_parseint_error(
+                    tokens.span(),
+                    tokens.slice(),
+                    "usize",
+                ))?;
+
                 expr = Spanned {
                     span: expr.span.start..tokens.span().end,
                     value: Expression::Member {
                         left: Box::new(expr),
-                        right: tokens.wrap_span(Access::TupleIndex(right)),
+                        right: tokens.span().wrap(Access::TupleIndex(right)),
                     },
                 };
             }
@@ -537,76 +612,80 @@ fn parse_primary(
     Ok(expr)
 }
 
-fn map_parseint_error(span: Span) -> impl Fn(std::num::ParseIntError) -> ParseError {
+fn map_parseint_error<'s>(
+    span: Span,
+    slice: &'s str,
+    number_kind: &'static str,
+) -> impl FnOnce(std::num::ParseIntError) -> ParseError + 's {
     move |error| match error.kind() {
-        IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow(span.clone()),
-        IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow(span.clone()),
-        _ => unreachable!(
+        IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow {
+            span,
+            number: slice.to_string(),
+            number_kind,
+        },
+        IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow {
+            span,
+            number: slice.to_string(),
+            number_kind,
+        },
+        IntErrorKind::Empty | IntErrorKind::InvalidDigit | IntErrorKind::Zero => unreachable!(
             "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
         ),
+        _ => unimplemented!(), // Required due to IntErrorKind being #[non_exhaustive]
     }
 }
 
 fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
     if let Some(Ok(Token::NumberType)) = tokens.peek() {
         let number: Number = match tokens.peek_slice() {
-            "u8" => Number::u8(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "u16" => Number::u16(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "u32" => Number::u32(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "u64" => Number::u64(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "usize" => Number::usize(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "i8" => Number::i8(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "i16" => Number::i16(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "i32" => Number::i32(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "isize" => Number::isize(
-                tokens
-                    .slice()
-                    .parse()
-                    .map_err(map_parseint_error(tokens.span()))?,
-            ),
-            "f32" => Number::f32(tokens.slice().parse().unwrap()),
-            "f64" => Number::f64(tokens.slice().parse().unwrap()),
-            _ => unreachable!(),
+            "u8" => Number::u8(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "u8",
+            ))?),
+            "u16" => Number::u16(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "u16",
+            ))?),
+            "u32" => Number::u32(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "u32",
+            ))?),
+            "u64" => Number::u64(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "u64",
+            ))?),
+            "usize" => Number::usize(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "usize",
+            ))?),
+            "i8" => Number::i8(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "i8",
+            ))?),
+            "i16" => Number::i16(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "i16",
+            ))?),
+            "i32" => Number::i32(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "i32",
+            ))?),
+            "isize" => Number::isize(tokens.slice().parse().map_err(map_parseint_error(
+                tokens.span(),
+                tokens.slice(),
+                "isize",
+            ))?),
+            "f32" => Number::f32(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+            "f64" => Number::f64(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+            _ => unreachable!("{}", NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON),
         };
         let start_span = tokens.span().end;
         tokens.next();
@@ -664,8 +743,8 @@ fn parse_object(
             Some(Ok(Token::Comma)) => {
                 tokens.next();
             }
-            token => Err(ParseError::ExpectObjectContinuation(
-                tokens.wrap_span(token.clone()),
+            token => Err(ParseError::ExpectedObjectContinuation(
+                tokens.span().wrap(token.clone()),
             ))?,
         }
     }

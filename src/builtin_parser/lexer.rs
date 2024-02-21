@@ -2,8 +2,6 @@
 
 use logos::{Lexer, Logos, Span};
 
-use super::Spanned;
-
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FailedToLexCharacter;
 
@@ -139,36 +137,38 @@ impl<'a> TokenStream<'a> {
     // }
 
     /// Returns a reference to next [`Token`] without advancing the iterator
+    #[inline]
+    #[must_use]
     pub fn peek(&self) -> &Option<Result<Token, FailedToLexCharacter>> {
         &self.next
     }
 
     /// Get the range for the current [`Token`] in `Source`.
+    #[inline]
+    #[must_use]
     pub fn span(&self) -> Span {
         self.current_span.clone()
     }
 
     /// Get a [`str`] slice of the current [`Token`].
+    #[inline]
+    #[must_use]
     pub fn slice(&self) -> &str {
         self.current_slice
     }
 
     /// Get a [`str`] slice of the next [`Token`].
+    #[inline]
+    #[must_use]
     pub fn peek_slice(&self) -> &str {
         self.lexer.slice()
     }
 
     /// Get a [`Span`] of the next [`Token`].
+    #[inline]
+    #[must_use]
     pub fn peek_span(&self) -> Span {
         self.lexer.span()
-    }
-
-    /// Wraps `T` in a [`Spanned<T>`] which contains the range for the current token in `Source`.
-    pub fn wrap_span<T>(&self, value: T) -> Spanned<T> {
-        Spanned {
-            value,
-            span: self.span(),
-        }
     }
 }
 

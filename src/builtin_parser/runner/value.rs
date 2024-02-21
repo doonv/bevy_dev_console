@@ -6,7 +6,7 @@ use crate::builtin_parser::{Environment, StrongRef, UniqueRc};
 
 use super::super::Spanned;
 use super::environment::FunctionParam;
-use super::error::RunError;
+use super::error::EvalError;
 use super::reflection::{CreateRegistration, IntoResource};
 use super::unique_rc::WeakRef;
 
@@ -64,13 +64,13 @@ impl Value {
     /// Converts this value into a [`Box<dyn Reflect>`].
     ///
     /// `ty` is used for type inference.
-    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, RunError> {
+    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, EvalError> {
         match self {
             Value::None => Ok(Box::new(())),
             Value::Number(number) => number.reflect(span, ty),
             Value::Boolean(boolean) => Ok(Box::new(boolean)),
             Value::String(string) => Ok(Box::new(string)),
-            Value::Reference(_reference) => Err(RunError::CannotReflectReference(span)),
+            Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
             Value::Object(object) | Value::StructObject { map: object, .. } => {
                 let mut dyn_struct = DynamicStruct::default();
 
@@ -89,7 +89,7 @@ impl Value {
 
                 Ok(Box::new(dyn_tuple))
             }
-            Value::Resource(_) => Err(RunError::CannotReflectResource(span)),
+            Value::Resource(_) => Err(EvalError::CannotReflectResource(span)),
         }
     }
 
@@ -101,7 +101,7 @@ impl Value {
         span: Span,
         world: &World,
         registrations: &[&TypeRegistration],
-    ) -> Result<String, RunError> {
+    ) -> Result<String, EvalError> {
         const TAB: &str = "    ";
         match self {
             Value::None => Ok(format!("()")),
@@ -112,7 +112,7 @@ impl Value {
                 if let Some(rc) = reference.upgrade() {
                     Ok(rc.borrow().try_format(span, world, registrations)?)
                 } else {
-                    Err(RunError::ReferenceToMovedData(span))
+                    Err(EvalError::ReferenceToMovedData(span))
                 }
             }
             Value::Object(map) => {
@@ -453,11 +453,11 @@ impl FunctionParam for Spanned<Value> {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
         Ok(value.unwrap())
     }
 }
-impl<T: TryFrom<Spanned<Value>, Error = RunError>> FunctionParam for Spanned<T> {
+impl<T: TryFrom<Spanned<Value>, Error = EvalError>> FunctionParam for Spanned<T> {
     type Item<'world, 'env, 'reg> = Self;
     const USES_VALUE: bool = true;
 
@@ -466,7 +466,7 @@ impl<T: TryFrom<Spanned<Value>, Error = RunError>> FunctionParam for Spanned<T> 
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
         let value = value.unwrap();
         Ok(Spanned {
             span: value.span.clone(),
@@ -483,7 +483,7 @@ impl FunctionParam for Value {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
         Ok(value.unwrap().value)
     }
 }
@@ -499,12 +499,12 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
-            ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+            ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
                 let value = value.unwrap();
                 if let $value_pattern = value.value {
                     Ok($return)
                 } else {
-                    Err(RunError::IncompatibleFunctionParameter {
+                    Err(EvalError::IncompatibleFunctionParameter {
                         expected: stringify!($type),
                         actual: value.value.natural_kind(),
                         span: value.span,
@@ -513,7 +513,7 @@ macro_rules! impl_function_param_for_value {
             }
         }
         impl TryFrom<Spanned<Value>> for $type {
-            type Error = RunError;
+            type Error = EvalError;
 
             fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
                 if let $value_pattern = value.value {
@@ -537,12 +537,12 @@ macro_rules! impl_function_param_for_numbers {
                     _: &mut Option<&'world mut World>,
                     _: &mut Option<&'env mut Environment>,
                     _: &'reg [&'reg TypeRegistration],
-                ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+                ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
                     let value = value.unwrap();
                     match value.value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => Err(RunError::IncompatibleFunctionParameter {
+                        _ => Err(EvalError::IncompatibleFunctionParameter {
                             expected: concat!("a ", stringify!($number)),
                             actual: value.value.natural_kind(),
                             span: value.span,
@@ -551,13 +551,13 @@ macro_rules! impl_function_param_for_numbers {
                 }
             }
             impl TryFrom<Spanned<Value>> for $number {
-                type Error = RunError;
+                type Error = EvalError;
 
                 fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
                     match value.value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => Err(RunError::IncompatibleFunctionParameter {
+                        _ => Err(EvalError::IncompatibleFunctionParameter {
                             expected: concat!("a ", stringify!($number)),
                             actual: value.value.natural_kind(),
                             span: value.span
@@ -590,7 +590,7 @@ impl FunctionParam for &mut World {
         world: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
         let Some(world) = world.take() else {
             // make this unreachable by checking the function when it gets registered
             todo!("world borrowed twice");
@@ -610,7 +610,7 @@ impl FunctionParam for &mut Environment {
         _: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
         Ok(environment.take().unwrap())
     }
 }
@@ -624,7 +624,7 @@ impl FunctionParam for &[&TypeRegistration] {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         registrations: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError> {
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
         Ok(registrations)
     }
 }

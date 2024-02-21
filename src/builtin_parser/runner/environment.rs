@@ -12,7 +12,7 @@ use crate::builtin_parser::SpanExtension;
 
 use super::super::parser::Expression;
 use super::super::Spanned;
-use super::error::RunError;
+use super::error::EvalError;
 use super::unique_rc::UniqueRc;
 use super::{eval_expression, stdlib, EvalParams, Value};
 
@@ -59,7 +59,7 @@ macro_rules! register {
 /// Get around implementation of Result causing stupid errors
 pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
 
-impl<T: Into<Value>> From<T> for ResultContainer<Value, RunError> {
+impl<T: Into<Value>> From<T> for ResultContainer<Value, EvalError> {
     fn from(value: T) -> Self {
         ResultContainer(Ok(value.into()))
     }
@@ -87,10 +87,10 @@ pub trait FunctionParam: Sized {
         world: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         registrations: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, RunError>;
+    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError>;
 }
 
-pub type FunctionType = dyn FnMut(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, RunError>;
+pub type FunctionType = dyn FnMut(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, EvalError>;
 pub struct Function {
     pub argument_count: usize,
     pub body: Box<FunctionType>,
@@ -120,7 +120,7 @@ macro_rules! impl_into_function {
             for<'a, 'world, 'env, 'reg> &'a mut F:
                 FnMut( $($($params),*)? ) -> R +
                 FnMut( $($(<$params as FunctionParam>::Item<'world, 'env, 'reg>),*)? ) -> R,
-            R: Into<ResultContainer<Value, RunError>>,
+            R: Into<ResultContainer<Value, EvalError>>,
         {
             fn into_function(mut self) -> Function {
                 #[allow(unused_variables, unused_mut)]
@@ -142,12 +142,12 @@ macro_rules! impl_into_function {
                                 }
                             )?
                         })
-                    }).collect::<Result<Vec<_>, RunError>>()?.into_iter();
+                    }).collect::<Result<Vec<_>, EvalError>>()?.into_iter();
                     let world = &mut Some(world);
                     let environment = &mut Some(environment);
 
                     #[allow(clippy::too_many_arguments)]
-                    fn call_inner<R: Into<ResultContainer<Value, RunError>>, $($($params),*)?>(
+                    fn call_inner<R: Into<ResultContainer<Value, EvalError>>, $($($params),*)?>(
                         mut f: impl FnMut($($($params),*)?) -> R,
                         $($($params: $params),*)?
                     ) -> R {
@@ -268,16 +268,16 @@ impl Environment {
         return_result
     }
     /// Returns a reference to a variable.
-    pub fn get(&self, name: &str, span: Span) -> Result<&UniqueRc<Value>, RunError> {
+    pub fn get(&self, name: &str, span: Span) -> Result<&UniqueRc<Value>, EvalError> {
         let (env, span) = self.resolve(name, span)?;
 
         match env.variables.get(name) {
             Some(Variable::Unmoved(value)) => Ok(value),
-            Some(Variable::Moved) => Err(RunError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => Err(RunError::ExpectedVariableGotFunction(
+            Some(Variable::Moved) => Err(EvalError::VariableMoved(span.wrap(name.to_string()))),
+            Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
                 span.wrap(name.to_owned()),
             )),
-            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
+            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 
@@ -285,12 +285,12 @@ impl Environment {
     ///
     /// However it will no longer be able to be used unless it's a [`Value::None`],
     /// [`Value::Boolean`], or [`Value::Number`] in which case it will be copied.  
-    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, RunError> {
+    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, EvalError> {
         let (env, span) = self.resolve_mut(name, span)?;
 
         match env.variables.get_mut(name) {
-            Some(Variable::Moved) => Err(RunError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => Err(RunError::ExpectedVariableGotFunction(
+            Some(Variable::Moved) => Err(EvalError::VariableMoved(span.wrap(name.to_string()))),
+            Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
                 span.wrap(name.to_owned()),
             )),
             Some(variable_reference) => {
@@ -311,28 +311,28 @@ impl Environment {
                 };
                 Ok(value.into_inner())
             }
-            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
+            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 
-    fn resolve(&self, name: &str, span: Span) -> Result<(&Self, Span), RunError> {
+    fn resolve(&self, name: &str, span: Span) -> Result<(&Self, Span), EvalError> {
         if self.variables.contains_key(name) {
             return Ok((self, span));
         }
 
         match &self.parent {
             Some(parent) => parent.resolve(name, span),
-            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
+            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
-    fn resolve_mut(&mut self, name: &str, span: Span) -> Result<(&mut Self, Span), RunError> {
+    fn resolve_mut(&mut self, name: &str, span: Span) -> Result<(&mut Self, Span), EvalError> {
         if self.variables.contains_key(name) {
             return Ok((self, span));
         }
 
         match &mut self.parent {
             Some(parent) => parent.resolve_mut(name, span),
-            None => Err(RunError::VariableNotFound(span.wrap(name.to_string()))),
+            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 

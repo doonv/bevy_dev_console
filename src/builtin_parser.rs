@@ -7,10 +7,8 @@
 use bevy::prelude::*;
 use logos::Span;
 
-use crate::command::{CommandParser, DefaultCommandParser};
-
-use self::lexer::TokenStream;
-use self::parser::parse;
+use crate::builtin_parser::runner::ExecutionError;
+use crate::command::{CommandHints, CommandParser, DefaultCommandParser};
 
 pub(crate) mod lexer;
 pub(crate) mod number;
@@ -19,21 +17,25 @@ pub(crate) mod runner;
 
 pub use number::*;
 pub use runner::environment::Environment;
-pub use runner::error::RunError;
+pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
 pub use runner::Value;
 
 /// Additonal traits for span.
 pub trait SpanExtension {
     /// Wrap this value with a [`Spanned`].
+    #[must_use]
     fn wrap<T>(self, value: T) -> Spanned<T>;
     /// Combine two [`Span`]s into one.
+    #[must_use]
     fn join(self, span: Self) -> Self;
 }
 impl SpanExtension for Span {
+    #[inline]
     fn wrap<T>(self, value: T) -> Spanned<T> {
         Spanned { span: self, value }
     }
+    #[inline]
     fn join(self, span: Self) -> Self {
         self.start..span.end
     }
@@ -50,13 +52,15 @@ pub struct Spanned<T> {
 impl<T> Spanned<T> {
     /// Maps a `Spanned<T>` to `Spanned<U>` by applying a function to a
     /// contained `T` value, leaving the [`Span`] value untouched.
-    pub fn map<U>(self, f: impl Fn(T) -> U) -> Spanned<U> {
+    #[must_use]
+    pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
         Spanned {
             span: self.span,
             value: f(self.value),
         }
     }
 }
+
 impl Default for DefaultCommandParser {
     fn default() -> Self {
         Self(Box::new(BuiltinCommandParser))
@@ -70,18 +74,30 @@ impl Default for DefaultCommandParser {
 pub struct BuiltinCommandParser;
 impl CommandParser for BuiltinCommandParser {
     fn parse(&self, command: &str, world: &mut World) {
-        let mut tokens = TokenStream::new(command);
+        let mut tokens = lexer::TokenStream::new(command);
 
-        let environment = world.remove_non_send_resource::<Environment>().unwrap();
-        let ast = parse(&mut tokens, &environment);
-        world.insert_non_send_resource(environment);
+        let environment = world.non_send_resource::<Environment>();
+        let ast = parser::parse(&mut tokens, environment);
 
         dbg!(&ast);
         match ast {
-            Ok(ast) => {
-                runner::run(ast, world);
+            Ok(ast) => match runner::run(ast, world) {
+                Ok(()) => (),
+                Err(error) => {
+                    if let ExecutionError::Eval(eval_error) = &error {
+                        world
+                            .resource_mut::<CommandHints>()
+                            .push(eval_error.hints());
+                    }
+
+                    error!("{error}")
+                }
+            },
+            Err(err) => {
+                world.resource_mut::<CommandHints>().push([err.hint()]);
+
+                error!("{err}")
             }
-            Err(err) => error!("{err:#?}"),
         }
     }
 }

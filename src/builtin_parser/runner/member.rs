@@ -1,7 +1,7 @@
 //! Evaluation for member expressions and paths
 
 use crate::builtin_parser::parser::{access_unwrap, Access, Expression};
-use crate::builtin_parser::{RunError, SpanExtension, Spanned, WeakRef};
+use crate::builtin_parser::{EvalError, SpanExtension, Spanned, WeakRef};
 
 use super::reflection::IntoResource;
 use super::{eval_expression, todo_error, EvalParams, Value};
@@ -33,7 +33,7 @@ pub fn eval_member_expression(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Value, RunError> {
+) -> Result<Value, EvalError> {
     let left_span = left.span.clone();
     let span = left.span.start..right.span.end;
     let left = eval_expression(
@@ -48,13 +48,13 @@ pub fn eval_member_expression(
     match left {
         Value::Reference(reference) => {
             let Some(strong) = reference.upgrade() else {
-                return Err(RunError::ReferenceToMovedData(left_span));
+                return Err(EvalError::ReferenceToMovedData(left_span));
             };
             let reference = strong.borrow();
             match &&*reference {
                 Value::Object(map) | Value::StructObject { map, .. } => {
                     access_unwrap!("an object reference", Field(field) = right => {
-                        let value = map.get(&field).ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
+                        let value = map.get(&field).ok_or(EvalError::FieldNotFoundInStruct(span.wrap(field)))?;
 
                         Ok(Value::Reference(value.borrow()))
                     })
@@ -62,7 +62,7 @@ pub fn eval_member_expression(
                 Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
                     access_unwrap!("a tuple reference", TupleIndex(index) = right => {
                         let Spanned { span: _, value } =
-                            tuple.get(index).ok_or(RunError::FieldNotFoundInTuple {
+                            tuple.get(index).ok_or(EvalError::FieldNotFoundInTuple {
                                 span,
                                 field_index: index,
                                 tuple_size: tuple.len(),
@@ -81,14 +81,14 @@ pub fn eval_member_expression(
                         Ok(Value::Resource(resource))
                     })
                 }
-                var => Err(RunError::CannotIndexValue(left_span.wrap((*var).clone()))),
+                var => Err(EvalError::CannotIndexValue(left_span.wrap((*var).clone()))),
             }
         }
         Value::Object(mut map) | Value::StructObject { mut map, .. } => {
             access_unwrap!("an object", Field(field) = right => {
                 let value = map
                     .remove(&field)
-                    .ok_or(RunError::FieldNotFoundInStruct(span.wrap(field)))?;
+                    .ok_or(EvalError::FieldNotFoundInStruct(span.wrap(field)))?;
 
                 Ok(value.into_inner())
             })
@@ -101,7 +101,7 @@ pub fn eval_member_expression(
                         .into_vec()
                         .into_iter()
                         .nth(field_index)
-                        .ok_or(RunError::FieldNotFoundInTuple {
+                        .ok_or(EvalError::FieldNotFoundInTuple {
                             span,
                             field_index,
                             tuple_size,
@@ -118,7 +118,7 @@ pub fn eval_member_expression(
                 Ok(Value::Resource(resource))
             })
         }
-        _ => Err(RunError::CannotIndexValue(left_span.wrap(left))),
+        _ => Err(EvalError::CannotIndexValue(left_span.wrap(left))),
     }
 }
 
@@ -147,7 +147,7 @@ pub fn eval_path(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Spanned<Path>, RunError> {
+) -> Result<Spanned<Path>, EvalError> {
     match expr.value {
         Expression::Variable(variable) => {
             if let Some(registration) = registrations
@@ -197,7 +197,7 @@ pub fn eval_path(
                             let weak = match object.get(&field) {
                                 Some(rc) => rc.borrow(),
                                 None => {
-                                    return Err(RunError::FieldNotFoundInStruct(span.wrap(field)))
+                                    return Err(EvalError::FieldNotFoundInStruct(span.wrap(field)))
                                 }
                             };
 
@@ -210,7 +210,7 @@ pub fn eval_path(
                             let weak = match tuple.get(index) {
                                 Some(Spanned { value: rc, span: _ }) => rc.borrow(),
                                 None => {
-                                    return Err(RunError::FieldNotFoundInTuple {
+                                    return Err(EvalError::FieldNotFoundInTuple {
                                         span,
                                         field_index: index,
                                         tuple_size: tuple.len(),
@@ -231,7 +231,7 @@ pub fn eval_path(
                         Ok(left.span.wrap(Path::Resource(resource)))
                     })
                 }
-                Path::NewVariable(name) => Err(RunError::VariableNotFound(left.span.wrap(name))),
+                Path::NewVariable(name) => Err(EvalError::VariableNotFound(left.span.wrap(name))),
             }
         }
         Expression::Dereference(inner) => {
@@ -247,13 +247,13 @@ pub fn eval_path(
                 Path::Variable(value) => {
                     let strong = value
                         .upgrade()
-                        .ok_or(RunError::ReferenceToMovedData(path.span))?;
+                        .ok_or(EvalError::ReferenceToMovedData(path.span))?;
                     let borrow = strong.borrow();
 
                     if let Value::Reference(ref reference) = &*borrow {
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
-                        Err(RunError::CannotDereferenceValue(
+                        Err(EvalError::CannotDereferenceValue(
                             expr.span.wrap(borrow.natural_kind()),
                         ))
                     }
