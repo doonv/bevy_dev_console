@@ -5,13 +5,14 @@ use bevy::prelude::*;
 use bevy_dev_console::builtin_parser::{Environment, EvalError, Number, Spanned, StrongRef, Value};
 use bevy_dev_console::prelude::*;
 use bevy_dev_console::register;
+use web_time as time;
 
 // Declare the functions we want to create:
 
 /// Basic function
 fn time_since_epoch() {
-    let time = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
+    let time = time::SystemTime::now()
+        .duration_since(time::UNIX_EPOCH)
         .unwrap();
     info!("The unix epoch was {} seconds ago", time.as_secs());
 }
