@@ -80,6 +80,7 @@ impl CommandParser for BuiltinCommandParser {
         let ast = parser::parse(&mut tokens, environment);
 
         dbg!(&ast);
+        
         match ast {
             Ok(ast) => match runner::run(ast, world) {
                 Ok(()) => (),

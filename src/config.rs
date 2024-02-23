@@ -17,7 +17,7 @@ impl Default for ConsoleConfig {
     fn default() -> Self {
         Self {
             theme: ConsoleTheme::ONE_DARK,
-            open_key: KeyCode::Grave,
+            open_key: KeyCode::Backquote,
         }
     }
 }

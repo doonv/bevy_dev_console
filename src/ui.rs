@@ -49,7 +49,7 @@ pub(crate) fn read_logs(mut logs: EventReader<LogMessage>, mut state: ResMut<Con
 
 pub(crate) fn open_close_ui(
     mut state: ResMut<ConsoleUiState>,
-    key: Res<Input<KeyCode>>,
+    key: Res<ButtonInput<KeyCode>>,
     config: Res<ConsoleConfig>,
 ) {
     if key.just_pressed(config.open_key) {
@@ -61,7 +61,7 @@ pub(crate) fn render_ui(
     mut contexts: EguiContexts,
     mut commands: Commands,
     mut state: ResMut<ConsoleUiState>,
-    key: Res<Input<KeyCode>>,
+    key: Res<ButtonInput<KeyCode>>,
     mut hints: ResMut<CommandHints>,
     config: Res<ConsoleConfig>,
 ) {
@@ -74,7 +74,7 @@ pub(crate) fn render_ui(
         }
     };
 
-    if key.just_pressed(KeyCode::Return) {
+    if key.just_pressed(KeyCode::Enter) {
         submit_command(&mut state.command);
     }
 
