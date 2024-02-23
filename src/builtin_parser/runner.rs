@@ -97,11 +97,14 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
         .ok_or(ExecutionError::NoEnvironment)?;
 
     // Same thing here (this time we are doing it because we are passing a `&mut World` to `eval_expression`)
-    let registry = world
-        .remove_resource::<AppTypeRegistry>()
-        .ok_or(ExecutionError::NoTypeRegistry)?;
+    let Some(registry) = world.remove_resource::<AppTypeRegistry>() else {
+        // Make sure to re-insert the resource on failure
+        world.insert_non_send_resource(environment);
 
-    {
+        return Err(ExecutionError::NoTypeRegistry);
+    };
+
+    let result = (|| {
         let registry_read = registry.read();
 
         let registrations: Vec<_> = registry_read
@@ -143,13 +146,15 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
                 }
             }
         }
-    }
+
+        Ok(())
+    })();
 
     // Add back the resources
     world.insert_resource(registry);
     world.insert_non_send_resource(environment);
 
-    Ok(())
+    result
 }
 
 fn eval_expression(
