@@ -21,7 +21,7 @@ pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
 pub use runner::Value;
 
-/// Additonal traits for span.
+/// Additional traits for span.
 pub trait SpanExtension {
     /// Wrap this value with a [`Spanned`].
     #[must_use]

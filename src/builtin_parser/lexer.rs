@@ -63,7 +63,7 @@ pub enum Token {
     String,
 
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
-    Identifer,
+    Identifier,
 
     #[regex(r#"[0-9]+"#)]
     IntegerNumber,
@@ -189,7 +189,7 @@ mod tests {
     fn var_assign() {
         let mut lexer = TokenStream::new("x = 1 + 2 - 30.6");
 
-        assert_eq!(lexer.next(), Some(Ok(Token::Identifer)));
+        assert_eq!(lexer.next(), Some(Ok(Token::Identifier)));
         assert_eq!(lexer.slice(), "x");
 
         assert_eq!(lexer.next(), Some(Ok(Token::Equals)));

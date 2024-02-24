@@ -1,4 +1,4 @@
-//! A simple exmaple
+//! A simple example
 
 use bevy::log::{Level, LogPlugin};
 use bevy::prelude::*;

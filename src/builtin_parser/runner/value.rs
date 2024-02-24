@@ -198,7 +198,7 @@ impl Value {
 
     /// Returns the kind of [`Value`] as a [string slice](str).
     /// You may want to use [`natural_kind`](Self::natural_kind)
-    /// instead for more natural sounding error messsages
+    /// instead for more natural sounding error messages
     pub const fn kind(&self) -> &'static str {
         match self {
             Value::None => "none",
@@ -248,7 +248,7 @@ fn fancy_debug_print(
     fn debug_subprint(reflect: &dyn Reflect, indentation: usize) -> String {
         let mut f = String::new();
         let reflect_ref = reflect.reflect_ref();
-        let identation_string = TAB.repeat(indentation);
+        let indentation_string = TAB.repeat(indentation);
         match reflect_ref {
             ReflectRef::Struct(struct_info) => {
                 f += "{\n";
@@ -258,11 +258,11 @@ fn fancy_debug_print(
 
                     let field_value = debug_subprint(field, indentation + 1);
                     f += &format!(
-                        "{identation_string}{TAB}{field_name}: {} = {field_value},\n",
+                        "{indentation_string}{TAB}{field_name}: {} = {field_value},\n",
                         field.reflect_short_type_path(),
                     );
                 }
-                f += &identation_string;
+                f += &indentation_string;
                 f += "}";
             }
             ReflectRef::TupleStruct(_) => todo!(),
@@ -270,9 +270,9 @@ fn fancy_debug_print(
                 f += "(\n";
                 for field in tuple_info.iter_fields() {
                     let field_value = debug_subprint(field, indentation + 1);
-                    f += &format!("{identation_string}{TAB}{field_value},\n",);
+                    f += &format!("{indentation_string}{TAB}{field_value},\n",);
                 }
-                f += &identation_string;
+                f += &indentation_string;
                 f += ")";
             }
             ReflectRef::List(_) => todo!(),
@@ -287,25 +287,25 @@ fn fancy_debug_print(
                         f += " {\n";
                         for field in variant.iter_fields() {
                             f += &format!(
-                                "{identation_string}{TAB}{}: {} = {},\n",
+                                "{indentation_string}{TAB}{}: {} = {},\n",
                                 field.name().unwrap(),
                                 field.value().reflect_short_type_path(),
                                 debug_subprint(field.value(), indentation + 1)
                             );
                         }
-                        f += &identation_string;
+                        f += &indentation_string;
                         f += "}";
                     }
                     VariantType::Tuple => {
                         f += "(\n";
                         for field in variant.iter_fields() {
                             f += &format!(
-                                "{identation_string}{TAB}{} = {},\n",
+                                "{indentation_string}{TAB}{} = {},\n",
                                 field.value().reflect_short_type_path(),
                                 debug_subprint(field.value(), indentation + 1)
                             );
                         }
-                        f += &identation_string;
+                        f += &indentation_string;
                         f += ")";
                     }
                     VariantType::Unit => {}

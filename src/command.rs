@@ -6,7 +6,7 @@ use std::ops::Range;
 use bevy::ecs::system::Command;
 use bevy::prelude::*;
 
-/// The command parser currrently being used by the dev console.
+/// The command parser currently being used by the dev console.
 #[derive(Resource)]
 pub struct DefaultCommandParser(pub Box<dyn CommandParser>);
 

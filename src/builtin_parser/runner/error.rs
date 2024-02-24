@@ -9,7 +9,7 @@ use crate::command::{CommandHint, CommandHintColor};
 
 use super::Value;
 
-/// An error occuring during the while executing the [`AST`](Ast) of the command.
+/// An error occurring during the while executing the [`AST`](Ast) of the command.
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub enum EvalError {
@@ -186,7 +186,7 @@ impl std::fmt::Display for EvalError {
                 expected, actual, ..
             } => write!(
                 f,
-                "Mismatched function paramater type. Expected {expected} but got {actual}"
+                "Mismatched function parameter type. Expected {expected} but got {actual}"
             ),
             E::ExpectedVariableGotFunction(Spanned { value, .. }) => write!(
                 f,

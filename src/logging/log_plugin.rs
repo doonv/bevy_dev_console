@@ -109,7 +109,7 @@ impl Plugin for ConsoleLogPlugin {
             }));
         }
 
-        let (sender, reciever) = mpsc::channel::<LogMessage>();
+        let (sender, receiver) = mpsc::channel::<LogMessage>();
 
         let finished_subscriber;
         let default_filter = { format!("{},{}", self.level, self.filter) };
@@ -117,7 +117,7 @@ impl Plugin for ConsoleLogPlugin {
             .or_else(|_| EnvFilter::try_new(&default_filter))
             .unwrap();
 
-        let log_events = CapturedLogEvents(reciever);
+        let log_events = CapturedLogEvents(receiver);
 
         let log_event_handler = LogCaptureLayer { sender };
 
@@ -251,10 +251,10 @@ pub struct LogMessage {
 
 /// Transfers information from the [`CapturedLogEvents`] resource to [`Events<LogMessage>`](LogMessage).
 fn transfer_log_events(
-    reciever: NonSend<CapturedLogEvents>,
+    receiver: NonSend<CapturedLogEvents>,
     mut log_events: EventWriter<LogMessage>,
 ) {
-    log_events.send_batch(reciever.0.try_iter());
+    log_events.send_batch(receiver.0.try_iter());
 }
 
 /// This struct temporarily stores [`LogMessage`]s before they are
@@ -291,7 +291,7 @@ impl<S: Subscriber> Layer<S> for LogCaptureLayer {
     }
 }
 
-/// A [`Visit`]or that records log messages that are transfered to [`LogCaptureLayer`].
+/// A [`Visit`]or that records log messages that are transferred to [`LogCaptureLayer`].
 struct LogEventVisitor<'a>(&'a mut Option<String>);
 impl Visit for LogEventVisitor<'_> {
     fn record_debug(

@@ -80,7 +80,7 @@ impl Number {
 
     /// Returns the kind of [`Number`] as a [string slice](str).
     /// You may want to use [`natural_kind`](Self::natural_kind)
-    /// instead for more natural sounding error messsages
+    /// instead for more natural sounding error messages
     pub const fn kind(&self) -> &'static str {
         match self {
             Number::Float(_) => "float",

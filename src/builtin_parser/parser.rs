@@ -35,7 +35,7 @@ macro_rules! expect {
     };
 }
 
-/// A type that repreesnts an expression.
+/// A type that represents an expression.
 #[derive(Debug, Clone)]
 pub enum Expression {
     // Primitives
@@ -262,7 +262,7 @@ impl std::error::Error for ParseError {}
 const FLOAT_PARSE_EXPECT_REASON: &str =
     "Float parsing errors are handled by the lexer, and floats cannot overflow.";
 const NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON: &str =
-    "Lexer gurantees `NumberType`'s slice to be included one of the match arms.";
+    "Lexer guarantees `NumberType`'s slice to be included one of the match arms.";
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     let mut ast = Vec::new();
@@ -448,7 +448,7 @@ fn parse_value(
                     }
                 }
             }
-            Some(Ok(Token::Identifer)) => {
+            Some(Ok(Token::Identifier)) => {
                 let start = tokens.span().start;
                 let name = tokens.slice().to_string();
 
@@ -581,7 +581,7 @@ fn parse_value(
     while let Some(Ok(Token::Dot)) = tokens.peek() {
         tokens.next(); // Skip the dot
         match tokens.next() {
-            Some(Ok(Token::Identifer)) => {
+            Some(Ok(Token::Identifier)) => {
                 let right = tokens.slice().to_string();
                 expr = Spanned {
                     span: expr.span.start..tokens.span().end,
@@ -732,7 +732,7 @@ fn parse_object(
     environment: &Environment,
 ) -> Result<HashMap<String, Spanned<Expression>>, ParseError> {
     let mut map = HashMap::new();
-    while let Some(Ok(Token::Identifer)) = tokens.peek() {
+    while let Some(Ok(Token::Identifier)) = tokens.peek() {
         tokens.next();
         let ident = tokens.slice().to_string();
         expect!(tokens, Token::Colon);
