@@ -13,7 +13,7 @@
 
 #[cfg(feature = "trace")]
 use std::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::mpsc;
 use web_time::SystemTime;
 #[cfg(target_os = "android")]
 mod android_tracing;
@@ -24,8 +24,7 @@ static GLOBAL: tracy_client::ProfiledAllocator<std::alloc::System> =
     tracy_client::ProfiledAllocator::new(std::alloc::System, 100);
 
 use bevy::ecs::event::{Event, EventWriter};
-use bevy::ecs::system::{Res, Resource};
-use bevy::log::trace;
+use bevy::ecs::system::NonSend;
 use bevy::utils::tracing::Subscriber;
 pub use bevy::utils::tracing::{warn, Level};
 
@@ -57,8 +56,14 @@ pub struct ConsoleLogPlugin {
     /// Filters out logs that are "less than" the given level.
     /// This can be further filtered using the `filter` setting.
     pub level: Level,
+
+    /// Optionally apply extra transformations to the tracing subscriber.
+    /// For example add [`Layers`](tracing_subscriber::layer::Layer)
+    pub update_subscriber: Option<fn(BoxedSubscriber) -> BoxedSubscriber>,
 }
 
+/// Alias for a boxed [`Subscriber`].
+pub type BoxedSubscriber = Box<dyn Subscriber + Send + Sync + 'static>;
 impl ConsoleLogPlugin {
     /// Appends a filter to the [`ConsoleLogPlugin`], allowing you to change the
     /// log level of a specific module/crate.
@@ -87,6 +92,7 @@ impl Default for ConsoleLogPlugin {
         Self {
             filter: "wgpu=error,naga=warn,bevy_dev_console=trace".to_string(),
             level: Level::INFO,
+            update_subscriber: None,
         }
     }
 }
@@ -98,11 +104,12 @@ impl Plugin for ConsoleLogPlugin {
         {
             let old_handler = panic::take_hook();
             panic::set_hook(Box::new(move |infos| {
-                println!("{}", tracing_error::SpanTrace::capture());
+                eprintln!("{}", tracing_error::SpanTrace::capture());
                 old_handler(infos);
             }));
         }
-        trace!("a");
+
+        let (sender, reciever) = mpsc::channel::<LogMessage>();
 
         let finished_subscriber;
         let default_filter = { format!("{},{}", self.level, self.filter) };
@@ -110,13 +117,11 @@ impl Plugin for ConsoleLogPlugin {
             .or_else(|_| EnvFilter::try_new(&default_filter))
             .unwrap();
 
-        let log_events = LogEvents(Arc::new(Mutex::new(Vec::new())));
+        let log_events = CapturedLogEvents(reciever);
 
-        let log_event_handler = LogEventLayer {
-            events: log_events.0.clone(),
-        };
+        let log_event_handler = LogCaptureLayer { sender };
 
-        app.insert_resource(log_events);
+        app.insert_non_send_resource(log_events);
         app.add_event::<LogMessage>();
         app.add_systems(Update, transfer_log_events);
 
@@ -154,7 +159,7 @@ impl Plugin for ConsoleLogPlugin {
             };
 
             #[cfg(feature = "tracing-tracy")]
-            let tracy_layer = tracing_tracy::TracyLayer::new();
+            let tracy_layer = tracing_tracy::TracyLayer::default();
 
             let fmt_layer = tracing_subscriber::fmt::Layer::default().with_writer(std::io::stderr);
 
@@ -173,7 +178,11 @@ impl Plugin for ConsoleLogPlugin {
             #[cfg(feature = "tracing-tracy")]
             let subscriber = subscriber.with(tracy_layer);
 
-            finished_subscriber = subscriber;
+            if let Some(update_subscriber) = self.update_subscriber {
+                finished_subscriber = update_subscriber(Box::new(subscriber));
+            } else {
+                finished_subscriber = Box::new(subscriber);
+            }
         }
 
         #[cfg(target_arch = "wasm32")]
@@ -211,25 +220,27 @@ impl Plugin for ConsoleLogPlugin {
 pub struct LogMessage {
     /// The message contents.
     pub message: String,
+
     /// The name of the span described by this metadata.
     pub name: &'static str,
-    /// The part of the system that the span that this metadata describes
-    /// occurred in.
+
+    /// The part of the system that the span that this
+    /// metadata describes occurred in.
     pub target: &'static str,
 
     /// The level of verbosity of the described span.
     pub level: Level,
 
-    /// The name of the Rust module where the span occurred, or `None` if this
-    /// could not be determined.
+    /// The name of the Rust module where the span occurred,
+    /// or `None` if this could not be determined.
     pub module_path: Option<&'static str>,
 
-    /// The name of the source code file where the span occurred, or `None` if
-    /// this could not be determined.
+    /// The name of the source code file where the span occurred,
+    ///  or `None` if this could not be determined.
     pub file: Option<&'static str>,
 
-    /// The line number in the source code file where the span occurred, or
-    /// `None` if this could not be determined.
+    /// The line number in the source code file where the span occurred,
+    /// or `None` if this could not be determined.
     pub line: Option<u32>,
 
     /// The time the log occurred.
@@ -238,24 +249,23 @@ pub struct LogMessage {
     pub time: SystemTime,
 }
 
-/// Transfers information from the [`LogEvents`] resource to [`Events<LogEvent>`](bevy::ecs::event::Events<LogEvent>).
-fn transfer_log_events(handler: Res<LogEvents>, mut log_events: EventWriter<LogMessage>) {
-    let events = &mut *handler.0.lock().unwrap();
-    if !events.is_empty() {
-        log_events.send_batch(std::mem::take(events));
-    }
+/// Transfers information from the [`CapturedLogEvents`] resource to [`Events<LogMessage>`](LogMessage).
+fn transfer_log_events(
+    reciever: NonSend<CapturedLogEvents>,
+    mut log_events: EventWriter<LogMessage>,
+) {
+    log_events.send_batch(reciever.0.try_iter());
 }
 
 /// This struct temporarily stores [`LogMessage`]s before they are
 /// written to [`EventWriter<LogMessage>`] by [`transfer_log_events`].
-#[derive(Resource)]
-struct LogEvents(Arc<Mutex<Vec<LogMessage>>>);
+struct CapturedLogEvents(mpsc::Receiver<LogMessage>);
 
-/// A [`Layer`] that captures log events and saves them to [`LogEvents`].
-struct LogEventLayer {
-    events: Arc<Mutex<Vec<LogMessage>>>,
+/// A [`Layer`] that captures log events and saves them to [`CapturedLogEvents`].
+struct LogCaptureLayer {
+    sender: mpsc::Sender<LogMessage>,
 }
-impl<S: Subscriber> Layer<S> for LogEventLayer {
+impl<S: Subscriber> Layer<S> for LogCaptureLayer {
     fn on_event(
         &self,
         event: &bevy::utils::tracing::Event<'_>,
@@ -265,21 +275,23 @@ impl<S: Subscriber> Layer<S> for LogEventLayer {
         event.record(&mut LogEventVisitor(&mut message));
         if let Some(message) = message {
             let metadata = event.metadata();
-            self.events.lock().unwrap().push(LogMessage {
-                message,
-                name: metadata.name(),
-                target: metadata.target(),
-                level: *metadata.level(),
-                module_path: metadata.module_path(),
-                file: metadata.file(),
-                line: metadata.line(),
-                time: SystemTime::now(),
-            });
+            self.sender
+                .send(LogMessage {
+                    message,
+                    name: metadata.name(),
+                    target: metadata.target(),
+                    level: *metadata.level(),
+                    module_path: metadata.module_path(),
+                    file: metadata.file(),
+                    line: metadata.line(),
+                    time: SystemTime::now(),
+                })
+                .expect("CapturedLogEvents resource no longer exists!");
         }
     }
 }
 
-/// A [`Visit`]or that records log messages that are transfered to [`LogEventLayer`].
+/// A [`Visit`]or that records log messages that are transfered to [`LogCaptureLayer`].
 struct LogEventVisitor<'a>(&'a mut Option<String>);
 impl Visit for LogEventVisitor<'_> {
     fn record_debug(

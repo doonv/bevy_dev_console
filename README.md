@@ -5,6 +5,7 @@
 ![Image of the developer console](doc/console.png)
 
 > [!WARNING]  
+>
 > `bevy_dev_console` is currently in its early development stages. Expect breaking changes in the near future (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
 
 ## Features
@@ -67,4 +68,4 @@
 
 | bevy   | bevy_dev_console |
 | ------ | ---------------- |
-| 0.12.* | git (master)     |
+| 0.13.* | git (master)     |
