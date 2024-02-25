@@ -213,8 +213,8 @@ fn eval_expression(
                 Ok(Value::Reference(weak))
             }
             Path::Resource(resource) => {
-                let registeration = registrations.create_registration(resource.id);
-                let mut dyn_reflect = resource.mut_dyn_reflect(world, registeration);
+                let registration = registrations.create_registration(resource.id);
+                let mut dyn_reflect = resource.mut_dyn_reflect(world, registration);
 
                 let reflect = dyn_reflect
                     .reflect_path_mut(resource.path.as_str())
@@ -222,7 +222,7 @@ fn eval_expression(
 
                 match reflect.reflect_mut() {
                     ReflectMut::Enum(dyn_enum) => {
-                        let TypeInfo::Enum(enum_info) = registeration.type_info() else {
+                        let TypeInfo::Enum(enum_info) = registration.type_info() else {
                             unreachable!()
                         };
                         let Spanned { span, value } = *value_expr;

@@ -91,7 +91,7 @@ impl ConsoleTheme {
         debug: Color::rgb(0.29, 0.65, 0.94),
         trace: Color::rgb(0.78, 0.45, 0.89),
     };
-    /// High constrast theme, might help some people.
+    /// High contrast theme, might help some people.
     pub const HIGH_CONTRAST: Self = Self {
         font: FontId::monospace(14.0),
         dark: Color::rgb(0.5, 0.5, 0.5),

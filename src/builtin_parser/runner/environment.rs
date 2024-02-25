@@ -1,4 +1,4 @@
-//! Environment and function registeration
+//! Environment and function registration
 
 use std::collections::HashMap;
 use std::fmt::Debug;

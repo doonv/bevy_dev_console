@@ -25,9 +25,9 @@ pub const COMMAND_RESULT_NAME: &str = "console_result";
 
 #[derive(Default, Resource)]
 pub(crate) struct ConsoleUiState {
-    /// Whever the console is open or not.
+    /// Wherever the console is open or not.
     pub(crate) open: bool,
-    /// A list of all log messages receieved plus an
+    /// A list of all log messages received plus an
     /// indicator indicating if the message is new.
     pub(crate) log: Vec<(LogMessage, bool)>,
     /// The command in the text bar.
