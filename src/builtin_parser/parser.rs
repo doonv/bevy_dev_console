@@ -207,6 +207,14 @@ pub enum ParseError {
         number_kind: &'static str,
     },
     ExpectedObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
+    ExpectedIndexer {
+        got: Token,
+        span: Span,
+    },
+    UnsupportedLoop {
+        ty: &'static str,
+        span: Span,
+    },
 }
 
 impl ParseError {
@@ -223,6 +231,8 @@ impl ParseError {
             E::PositiveIntOverflow { span, .. } => span,
             E::NegativeIntOverflow { span, .. } => span,
             E::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
+            E::ExpectedIndexer { got: _, span } => span,
+            E::UnsupportedLoop { ty: _, span } => span,
         }
         .clone()
     }
@@ -254,6 +264,8 @@ impl std::fmt::Display for ParseError {
             E::NegativeIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too small."),
             E::PositiveIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too large."),
             E::ExpectedObjectContinuation(Spanned { span: _, value: got }) => write!(f, "Expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."),
+            E::ExpectedIndexer { got, span: _ } => write!(f, "Expected an identifier or integer when accessing member of variable, got {got:?} instead."),
+            E::UnsupportedLoop { ty, span : _} => write!(f, "{ty} loops are not yet supported. See issue #8.")
         }
     }
 }
@@ -290,43 +302,18 @@ fn parse_expression(
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
     match tokens.peek() {
-        Some(Ok(Token::For)) => {
-            let start = tokens.span().start;
-            tokens.next();
-
-            let index_name = tokens.slice().to_string();
-
-            tokens.next();
-
-            match tokens.next() {
-                Some(Ok(Token::In)) => {}
-                _ => todo!(),
-            }
-
-            let loop_count = match parse_additive(tokens, environment)?.value {
-                Expression::Number(Number::u8(number)) => number as u64,
-                Expression::Number(Number::u16(number)) => number as u64,
-                Expression::Number(Number::u32(number)) => number as u64,
-                Expression::Number(Number::u64(number)) => number,
-                Expression::Number(Number::i8(number)) => number as u64,
-                Expression::Number(Number::i16(number)) => number as u64,
-                Expression::Number(Number::i32(number)) => number as u64,
-                Expression::Number(Number::i64(number)) => number as u64,
-                t => todo!("{t:?}"),
-            };
-
-            let block = parse_block(tokens, environment)?;
-            let end = tokens.span().end;
-
-            Ok(Spanned {
-                value: Expression::ForLoop {
-                    index_name,
-                    loop_count,
-                    block,
-                },
-                span: start..end,
-            })
-        }
+        Some(Ok(Token::Loop)) => Err(ParseError::UnsupportedLoop {
+            ty: "infinite",
+            span: tokens.peek_span(),
+        }),
+        Some(Ok(Token::While)) => Err(ParseError::UnsupportedLoop {
+            ty: "while",
+            span: tokens.peek_span(),
+        }),
+        Some(Ok(Token::For)) => Err(ParseError::UnsupportedLoop {
+            ty: "for",
+            span: tokens.peek_span(),
+        }),
         Some(Ok(_)) => {
             let expr = parse_additive(tokens, environment)?;
 
@@ -342,7 +329,7 @@ fn parse_expression(
     }
 }
 
-fn parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
+fn _parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     expect!(tokens, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket);
@@ -606,7 +593,18 @@ fn parse_value(
                     },
                 };
             }
-            _ => todo!(),
+            Some(Ok(token)) => {
+                return Err(ParseError::ExpectedIndexer {
+                    got: token,
+                    span: tokens.span(),
+                })
+            }
+            Some(Err(FailedToLexCharacter)) => {
+                return Err(ParseError::FailedToLexCharacters(
+                    tokens.span().wrap(tokens.slice().to_string()),
+                ))
+            }
+            None => return Err(ParseError::ExpectedMoreTokens(tokens.span())),
         }
     }
     Ok(expr)
