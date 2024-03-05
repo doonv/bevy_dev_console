@@ -41,8 +41,12 @@ pub enum Token {
     #[token("&")]
     Ampersand,
 
+    #[token("loop")]
+    Loop,
     #[token("for")]
     For,
+    #[token("while")]
+    While,
 
     #[token("in")]
     In,
