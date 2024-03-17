@@ -38,8 +38,11 @@ impl Plugin for DevConsolePlugin {
                 Update,
                 (
                     ui::read_logs,
-                    ui::open_close_ui,
-                    ui::render_ui.run_if(|s: Res<ConsoleUiState>| s.open),
+                    (
+                        ui::open_close_ui,
+                        ui::render_ui.run_if(|s: Res<ConsoleUiState>| s.open),
+                    )
+                        .chain(),
                 ),
             );
     }
