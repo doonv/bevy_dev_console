@@ -1,4 +1,5 @@
 #![doc = include_str!("../README.md")]
+#![cfg_attr(test, feature(box_patterns))]
 
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
