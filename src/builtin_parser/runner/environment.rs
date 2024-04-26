@@ -351,7 +351,7 @@ impl Environment {
     ) -> &mut Self {
         let name = name.into();
         if self.variables.contains_key(&name) {
-            warn!("Function {name} declared twice.")
+            warn!("Function {name} declared twice.");
         }
         self.variables
             .insert(name, Variable::Function(function.into_function()));
