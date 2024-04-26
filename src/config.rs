@@ -12,7 +12,7 @@ pub struct ConsoleConfig {
     /// The key used to open the developer console.
     pub open_key: KeyCode,
     /// The key used to submit a command to the command parser.
-    pub submit_key: KeyCode
+    pub submit_key: KeyCode,
 }
 
 impl Default for ConsoleConfig {
@@ -20,7 +20,7 @@ impl Default for ConsoleConfig {
         Self {
             theme: ConsoleTheme::ONE_DARK,
             open_key: KeyCode::Backquote,
-            submit_key: KeyCode::Enter
+            submit_key: KeyCode::Enter,
         }
     }
 }
