@@ -77,7 +77,7 @@ pub(crate) fn render_ui(
         }
     };
 
-    if key.just_pressed(KeyCode::Enter) {
+    if key.just_pressed(config.submit_key) {
         submit_command(&mut state.command);
     }
 
