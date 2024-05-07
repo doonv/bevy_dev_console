@@ -50,7 +50,7 @@ pub struct Spanned<T> {
     pub value: T,
 }
 impl<T> Spanned<T> {
-    /// Maps a `Spanned<T>` to `Spanned<U>` by applying a function to a
+    /// Maps a [`Spanned<T>`] to [`Spanned<U>`] by applying a function to the
     /// contained `T` value, leaving the [`Span`] value untouched.
     #[must_use]
     pub fn map<U>(self, f: impl FnOnce(T) -> U) -> Spanned<U> {
