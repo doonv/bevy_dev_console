@@ -37,6 +37,7 @@ pub struct ConsoleUiState {
 }
 
 impl ConsoleUiState {
+    /// Whether the console is currently open or not
     pub fn open(&self) -> bool {
         self.open
     }
