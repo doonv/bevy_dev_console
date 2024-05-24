@@ -24,7 +24,7 @@ pub const COMMAND_MESSAGE_NAME: &str = "console_command";
 pub const COMMAND_RESULT_NAME: &str = "console_result";
 
 #[derive(Default, Resource)]
-pub(crate) struct ConsoleUiState {
+pub struct ConsoleUiState {
     /// Wherever the console is open or not.
     pub(crate) open: bool,
     /// Whether we have set focus this open or not.
@@ -34,6 +34,12 @@ pub(crate) struct ConsoleUiState {
     pub(crate) log: Vec<(LogMessage, bool)>,
     /// The command in the text bar.
     pub(crate) command: String,
+}
+
+impl ConsoleUiState {
+    pub fn open(&self) -> bool {
+        self.open
+    }
 }
 
 fn system_time_to_chrono_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
