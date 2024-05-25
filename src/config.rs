@@ -135,6 +135,16 @@ impl ConsoleTheme {
         }
     }
 
+    /// Returns a [`TextFormat`] with the default font and white color.
+    pub fn format_bold(&self) -> TextFormat {
+        TextFormat {
+            font_id: self.font.clone(),
+            color: Color32::WHITE,
+
+            ..default()
+        }
+    }
+
     define_text_format_method!(format_dark, dark);
     define_text_format_method!(format_error, error);
     define_text_format_method!(format_warning, warning);

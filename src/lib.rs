@@ -28,7 +28,11 @@ impl Plugin for DevConsolePlugin {
         {
             app.init_non_send_resource::<builtin_parser::Environment>();
             app.init_resource::<command::DefaultCommandParser>();
+            #[cfg(feature = "builtin-parser-completions")]
+            app.init_resource::<builtin_parser::completions::EnvironmentCache>();
         }
+        #[cfg(feature = "completions")]
+        app.init_resource::<command::AutoCompletions>();
 
         app.init_resource::<ConsoleUiState>()
             .init_resource::<CommandHints>()

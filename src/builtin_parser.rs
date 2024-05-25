@@ -10,6 +10,11 @@ use logos::Span;
 use crate::builtin_parser::runner::ExecutionError;
 use crate::command::{CommandHints, CommandParser, DefaultCommandParser};
 
+#[cfg(feature = "builtin-parser-completions")]
+use crate::command::CompletionSuggestion;
+
+#[cfg(feature = "builtin-parser-completions")]
+pub(crate) mod completions;
 pub(crate) mod lexer;
 pub(crate) mod number;
 pub(crate) mod parser;
@@ -90,7 +95,6 @@ impl CommandParser for BuiltinCommandParser {
                             .resource_mut::<CommandHints>()
                             .push(eval_error.hints());
                     }
-
                     error!("{error}")
                 }
             },
@@ -100,5 +104,38 @@ impl CommandParser for BuiltinCommandParser {
                 error!("{err}")
             }
         }
+        #[cfg(feature = "builtin-parser-completions")]
+        {
+            *world.resource_mut() =
+                completions::store_in_cache(world.non_send_resource::<Environment>());
+        }
+    }
+
+    #[cfg(feature = "builtin-parser-completions")]
+    fn completion(&self, command: &str, world: &World) -> Vec<CompletionSuggestion> {
+        use fuzzy_matcher::FuzzyMatcher;
+
+        use crate::builtin_parser::completions::EnvironmentCache;
+
+        let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
+        let environment_cache = world.resource::<EnvironmentCache>();
+
+        let mut names: Vec<_> = environment_cache
+            .function_names
+            .iter()
+            .chain(environment_cache.variable_names.iter())
+            .map(|name| (matcher.fuzzy_indices(name, command), name.clone()))
+            .filter_map(|(fuzzy, name)| fuzzy.map(|v| (v, name)))
+            .collect();
+        names.sort_by_key(|((score, _), _)| std::cmp::Reverse(*score));
+        names.truncate(crate::ui::MAX_COMPLETION_SUGGESTIONS);
+
+        names
+            .into_iter()
+            .map(|((_, indices), name)| CompletionSuggestion {
+                suggestion: name,
+                highlighted_indices: indices,
+            })
+            .collect()
     }
 }

@@ -3,12 +3,11 @@
 use std::collections::HashMap;
 use std::fmt::Debug;
 
+use crate::builtin_parser::SpanExtension;
 use bevy::ecs::world::World;
 use bevy::log::warn;
 use bevy::reflect::TypeRegistration;
 use logos::Span;
-
-use crate::builtin_parser::SpanExtension;
 
 use super::super::parser::Expression;
 use super::super::Spanned;
@@ -203,12 +202,10 @@ pub enum Variable {
 }
 
 /// The environment stores all variables and functions.
-#[derive(Debug)]
 pub struct Environment {
-    parent: Option<Box<Environment>>,
-    variables: HashMap<String, Variable>,
+    pub(crate) parent: Option<Box<Environment>>,
+    pub(crate) variables: HashMap<String, Variable>,
 }
-
 impl Default for Environment {
     fn default() -> Self {
         let mut env = Self {
