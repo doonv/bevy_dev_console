@@ -28,7 +28,7 @@ pub fn completions(
         }
 
         let cursor_index = (|| {
-            // Conver the cursor's char index into a byte index
+            // Convert the cursor's char index into a byte index
             // aswell as returning the character at the cursor's position position
             let (primary_index, char) = state
                 .command

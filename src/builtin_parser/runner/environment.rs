@@ -349,7 +349,6 @@ impl Environment {
         let name = name.into();
         if self.variables.contains_key(&name) {
             warn!("Function {name} declared twice.");
-        } else {
         }
         self.variables
             .insert(name, Variable::Function(function.into_function()));
