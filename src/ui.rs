@@ -14,6 +14,14 @@ use crate::config::ToColor32;
 use crate::logging::log_plugin::LogMessage;
 use crate::prelude::ConsoleConfig;
 
+#[cfg(feature = "completions")]
+use crate::command::AutoCompletions;
+
+#[cfg(feature = "completions")]
+mod completions;
+#[cfg(feature = "completions")]
+pub use completions::MAX_COMPLETION_SUGGESTIONS;
+
 /// Prefix for log messages that show a previous command.
 pub const COMMAND_MESSAGE_PREFIX: &str = "$ ";
 /// Prefix for log messages that show the result of a command.
@@ -34,6 +42,8 @@ pub(crate) struct ConsoleUiState {
     pub(crate) log: Vec<(LogMessage, bool)>,
     /// The command in the text bar.
     pub(crate) command: String,
+    #[cfg(feature = "completions")]
+    pub(crate) selected_completion: usize,
 }
 
 fn system_time_to_chrono_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
@@ -67,24 +77,27 @@ pub(crate) fn render_ui(
     key: Res<ButtonInput<KeyCode>>,
     mut hints: ResMut<CommandHints>,
     config: Res<ConsoleConfig>,
+    #[cfg(feature = "completions")] completions: Res<AutoCompletions>,
 ) {
-    let mut submit_command = |command: &mut String| {
+    fn submit_command(command: &mut String, commands: &mut Commands) {
         if !command.trim().is_empty() {
             info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{}", command.trim());
             // Get the owned command string by replacing it with an empty string
             let command = std::mem::take(command);
             commands.add(ExecuteCommand(command));
         }
-    };
+    }
 
     if key.just_pressed(config.submit_key) {
-        submit_command(&mut state.command);
+        submit_command(&mut state.command, &mut commands);
     }
 
     egui::Window::new("Developer Console")
         .collapsible(false)
         .default_width(900.)
         .show(contexts.ctx_mut(), |ui| {
+            completions::change_selected_completion(ui, &mut state, &completions);
+
             // A General rule when creating layouts in egui is to place elements which fill remaining space last.
             // Since immediate mode ui can't predict the final sizes of widgets until they've already been drawn
 
@@ -101,22 +114,35 @@ pub(crate) fn render_ui(
 
                     //We can use a right to left layout, so we can place the text input last and tell it to fill all remaining space
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        // ui.button is a shorthand command, a similar command exists for text edits, but this is how to manually construct a widget.
+                        // doing this also allows access to more options of the widget, rather than being stuck with the default the shorthand picks.
                         if ui.button("Submit").clicked() {
-                            submit_command(&mut state.command);
+                            submit_command(&mut state.command, &mut commands);
 
                             // Return keyboard focus to the text edit control.
                             ui.ctx().memory_mut(|mem| mem.request_focus(text_edit_id));
                         }
-                        // ui.button is a shorthand command, a similar command exists for text edits, but this is how to manually construct a widget.
-                        // doing this also allows access to more options of the widget, rather than being stuck with the default the shorthand picks.
+
+                        #[cfg_attr(not(feature = "completions"), allow(unused_variables))]
                         let text_edit = egui::TextEdit::singleline(&mut state.command)
                             .id(text_edit_id)
                             .desired_width(ui.available_width())
                             .margin(egui::Vec2::splat(4.0))
                             .font(config.theme.font.clone())
-                            .lock_focus(true);
+                            .lock_focus(true)
+                            .show(ui);
 
-                        ui.add(text_edit);
+                        // Display completions if the "completions" feature is enabled
+                        #[cfg(feature = "completions")]
+                        completions::completions(
+                            text_edit,
+                            text_edit_id,
+                            &mut state,
+                            ui,
+                            commands,
+                            &completions,
+                            &config,
+                        );
 
                         // Each time we open the console, we want to set focus to the text edit control.
                         if !state.text_focus {
