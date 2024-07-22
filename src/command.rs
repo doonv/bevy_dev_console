@@ -3,7 +3,7 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use bevy::ecs::system::Command;
+use bevy::ecs::world::Command;
 use bevy::prelude::*;
 
 /// The command parser currently being used by the dev console.
