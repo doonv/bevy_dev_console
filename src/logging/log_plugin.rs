@@ -29,6 +29,7 @@ use bevy::utils::tracing::Subscriber;
 pub use bevy::utils::tracing::{warn, Level};
 
 use bevy::app::{App, Plugin, Update};
+use bevy::utils::tracing;
 use tracing_log::LogTracer;
 use tracing_subscriber::field::Visit;
 #[cfg(feature = "tracing-chrome")]

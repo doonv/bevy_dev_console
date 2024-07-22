@@ -9,7 +9,15 @@ license = "MIT OR Apache-2.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [features]
-default = ["builtin-parser"]
+default = ["builtin-parser", "completions", "builtin-parser-completions"]
+
+completions = []
+
+builtin-parser-completions = [
+    "completions",
+    "builtin-parser",
+    "dep:fuzzy-matcher",
+]
 
 builtin-parser = ["dep:logos"]
 
@@ -24,6 +32,7 @@ web-time = "1.0.0"
 
 # builtin-parser features
 logos = { version = "0.14.0", optional = true }
+fuzzy-matcher = { version = "0.3.7", optional = true }
 
 [dev-dependencies]
 bevy = "0.13.0"

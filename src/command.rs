@@ -12,8 +12,16 @@ pub struct DefaultCommandParser(pub Box<dyn CommandParser>);
 
 impl DefaultCommandParser {
     /// Shortcut method for calling `parser.0.parse(command, world)`.
+    #[inline]
     pub fn parse(&self, command: &str, world: &mut World) {
         self.0.parse(command, world)
+    }
+    /// Shortcut method for calling `parser.0.completion(command, world)`.
+    #[inline]
+    #[must_use]
+    #[cfg(feature = "completions")]
+    pub fn completion(&self, keyword: &str, world: &World) -> Vec<CompletionSuggestion> {
+        self.0.completion(keyword, world)
     }
 }
 impl<Parser: CommandParser> From<Parser> for DefaultCommandParser {
@@ -129,6 +137,23 @@ impl CommandHints {
 pub trait CommandParser: Send + Sync + 'static {
     /// This method is called by the console when a command is ran.
     fn parse(&self, command: &str, world: &mut World);
+    /// This method is called by the console when the command is changed.
+    #[inline]
+    #[must_use]
+    #[cfg(feature = "completions")]
+    fn completion(&self, keyword: &str, world: &World) -> Vec<CompletionSuggestion> {
+        let _ = (keyword, world);
+        Vec::new()
+    }
+}
+
+/// A suggestion for autocomplete.
+#[cfg(feature = "completions")]
+pub struct CompletionSuggestion {
+    /// The suggestion string
+    pub suggestion: String,
+    /// The character indices of the [`suggestion`](Self::suggestion) to highlight.
+    pub highlighted_indices: Vec<usize>,
 }
 
 pub(crate) struct ExecuteCommand(pub String);
@@ -139,6 +164,22 @@ impl Command for ExecuteCommand {
             world.insert_resource(parser);
         } else {
             error!("Default command parser doesn't exist, cannot execute command.");
+        }
+    }
+}
+
+#[derive(Resource, Default, Deref, DerefMut)]
+#[cfg(feature = "completions")]
+pub(crate) struct AutoCompletions(pub Vec<CompletionSuggestion>);
+#[cfg(feature = "completions")]
+pub(crate) struct UpdateAutoComplete(pub String);
+#[cfg(feature = "completions")]
+impl Command for UpdateAutoComplete {
+    fn apply(self, world: &mut World) {
+        if let Some(parser) = world.remove_resource::<DefaultCommandParser>() {
+            let completions = parser.completion(&self.0, world);
+            world.resource_mut::<AutoCompletions>().0 = completions;
+            world.insert_resource(parser);
         }
     }
 }
