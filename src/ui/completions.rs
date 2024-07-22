@@ -103,35 +103,41 @@ pub fn completions(
             }
         }
     }
-    egui::popup_below_widget(ui, text_edit_complete_id, &text_edit.response, |ui| {
-        ui.vertical(|ui| {
-            for (
-                i,
-                CompletionSuggestion {
-                    suggestion,
-                    highlighted_indices,
-                },
-            ) in completions.iter().take(6).enumerate()
-            {
-                let mut layout = egui::text::LayoutJob::default();
-                for (i, _) in suggestion.char_indices() {
-                    layout.append(
-                        &suggestion[i..=i],
-                        0.0,
-                        if highlighted_indices.contains(&i) {
-                            config.theme.format_bold()
-                        } else {
-                            config.theme.format_text()
-                        },
-                    );
+    egui::popup_below_widget(
+        ui,
+        text_edit_complete_id,
+        &text_edit.response,
+        egui::PopupCloseBehavior::CloseOnClickOutside,
+        |ui| {
+            ui.vertical(|ui| {
+                for (
+                    i,
+                    CompletionSuggestion {
+                        suggestion,
+                        highlighted_indices,
+                    },
+                ) in completions.iter().take(6).enumerate()
+                {
+                    let mut layout = egui::text::LayoutJob::default();
+                    for (i, _) in suggestion.char_indices() {
+                        layout.append(
+                            &suggestion[i..=i],
+                            0.0,
+                            if highlighted_indices.contains(&i) {
+                                config.theme.format_bold()
+                            } else {
+                                config.theme.format_text()
+                            },
+                        );
+                    }
+                    let res = ui.label(layout);
+                    if i == state.selected_completion {
+                        res.highlight();
+                    }
                 }
-                let res = ui.label(layout);
-                if i == state.selected_completion {
-                    res.highlight();
-                }
-            }
-        })
-    });
+            })
+        },
+    );
 }
 
 /// Also consumes the up and down arrow keys.
