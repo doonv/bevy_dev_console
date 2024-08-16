@@ -15,9 +15,9 @@ pub fn custom_log_layer(app: &mut App) -> Option<BoxedLayer> {
 }
 
 fn create_custom_log_layer(app: &mut App) -> LogCaptureLayer {
-    let (sender, reciever) = mpsc::channel();
+    let (sender, receiver) = mpsc::channel();
     app.add_event::<LogMessage>();
-    app.insert_non_send_resource(CapturedLogEvents(reciever));
+    app.insert_non_send_resource(CapturedLogEvents(receiver));
     app.add_systems(PostUpdate, transfer_log_events);
 
     LogCaptureLayer { sender }
