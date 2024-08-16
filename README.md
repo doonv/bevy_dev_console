@@ -42,16 +42,16 @@
 3. Add the plugins.
 
     ```rust,no_run
-    use bevy::{prelude::*,log::LogPlugin};
+    use bevy::{prelude::*, log::LogPlugin};
     use bevy_dev_console::prelude::*;
 
     App::new()
         .add_plugins((
-            // Start capturing logs before the default plugins initiate.
-            ConsoleLogPlugin::default(),
-            // Add the default plugins without the LogPlugin.
-            // Not removing the LogPlugin will cause a panic!
-            DefaultPlugins.build().disable::<LogPlugin>(),
+            // Add the log plugin with the custom log layer
+            DefaultPlugins.set(LogPlugin {
+                custom_layer: custom_log_layer,
+                ..default()
+            }),
             // Add the dev console plugin itself.
             DevConsolePlugin,
         ))

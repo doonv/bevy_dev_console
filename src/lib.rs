@@ -16,7 +16,7 @@ pub mod ui;
 
 /// Adds a Developer Console to your Bevy application.
 ///
-/// Requires [ConsoleLogPlugin](logging::log_plugin::ConsoleLogPlugin).
+/// Requires [custom_log_layer](logging::custom_log_layer).
 pub struct DevConsolePlugin;
 impl Plugin for DevConsolePlugin {
     fn build(&self, app: &mut App) {
