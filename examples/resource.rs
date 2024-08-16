@@ -47,8 +47,10 @@ fn main() {
         })
         .register_type::<MyStruct>()
         .add_plugins((
-            ConsoleLogPlugin::default(),
-            DefaultPlugins.build().disable::<LogPlugin>(),
+            DefaultPlugins.set(LogPlugin {
+                custom_layer: custom_log_layer,
+                ..default()
+            }),
             DevConsolePlugin,
         ))
         .run();

@@ -1,18 +1,19 @@
-//! A simple example
+//! A simple example showing how to setup the developer console plugin.
 
-use bevy::log::{Level, LogPlugin};
+use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy_dev_console::prelude::*;
 
 fn main() {
     App::new()
         .add_plugins((
-            // Start capturing logs before the default plugins initiate.
-            // Also append a filter that shows `TRACE` logs from this module.
-            ConsoleLogPlugin::default().append_filter(module_path!(), Level::TRACE),
-            // Add the default plugins without the LogPlugin.
-            // Not removing the LogPlugin will cause a panic!
-            DefaultPlugins.build().disable::<LogPlugin>(),
+            // Add the log plugin with the custom log layer
+            DefaultPlugins.set(LogPlugin {
+                custom_layer: custom_log_layer,
+                // Add a filter to the log plugin that shows all log levels from this example
+                filter: format!("wgpu=error,naga=warn,{}=trace", module_path!()),
+                ..default()
+            }),
             // Add the dev console plugin itself.
             DevConsolePlugin,
         ))

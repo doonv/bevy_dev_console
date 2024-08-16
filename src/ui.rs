@@ -11,7 +11,7 @@ use web_time::SystemTime;
 
 use crate::command::{CommandHints, ExecuteCommand};
 use crate::config::ToColor32;
-use crate::logging::log_plugin::LogMessage;
+use crate::logging::LogMessage;
 use crate::prelude::ConsoleConfig;
 
 #[cfg(feature = "completions")]

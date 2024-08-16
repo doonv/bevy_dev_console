@@ -10,7 +10,7 @@ use ui::ConsoleUiState;
 pub mod builtin_parser;
 pub mod command;
 pub mod config;
-mod logging;
+pub mod logging;
 pub mod prelude;
 pub mod ui;
 

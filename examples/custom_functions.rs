@@ -1,6 +1,6 @@
-//! A simple example
+//! An example showing how to create custom functions
 
-use bevy::log::{Level, LogPlugin};
+use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy_dev_console::builtin_parser::{Environment, EvalError, Number, Spanned, StrongRef, Value};
 use bevy_dev_console::prelude::*;
@@ -19,7 +19,7 @@ fn time_since_epoch() {
 
 /// Function with parameters and return value.
 ///
-/// Note that this will cause an error if an integer to passed to this function.
+/// Note that this will cause an error if an integer is passed onto this function.
 fn add(num1: f64, num2: f64) -> f64 {
     num1 + num2
 }
@@ -83,8 +83,10 @@ fn main() {
         // Insert our new environment
         .insert_non_send_resource(custom_environment())
         .add_plugins((
-            ConsoleLogPlugin::default().append_filter(module_path!(), Level::TRACE),
-            DefaultPlugins.build().disable::<LogPlugin>(),
+            DefaultPlugins.set(LogPlugin {
+                custom_layer: custom_log_layer,
+                ..default()
+            }),
             DevConsolePlugin,
         ))
         .run();
