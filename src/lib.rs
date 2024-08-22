@@ -44,7 +44,7 @@ impl Plugin for DevConsolePlugin {
                     ui::read_logs,
                     (
                         ui::open_close_ui,
-                        ui::render_ui.run_if(|s: Res<ConsoleUiState>| s.open),
+                        ui::render_ui_system.run_if(|s: Res<ConsoleUiState>| s.open),
                     )
                         .chain(),
                 ),

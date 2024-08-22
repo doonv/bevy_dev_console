@@ -14,7 +14,7 @@ pub fn completions(
     text_edit_id: egui::Id,
     state: &mut ConsoleUiState,
     ui: &mut egui::Ui,
-    mut commands: Commands,
+    commands: &mut Commands,
     completions: &AutoCompletions,
     config: &ConsoleConfig,
 ) {
@@ -91,6 +91,7 @@ pub fn completions(
 
                 // Set the cursor position
                 let mut text_edit_state = text_edit.state;
+
                 let mut cursor_range = egui::text::CCursorRange::two(primary, secondary);
 
                 cursor_range.primary.index +=

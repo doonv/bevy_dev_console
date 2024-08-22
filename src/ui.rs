@@ -33,7 +33,7 @@ pub const COMMAND_RESULT_NAME: &str = "console_result";
 
 #[derive(Default, Resource)]
 pub struct ConsoleUiState {
-    /// Wherever the console is open or not.
+    /// Whether the console is open or not.
     pub(crate) open: bool,
     /// Whether we have set focus this open or not.
     pub(crate) text_focus: bool,
@@ -77,7 +77,7 @@ pub(crate) fn open_close_ui(
     }
 }
 
-pub(crate) fn render_ui(
+pub(crate) fn render_ui_system(
     mut contexts: EguiContexts,
     mut commands: Commands,
     mut state: ResMut<ConsoleUiState>,
@@ -85,6 +85,32 @@ pub(crate) fn render_ui(
     mut hints: ResMut<CommandHints>,
     config: Res<ConsoleConfig>,
     #[cfg(feature = "completions")] completions: Res<AutoCompletions>,
+) {
+    egui::Window::new("Developer Console")
+        .collapsible(false)
+        .default_width(900.)
+        .show(contexts.ctx_mut(), |ui| {
+            render_ui(
+                ui,
+                &mut commands,
+                &mut state,
+                &key,
+                &mut hints,
+                &config,
+                &completions,
+            )
+        });
+}
+
+/// The function that renders the UI of the developer console.
+pub fn render_ui(
+    ui: &mut egui::Ui,
+    commands: &mut Commands,
+    state: &mut ConsoleUiState,
+    key: &ButtonInput<KeyCode>,
+    hints: &mut CommandHints,
+    config: &ConsoleConfig,
+    #[cfg(feature = "completions")] completions: &AutoCompletions,
 ) {
     fn submit_command(command: &mut String, commands: &mut Commands) {
         if !command.trim().is_empty() {
@@ -96,88 +122,75 @@ pub(crate) fn render_ui(
     }
 
     if key.just_pressed(config.submit_key) {
-        submit_command(&mut state.command, &mut commands);
+        submit_command(&mut state.command, commands);
     }
 
-    egui::Window::new("Developer Console")
-        .collapsible(false)
-        .default_width(900.)
-        .show(contexts.ctx_mut(), |ui| {
-            completions::change_selected_completion(ui, &mut state, &completions);
+    completions::change_selected_completion(ui, state, &completions);
 
-            // A General rule when creating layouts in egui is to place elements which fill remaining space last.
-            // Since immediate mode ui can't predict the final sizes of widgets until they've already been drawn
+    // A General rule when creating layouts in egui is to place elements which fill remaining space last.
+    // Since immediate mode ui can't predict the final sizes of widgets until they've already been drawn
 
-            // Thus we create a bottom panel first, where our text edit and submit button resides.
-            egui::TopBottomPanel::bottom("bottom panel")
-                .frame(egui::Frame::none().outer_margin(egui::Margin {
-                    left: 0.0,
-                    right: 5.0,
-                    top: 5. + 6.,
-                    bottom: 5.0,
-                }))
-                .show_inside(ui, |ui| {
-                    let text_edit_id = egui::Id::new("text_edit");
+    // Thus we create a bottom panel first, where our text edit and submit button resides.
+    egui::TopBottomPanel::bottom("bottom panel")
+        .frame(egui::Frame::none().outer_margin(egui::Margin {
+            left: 5.0,
+            right: 5.0,
+            top: 5. + 6.,
+            bottom: 5.0,
+        }))
+        .show_inside(ui, |ui| {
+            let text_edit_id = egui::Id::new("text_edit");
 
-                    //We can use a right to left layout, so we can place the text input last and tell it to fill all remaining space
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // ui.button is a shorthand command, a similar command exists for text edits, but this is how to manually construct a widget.
-                        // doing this also allows access to more options of the widget, rather than being stuck with the default the shorthand picks.
-                        if ui.button("Submit").clicked() {
-                            submit_command(&mut state.command, &mut commands);
+            //We can use a right to left layout, so we can place the text input last and tell it to fill all remaining space
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // ui.button is a shorthand command, a similar command exists for text edits, but this is how to manually construct a widget.
+                // doing this also allows access to more options of the widget, rather than being stuck with the default the shorthand picks.
+                if ui.button("Submit").clicked() {
+                    submit_command(&mut state.command, commands);
 
-                            // Return keyboard focus to the text edit control.
-                            ui.ctx().memory_mut(|mem| mem.request_focus(text_edit_id));
-                        }
+                    // Return keyboard focus to the text edit control.
+                    ui.ctx().memory_mut(|mem| mem.request_focus(text_edit_id));
+                }
 
-                        #[cfg_attr(not(feature = "completions"), allow(unused_variables))]
-                        let text_edit = egui::TextEdit::singleline(&mut state.command)
-                            .id(text_edit_id)
-                            .desired_width(ui.available_width())
-                            .margin(egui::Vec2::splat(4.0))
-                            .font(config.theme.font.clone())
-                            .lock_focus(true)
-                            .show(ui);
+                #[cfg_attr(not(feature = "completions"), allow(unused_variables))]
+                let text_edit = egui::TextEdit::singleline(&mut state.command)
+                    .id(text_edit_id)
+                    .desired_width(ui.available_width())
+                    .margin(egui::Vec2::splat(4.0))
+                    .font(config.theme.font.clone())
+                    .lock_focus(true)
+                    .show(ui);
 
-                        // Display completions if the "completions" feature is enabled
-                        #[cfg(feature = "completions")]
-                        completions::completions(
-                            text_edit,
-                            text_edit_id,
-                            &mut state,
-                            ui,
-                            commands,
-                            &completions,
-                            &config,
-                        );
+                // Display completions if the "completions" feature is enabled
+                #[cfg(feature = "completions")]
+                completions::completions(
+                    text_edit,
+                    text_edit_id,
+                    state,
+                    ui,
+                    commands,
+                    &completions,
+                    &config,
+                );
 
-                        // Each time we open the console, we want to set focus to the text edit control.
-                        if !state.text_focus {
-                            state.text_focus = true;
-                            ui.ctx().memory_mut(|mem| mem.request_focus(text_edit_id));
-                        }
-                    });
-                });
-            // Now we can fill the remaining minutespace with a scrollarea, which has only the vertical scrollbar enabled and expands to be as big as possible.
-            egui::ScrollArea::new([false, true])
-                .auto_shrink([false, true])
-                .show(ui, |ui| {
-                    ui.vertical(|ui| {
-                        let mut command_index = 0;
+                // Each time we open the console, we want to set focus to the text edit control.
+                if !state.text_focus {
+                    state.text_focus = true;
+                    ui.ctx().memory_mut(|mem| mem.request_focus(text_edit_id));
+                }
+            });
+        });
+    // Now we can fill the remaining minutespace with a scrollarea, which has only the vertical scrollbar enabled and expands to be as big as possible.
+    egui::ScrollArea::new([false, true])
+        .auto_shrink([false, true])
+        .show(ui, |ui| {
+            ui.vertical(|ui| {
+                let mut command_index = 0;
 
-                        for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
-                            add_log(
-                                ui,
-                                id,
-                                message,
-                                is_new,
-                                &mut hints,
-                                &config,
-                                &mut command_index,
-                            );
-                        }
-                    });
-                });
+                for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
+                    add_log(ui, id, message, is_new, hints, &config, &mut command_index);
+                }
+            });
         });
 }
 

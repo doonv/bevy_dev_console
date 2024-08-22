@@ -170,7 +170,7 @@ impl Command for ExecuteCommand {
 
 #[derive(Resource, Default, Deref, DerefMut)]
 #[cfg(feature = "completions")]
-pub(crate) struct AutoCompletions(pub Vec<CompletionSuggestion>);
+pub struct AutoCompletions(pub(crate) Vec<CompletionSuggestion>);
 #[cfg(feature = "completions")]
 pub(crate) struct UpdateAutoComplete(pub String);
 #[cfg(feature = "completions")]
