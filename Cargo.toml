@@ -37,14 +37,6 @@ fuzzy-matcher = { version = "0.3.7", optional = true }
 [dev-dependencies]
 bevy = "0.14.0"
 
-
-[target.'cfg(target_os = "android")'.dependencies]
-android_log-sys = "0.3.0"
-
-[target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1.7"
-tracing-wasm = "0.2.1"
-
 [lints]
 clippy.useless_format = "allow"
 rust.missing_docs = "warn"
