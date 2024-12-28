@@ -65,32 +65,33 @@ impl Value {
     ///
     /// `ty` is used for type inference.
     pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, EvalError> {
-        match self {
-            Value::None => Ok(Box::new(())),
-            Value::Number(number) => number.reflect(span, ty),
-            Value::Boolean(boolean) => Ok(Box::new(boolean)),
-            Value::String(string) => Ok(Box::new(string)),
-            Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
-            Value::Object(object) | Value::StructObject { map: object, .. } => {
-                let mut dyn_struct = DynamicStruct::default();
+        todo!()
+        // match self {
+        //     Value::None => Ok(Box::new(())),
+        //     Value::Number(number) => number.reflect(span, ty),
+        //     Value::Boolean(boolean) => Ok(Box::new(boolean)),
+        //     Value::String(string) => Ok(Box::new(string)),
+        //     Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
+        //     Value::Object(object) | Value::StructObject { map: object, .. } => {
+        //         let mut dyn_struct = DynamicStruct::default();
 
-                for (name, value) in object {
-                    dyn_struct.insert_boxed(&name, value.into_inner().reflect(span.clone(), ty)?);
-                }
+        //         for (name, value) in object {
+        //             dyn_struct.insert_boxed(&name, value.into_inner().reflect(span.clone(), ty)?);
+        //         }
 
-                Ok(Box::new(dyn_struct))
-            }
-            Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-                let mut dyn_tuple = DynamicTuple::default();
+        //         Ok(Box::new(dyn_struct))
+        //     }
+        //     Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
+        //         let mut dyn_tuple = DynamicTuple::default();
 
-                for element in Vec::from(tuple).into_iter() {
-                    dyn_tuple.insert_boxed(element.value.into_inner().reflect(element.span, ty)?);
-                }
+        //         for element in Vec::from(tuple).into_iter() {
+        //             dyn_tuple.insert_boxed(element.value.into_inner().reflect(element.span, ty)?);
+        //         }
 
-                Ok(Box::new(dyn_tuple))
-            }
-            Value::Resource(_) => Err(EvalError::CannotReflectResource(span)),
-        }
+        //         Ok(Box::new(dyn_tuple))
+        //     }
+        //     Value::Resource(_) => Err(EvalError::CannotReflectResource(span)),
+        // }
     }
 
     /// Attempts to format this [`Value`].
@@ -240,172 +241,173 @@ fn fancy_debug_print(
     registrations: &[&TypeRegistration],
 ) -> String {
     const TAB: &str = "    ";
-    let registration = registrations.create_registration(resource.id);
-    let dyn_reflect = resource.ref_dyn_reflect(world, registration);
+    todo!()
+    // let registration = registrations.create_registration(resource.id);
+    // let dyn_reflect = resource.ref_dyn_reflect(world, registration);
 
-    let reflect = dyn_reflect.reflect_path(resource.path.as_str()).unwrap();
+    // let reflect = dyn_reflect.reflect_path(resource.path.as_str()).unwrap();
 
-    fn debug_subprint(reflect: &dyn Reflect, indentation: usize) -> String {
-        let mut f = String::new();
-        let reflect_ref = reflect.reflect_ref();
-        let indentation_string = TAB.repeat(indentation);
-        match reflect_ref {
-            ReflectRef::Struct(struct_info) => {
-                f += "{\n";
-                for i in 0..struct_info.field_len() {
-                    let field = struct_info.field_at(i).unwrap();
-                    let field_name = struct_info.name_at(i).unwrap();
+    // fn debug_subprint(reflect: &dyn Reflect, indentation: usize) -> String {
+    //     let mut f = String::new();
+    //     let reflect_ref = reflect.reflect_ref();
+    //     let indentation_string = TAB.repeat(indentation);
+    //     match reflect_ref {
+    //         ReflectRef::Struct(struct_info) => {
+    //             f += "{\n";
+    //             for i in 0..struct_info.field_len() {
+    //                 let field = struct_info.field_at(i).unwrap();
+    //                 let field_name = struct_info.name_at(i).unwrap();
 
-                    let field_value = debug_subprint(field, indentation + 1);
-                    f += &format!(
-                        "{indentation_string}{TAB}{field_name}: {} = {field_value},\n",
-                        field.reflect_short_type_path(),
-                    );
-                }
-                f += &indentation_string;
-                f += "}";
-            }
-            ReflectRef::TupleStruct(_) => todo!(),
-            ReflectRef::Tuple(tuple_info) => {
-                f += "(\n";
-                for field in tuple_info.iter_fields() {
-                    let field_value = debug_subprint(field, indentation + 1);
-                    f += &format!("{indentation_string}{TAB}{field_value},\n",);
-                }
-                f += &indentation_string;
-                f += ")";
-            }
-            ReflectRef::List(_) => todo!(),
-            ReflectRef::Array(_) => todo!(),
-            ReflectRef::Map(_) => todo!(),
-            ReflectRef::Enum(variant) => {
-                // Print out the enum types
-                f += variant.variant_name();
+    //                 let field_value = debug_subprint(field, indentation + 1);
+    //                 f += &format!(
+    //                     "{indentation_string}{TAB}{field_name}: {} = {field_value},\n",
+    //                     field.reflect_short_type_path(),
+    //                 );
+    //             }
+    //             f += &indentation_string;
+    //             f += "}";
+    //         }
+    //         ReflectRef::TupleStruct(_) => todo!(),
+    //         ReflectRef::Tuple(tuple_info) => {
+    //             f += "(\n";
+    //             for field in tuple_info.iter_fields() {
+    //                 let field_value = debug_subprint(field, indentation + 1);
+    //                 f += &format!("{indentation_string}{TAB}{field_value},\n",);
+    //             }
+    //             f += &indentation_string;
+    //             f += ")";
+    //         }
+    //         ReflectRef::List(_) => todo!(),
+    //         ReflectRef::Array(_) => todo!(),
+    //         ReflectRef::Map(_) => todo!(),
+    //         ReflectRef::Enum(variant) => {
+    //             // Print out the enum types
+    //             f += variant.variant_name();
 
-                match variant.variant_type() {
-                    VariantType::Struct => {
-                        f += " {\n";
-                        for field in variant.iter_fields() {
-                            f += &format!(
-                                "{indentation_string}{TAB}{}: {} = {},\n",
-                                field.name().unwrap(),
-                                field.value().reflect_short_type_path(),
-                                debug_subprint(field.value(), indentation + 1)
-                            );
-                        }
-                        f += &indentation_string;
-                        f += "}";
-                    }
-                    VariantType::Tuple => {
-                        f += "(\n";
-                        for field in variant.iter_fields() {
-                            f += &format!(
-                                "{indentation_string}{TAB}{} = {},\n",
-                                field.value().reflect_short_type_path(),
-                                debug_subprint(field.value(), indentation + 1)
-                            );
-                        }
-                        f += &indentation_string;
-                        f += ")";
-                    }
-                    VariantType::Unit => {}
-                }
-            }
-            ReflectRef::Value(_) => {
-                f += &format!("{reflect:?}");
-            }
-        }
+    //             match variant.variant_type() {
+    //                 VariantType::Struct => {
+    //                     f += " {\n";
+    //                     for field in variant.iter_fields() {
+    //                         f += &format!(
+    //                             "{indentation_string}{TAB}{}: {} = {},\n",
+    //                             field.name().unwrap(),
+    //                             field.value().reflect_short_type_path(),
+    //                             debug_subprint(field.value(), indentation + 1)
+    //                         );
+    //                     }
+    //                     f += &indentation_string;
+    //                     f += "}";
+    //                 }
+    //                 VariantType::Tuple => {
+    //                     f += "(\n";
+    //                     for field in variant.iter_fields() {
+    //                         f += &format!(
+    //                             "{indentation_string}{TAB}{} = {},\n",
+    //                             field.value().reflect_short_type_path(),
+    //                             debug_subprint(field.value(), indentation + 1)
+    //                         );
+    //                     }
+    //                     f += &indentation_string;
+    //                     f += ")";
+    //                 }
+    //                 VariantType::Unit => {}
+    //             }
+    //         }
+    //         ReflectRef::Value(_) => {
+    //             f += &format!("{reflect:?}");
+    //         }
+    //     }
 
-        f
-    }
+    //     f
+    // }
 
-    let mut f = String::new();
-    let reflect_ref = reflect.reflect_ref();
-    match reflect_ref {
-        ReflectRef::Struct(struct_info) => {
-            f += &format!("struct {} {{\n", struct_info.reflect_short_type_path());
-            for i in 0..struct_info.field_len() {
-                let field = struct_info.field_at(i).unwrap();
-                let field_name = struct_info.name_at(i).unwrap();
+    // let mut f = String::new();
+    // let reflect_ref = reflect.reflect_ref();
+    // match reflect_ref {
+    //     ReflectRef::Struct(struct_info) => {
+    //         f += &format!("struct {} {{\n", struct_info.reflect_short_type_path());
+    //         for i in 0..struct_info.field_len() {
+    //             let field = struct_info.field_at(i).unwrap();
+    //             let field_name = struct_info.name_at(i).unwrap();
 
-                let field_value = debug_subprint(field, 1);
-                f += &format!(
-                    "{TAB}{}: {} = {},\n",
-                    field_name,
-                    field.reflect_short_type_path(),
-                    field_value
-                );
-            }
-            f += "}";
-        }
-        ReflectRef::TupleStruct(_) => todo!(),
-        ReflectRef::Tuple(_) => todo!(),
-        ReflectRef::List(_) => todo!(),
-        ReflectRef::Array(_) => todo!(),
-        ReflectRef::Map(_) => todo!(),
-        ReflectRef::Enum(set_variant_info) => {
-            // Print out the enum types
-            f += &format!("enum {} {{\n", set_variant_info.reflect_short_type_path());
-            let TypeInfo::Enum(enum_info) = registration.type_info() else {
-                unreachable!()
-            };
-            for variant in enum_info.iter() {
-                f += "\t";
-                f += variant.name();
-                match variant {
-                    VariantInfo::Struct(variant) => {
-                        f += " {\n";
-                        for field in variant.iter() {
-                            f += &format!(
-                                "{TAB}{TAB}{}: {},\n",
-                                field.name(),
-                                field.type_path_table().short_path()
-                            );
-                        }
-                        f += TAB;
-                        f += "}";
-                    }
-                    VariantInfo::Tuple(variant) => {
-                        f += "(";
-                        let mut iter = variant.iter();
-                        if let Some(first) = iter.next() {
-                            f += &format!("{}", first.type_path_table().short_path());
-                            for field in iter {
-                                f += &format!(", {}", field.type_path_table().short_path());
-                            }
-                        }
-                        f += ")";
-                    }
-                    VariantInfo::Unit(_) => {}
-                }
-                f += ",\n";
-            }
-            // Print out the current value
-            f += "} = ";
-            f += set_variant_info.variant_name();
-            match set_variant_info.variant_type() {
-                VariantType::Struct => {
-                    f += " {\n";
-                    for field in set_variant_info.iter_fields() {
-                        f += &format!("{TAB}{}: {:?},\n", field.name().unwrap(), field.value());
-                    }
-                    f += "}";
-                }
-                VariantType::Tuple => {
-                    f += "(\n";
-                    for field in set_variant_info.iter_fields() {
-                        f += &format!("{TAB}{:?},\n", field.value());
-                    }
-                    f += ")";
-                }
-                VariantType::Unit => {}
-            }
-        }
-        ReflectRef::Value(value) => {
-            f += &format!("{value:?}");
-        }
-    }
-    f
+    //             let field_value = debug_subprint(field, 1);
+    //             f += &format!(
+    //                 "{TAB}{}: {} = {},\n",
+    //                 field_name,
+    //                 field.reflect_short_type_path(),
+    //                 field_value
+    //             );
+    //         }
+    //         f += "}";
+    //     }
+    //     ReflectRef::TupleStruct(_) => todo!(),
+    //     ReflectRef::Tuple(_) => todo!(),
+    //     ReflectRef::List(_) => todo!(),
+    //     ReflectRef::Array(_) => todo!(),
+    //     ReflectRef::Map(_) => todo!(),
+    //     ReflectRef::Enum(set_variant_info) => {
+    //         // Print out the enum types
+    //         f += &format!("enum {} {{\n", set_variant_info.reflect_short_type_path());
+    //         let TypeInfo::Enum(enum_info) = registration.type_info() else {
+    //             unreachable!()
+    //         };
+    //         for variant in enum_info.iter() {
+    //             f += "\t";
+    //             f += variant.name();
+    //             match variant {
+    //                 VariantInfo::Struct(variant) => {
+    //                     f += " {\n";
+    //                     for field in variant.iter() {
+    //                         f += &format!(
+    //                             "{TAB}{TAB}{}: {},\n",
+    //                             field.name(),
+    //                             field.type_path_table().short_path()
+    //                         );
+    //                     }
+    //                     f += TAB;
+    //                     f += "}";
+    //                 }
+    //                 VariantInfo::Tuple(variant) => {
+    //                     f += "(";
+    //                     let mut iter = variant.iter();
+    //                     if let Some(first) = iter.next() {
+    //                         f += &format!("{}", first.type_path_table().short_path());
+    //                         for field in iter {
+    //                             f += &format!(", {}", field.type_path_table().short_path());
+    //                         }
+    //                     }
+    //                     f += ")";
+    //                 }
+    //                 VariantInfo::Unit(_) => {}
+    //             }
+    //             f += ",\n";
+    //         }
+    //         // Print out the current value
+    //         f += "} = ";
+    //         f += set_variant_info.variant_name();
+    //         match set_variant_info.variant_type() {
+    //             VariantType::Struct => {
+    //                 f += " {\n";
+    //                 for field in set_variant_info.iter_fields() {
+    //                     f += &format!("{TAB}{}: {:?},\n", field.name().unwrap(), field.value());
+    //                 }
+    //                 f += "}";
+    //             }
+    //             VariantType::Tuple => {
+    //                 f += "(\n";
+    //                 for field in set_variant_info.iter_fields() {
+    //                     f += &format!("{TAB}{:?},\n", field.value());
+    //                 }
+    //                 f += ")";
+    //             }
+    //             VariantType::Unit => {}
+    //         }
+    //     }
+    //     ReflectRef::Value(value) => {
+    //         f += &format!("{value:?}");
+    //     }
+    // }
+    // f
 }
 
 impl From<()> for Value {

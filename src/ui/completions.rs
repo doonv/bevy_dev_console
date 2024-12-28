@@ -60,7 +60,7 @@ pub fn completions(
                     // If not found, the whole substring is a word
                     None => before_cursor,
                 };
-                commands.add(UpdateAutoComplete(keyword_before.to_owned()));
+                commands.queue(UpdateAutoComplete(keyword_before.to_owned()));
             } else {
                 ui.memory_mut(|mem| {
                     if mem.is_popup_open(text_edit_complete_id) {

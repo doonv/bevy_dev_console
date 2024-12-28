@@ -117,7 +117,7 @@ pub fn render_ui(
             info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{}", command.trim());
             // Get the owned command string by replacing it with an empty string
             let command = std::mem::take(command);
-            commands.add(ExecuteCommand(command));
+            commands.queue(ExecuteCommand(command));
         }
     }
 
