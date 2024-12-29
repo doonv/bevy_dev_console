@@ -220,164 +220,160 @@ fn eval_expression(
                     .reflect_path_mut(resource.path.as_str())
                     .unwrap();
 
-                // match reflect.reflect_mut() {
-                //     ReflectMut::Enum(dyn_enum) => {
-                //         let TypeInfo::Enum(enum_info) = registration.type_info() else {
-                //             unreachable!()
-                //         };
-                //         let Spanned { span, value } = *value_expr;
-                //         match value {
-                //             Expression::Variable(name) => {
-                //                 let variant_info = match enum_info.variant(&name) {
-                //                     Some(variant_info) => variant_info,
-                //                     None => {
-                //                         return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
-                //                     }
-                //                 };
-                //                 let VariantInfo::Unit(_) = variant_info else {
-                //                     return todo_error!("{variant_info:?}");
-                //                 };
+                match reflect.reflect_mut() {
+                    ReflectMut::Enum(dyn_enum) => {
+                        let TypeInfo::Enum(enum_info) = registration.type_info() else {
+                            unreachable!()
+                        };
+                        let Spanned { span, value } = *value_expr;
+                        match value {
+                            Expression::Variable(name) => {
+                                let variant_info = match enum_info.variant(&name) {
+                                    Some(variant_info) => variant_info,
+                                    None => {
+                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
+                                    }
+                                };
+                                let VariantInfo::Unit(_) = variant_info else {
+                                    return todo_error!("{variant_info:?}");
+                                };
 
-                //                 let new_enum = DynamicEnum::new(name, ());
+                                let new_enum = DynamicEnum::new(name, ());
 
-                //                 dyn_enum.apply(&new_enum);
-                //             }
-                //             Expression::StructObject { name, map } => {
-                //                 let variant_info = match enum_info.variant(&name) {
-                //                     Some(variant_info) => variant_info,
-                //                     None => {
-                //                         return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
-                //                     }
-                //                 };
-                //                 let VariantInfo::Struct(variant_info) = variant_info else {
-                //                     return todo_error!("{variant_info:?}");
-                //                 };
+                                dyn_enum.apply(&new_enum);
+                            }
+                            Expression::StructObject { name, map } => {
+                                let variant_info = match enum_info.variant(&name) {
+                                    Some(variant_info) => variant_info,
+                                    None => {
+                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
+                                    }
+                                };
+                                let VariantInfo::Struct(variant_info) = variant_info else {
+                                    return todo_error!("{variant_info:?}");
+                                };
 
-                //                 let map: HashMap<_, _> = map
-                //                     .into_iter()
-                //                     .map(|(k, v)| {
-                //                         let ty = match variant_info.field(&k) {
-                //                             Some(field) => Ok(field.type_path_table().short_path()),
-                //                             None => {
-                //                                 Err(EvalError::EnumVariantStructFieldNotFound {
-                //                                     field_name: k.clone(),
-                //                                     variant_name: name.clone(),
-                //                                     span: span.clone(),
-                //                                 })
-                //                             }
-                //                         }?;
+                                let map: HashMap<_, _> = map
+                                    .into_iter()
+                                    .map(|(k, v)| {
+                                        let ty = match variant_info.field(&k) {
+                                            Some(field) => Ok(field.type_path_table().short_path()),
+                                            None => {
+                                                Err(EvalError::EnumVariantStructFieldNotFound {
+                                                    field_name: k.clone(),
+                                                    variant_name: name.clone(),
+                                                    span: span.clone(),
+                                                })
+                                            }
+                                        }?;
 
-                //                         let span = v.span.clone();
+                                        let span = v.span.clone();
 
-                //                         Ok((
-                //                             k,
-                //                             (
-                //                                 eval_expression(
-                //                                     v,
-                //                                     EvalParams {
-                //                                         world,
-                //                                         environment,
-                //                                         registrations,
-                //                                     },
-                //                                 )?,
-                //                                 span,
-                //                                 ty,
-                //                             ),
-                //                         ))
-                //                     })
-                //                     .collect::<Result<_, _>>()?;
+                                        Ok((
+                                            k,
+                                            (
+                                                eval_expression(
+                                                    v,
+                                                    EvalParams {
+                                                        world,
+                                                        environment,
+                                                        registrations,
+                                                    },
+                                                )?,
+                                                span,
+                                                ty,
+                                            ),
+                                        ))
+                                    })
+                                    .collect::<Result<_, _>>()?;
 
-                //                 let new_enum =
-                //                     DynamicEnum::new(name, object_to_dynamic_struct(map)?);
+                                let new_enum =
+                                    DynamicEnum::new(name, object_to_dynamic_struct(map)?);
 
-                //                 let mut dyn_reflect =
-                //                     resource.mut_dyn_reflect(world, registrations);
+                                let mut dyn_reflect =
+                                    resource.mut_dyn_reflect(world, registrations);
 
-                //                 let dyn_enum = dyn_reflect
-                //                     .reflect_path_mut(resource.path.as_str())
-                //                     .unwrap();
+                                let dyn_enum = dyn_reflect
+                                    .reflect_path_mut(resource.path.as_str())
+                                    .unwrap();
 
-                //                 dyn_enum.apply(&new_enum);
-                //             }
-                //             Expression::StructTuple { name, tuple } => {
-                //                 let variant_info = match enum_info.variant(&name) {
-                //                     Some(variant_info) => variant_info,
-                //                     None => {
-                //                         return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
-                //                     }
-                //                 };
-                //                 let VariantInfo::Tuple(variant_info) = variant_info else {
-                //                     return todo_error!("{variant_info:?}");
-                //                 };
+                                dyn_enum.apply(&new_enum);
+                            }
+                            Expression::StructTuple { name, tuple } => {
+                                let variant_info = match enum_info.variant(&name) {
+                                    Some(variant_info) => variant_info,
+                                    None => {
+                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
+                                    }
+                                };
+                                let VariantInfo::Tuple(variant_info) = variant_info else {
+                                    return todo_error!("{variant_info:?}");
+                                };
 
-                //                 let tuple = eval_tuple(
-                //                     tuple,
-                //                     EvalParams {
-                //                         world,
-                //                         environment,
-                //                         registrations,
-                //                     },
-                //                 )?;
+                                let tuple = eval_tuple(
+                                    tuple,
+                                    EvalParams {
+                                        world,
+                                        environment,
+                                        registrations,
+                                    },
+                                )?;
 
-                //                 let mut dynamic_tuple = DynamicTuple::default();
+                                let mut dynamic_tuple = DynamicTuple::default();
 
-                //                 for (index, element) in tuple.into_vec().into_iter().enumerate() {
-                //                     let ty = match variant_info.field_at(index) {
-                //                         Some(field) => Ok(field.type_path_table().short_path()),
-                //                         None => Err(EvalError::EnumVariantTupleFieldNotFound {
-                //                             field_index: index,
-                //                             variant_name: name.clone(),
-                //                             span: span.clone(),
-                //                         }),
-                //                     }?;
+                                for (index, element) in tuple.into_vec().into_iter().enumerate() {
+                                    let ty = match variant_info.field_at(index) {
+                                        Some(field) => Ok(field.type_path_table().short_path()),
+                                        None => Err(EvalError::EnumVariantTupleFieldNotFound {
+                                            field_index: index,
+                                            variant_name: name.clone(),
+                                            span: span.clone(),
+                                        }),
+                                    }?;
 
-                //                     dynamic_tuple.insert_boxed(
-                //                         element.value.into_inner().reflect(element.span, ty)?.into_partial_reflect(),
-                //                     );
-                //                 }
+                                    dynamic_tuple.insert_boxed(
+                                        element.value.into_inner().reflect(element.span, ty)?.into_partial_reflect(),
+                                    );
+                                }
 
-                //                 let new_enum = DynamicEnum::new(name, dynamic_tuple);
+                                let new_enum = DynamicEnum::new(name, dynamic_tuple);
 
-                //                 let mut dyn_reflect =
-                //                     resource.mut_dyn_reflect(world, registrations);
+                                let mut dyn_reflect =
+                                    resource.mut_dyn_reflect(world, registrations);
 
-                //                 let dyn_enum = dyn_reflect
-                //                     .reflect_path_mut(resource.path.as_str())
-                //                     .unwrap();
+                                let dyn_enum = dyn_reflect
+                                    .reflect_path_mut(resource.path.as_str())
+                                    .unwrap();
 
-                //                 dyn_enum.apply(&new_enum);
-                //             }
-                //             _ => todo_error!(),
-                //         }
-                //     }
-                //     _ => {
-                //         let span = value_expr.span.clone();
-                //         let ty = reflect.reflect_short_type_path().to_owned();
-                //         let value = eval_expression(
-                //             *value_expr,
-                //             EvalParams {
-                //                 world,
-                //                 environment,
-                //                 registrations,
-                //             },
-                //         )?;
-                //         let value_reflect = value.reflect(span.clone(), &ty)?;
+                                dyn_enum.apply(&new_enum);
+                            }
+                            _ => todo_error!(),
+                        }
+                    }
+                    _ => {
+                        let span = value_expr.span.clone();
+                        let ty = reflect.reflect_short_type_path().to_owned();
+                        let value = eval_expression(
+                            *value_expr,
+                            EvalParams {
+                                world,
+                                environment,
+                                registrations,
+                            },
+                        )?;
+                        let value_reflect = value.reflect(span.clone(), &ty)?;
 
-                //         let mut dyn_reflect = resource.mut_dyn_reflect(world, registrations);
+                        let mut dyn_reflect = resource.mut_dyn_reflect(world, registrations);
 
-                //         let reflect = dyn_reflect
-                //             .reflect_path_mut(resource.path.as_str())
-                //             .unwrap();
-                        
-                //         reflect.set(value_reflect).map_err(|value_reflect| {
-                //             EvalError::IncompatibleReflectTypes {
-                //                 span,
-                //                 expected: reflect.reflect_type_path().to_string(),
-                //                 actual: value_reflect.reflect_type_path().to_string(),
-                //             }
-                //         })?;
-                //     }
-                // }
+                        let reflect = dyn_reflect
+                            .reflect_path_mut(resource.path.as_str())
+                            .unwrap();
+
+                        reflect.try_apply(value_reflect.as_partial_reflect()).map_err(|apply_error| {
+                            EvalError::ApplyError {apply_error, span}
+                        })?;
+                    }
+                }
 
                 Ok(Value::Resource(resource))
             }
@@ -441,7 +437,6 @@ fn eval_expression(
             )?;
             Ok(Value::StructTuple { name, tuple })
         }
-
         Expression::BinaryOp {
             left,
             operator,

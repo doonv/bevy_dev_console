@@ -246,11 +246,11 @@ impl Environment {
         let var = env.variables.get_mut(name);
         let fn_obj = match var {
             Some(Variable::Function(_)) => {
-                let Variable::Function(mut fn_obj) =
-                    std::mem::replace(var.unwrap(), Variable::Moved)
-                else {
-                    unreachable!()
-                };
+                let Variable::Function(mut fn_obj) = 
+                std::mem::replace(var.unwrap(), Variable::Moved)
+            else {
+                unreachable!()
+            };
 
                 return_result = function(env, &mut fn_obj);
 
