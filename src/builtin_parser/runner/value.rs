@@ -12,7 +12,7 @@ use super::unique_rc::WeakRef;
 
 use bevy::ecs::world::World;
 use bevy::reflect::{
-    DynamicStruct, DynamicTuple, GetPath, PartialReflect, Reflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType
+    DynamicStruct, DynamicTuple, GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType
 };
 
 use logos::Span;

@@ -46,7 +46,7 @@ impl IntoResource {
 }
 
 pub fn object_to_dynamic_struct(
-    hashmap: HashMap<String, (Value, Span, &'static str)>,
+    _hashmap: HashMap<String, (Value, Span, &'static str)>,
 ) -> Result<DynamicStruct, EvalError> {
     todo!()
     // let mut dynamic_struct = DynamicStruct::default();

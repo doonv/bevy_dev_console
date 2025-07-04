@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::builtin_parser::SpanExtension;
+use bevy::prelude::*;
 use bevy::ecs::world::World;
-use bevy::log::warn;
 use bevy::reflect::TypeRegistration;
 use logos::Span;
 

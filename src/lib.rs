@@ -21,7 +21,7 @@ pub struct DevConsolePlugin;
 impl Plugin for DevConsolePlugin {
     fn build(&self, app: &mut App) {
         if !app.is_plugin_added::<EguiPlugin>() {
-            app.add_plugins(EguiPlugin);
+            app.add_plugins(EguiPlugin { enable_multipass_for_primary_context: false });
         }
 
         #[cfg(feature = "builtin-parser")]

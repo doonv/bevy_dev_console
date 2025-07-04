@@ -31,6 +31,7 @@ pub const COMMAND_MESSAGE_NAME: &str = "console_command";
 /// Identifier for log messages that show the result of a command.
 pub const COMMAND_RESULT_NAME: &str = "console_result";
 
+#[allow(missing_docs)]
 #[derive(Default, Resource)]
 pub struct ConsoleUiState {
     /// Whether the console is open or not.
@@ -125,18 +126,18 @@ pub fn render_ui(
         submit_command(&mut state.command, commands);
     }
 
-    completions::change_selected_completion(ui, state, &completions);
+    completions::change_selected_completion(ui, state, completions);
 
     // A General rule when creating layouts in egui is to place elements which fill remaining space last.
     // Since immediate mode ui can't predict the final sizes of widgets until they've already been drawn
 
     // Thus we create a bottom panel first, where our text edit and submit button resides.
     egui::TopBottomPanel::bottom("bottom panel")
-        .frame(egui::Frame::none().outer_margin(egui::Margin {
-            left: 5.0,
-            right: 5.0,
-            top: 5. + 6.,
-            bottom: 5.0,
+        .frame(egui::Frame::NONE.outer_margin(egui::Margin {
+            left: 5,
+            right: 5,
+            top: 5 + 6,
+            bottom: 5,
         }))
         .show_inside(ui, |ui| {
             let text_edit_id = egui::Id::new("text_edit");
@@ -169,8 +170,8 @@ pub fn render_ui(
                     state,
                     ui,
                     commands,
-                    &completions,
-                    &config,
+                    completions,
+                    config,
                 );
 
                 // Each time we open the console, we want to set focus to the text edit control.
@@ -188,7 +189,7 @@ pub fn render_ui(
                 let mut command_index = 0;
 
                 for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
-                    add_log(ui, id, message, is_new, hints, &config, &mut command_index);
+                    add_log(ui, id, message, is_new, hints, config, &mut command_index);
                 }
             });
         });
