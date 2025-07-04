@@ -330,7 +330,11 @@ fn eval_expression(
                                     }?;
 
                                     dynamic_tuple.insert_boxed(
-                                        element.value.into_inner().reflect(element.span, ty)?.into_partial_reflect(),
+                                        element
+                                            .value
+                                            .into_inner()
+                                            .reflect(element.span, ty)?
+                                            .into_partial_reflect(),
                                     );
                                 }
 
@@ -367,9 +371,9 @@ fn eval_expression(
                             .reflect_path_mut(resource.path.as_str())
                             .unwrap();
 
-                        reflect.try_apply(value_reflect.as_partial_reflect()).map_err(|apply_error| {
-                            EvalError::ApplyError {apply_error, span}
-                        })?;
+                        reflect
+                            .try_apply(value_reflect.as_partial_reflect())
+                            .map_err(|apply_error| EvalError::ApplyError { apply_error, span })?;
                     }
                 }
 

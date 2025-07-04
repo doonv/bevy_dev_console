@@ -1,8 +1,8 @@
 //! Custom [LogPlugin](bevy::log::LogPlugin) functionality.
 
+use bevy::log::tracing::Subscriber;
 use bevy::prelude::*;
 use std::sync::mpsc;
-use bevy::log::tracing::Subscriber;
 use tracing_subscriber::field::Visit;
 use tracing_subscriber::Layer;
 use web_time::SystemTime;

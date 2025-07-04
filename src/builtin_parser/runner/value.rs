@@ -12,7 +12,8 @@ use super::unique_rc::WeakRef;
 
 use bevy::ecs::world::World;
 use bevy::reflect::{
-    DynamicStruct, DynamicTuple, GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType
+    DynamicStruct, DynamicTuple, GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration,
+    VariantInfo, VariantType,
 };
 
 use logos::Span;
@@ -66,7 +67,9 @@ impl Value {
     pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn PartialReflect>, EvalError> {
         match self {
             Value::None => Ok(Box::new(())),
-            Value::Number(number) => number.reflect(span, ty).map(PartialReflect::into_partial_reflect),
+            Value::Number(number) => number
+                .reflect(span, ty)
+                .map(PartialReflect::into_partial_reflect),
             Value::Boolean(boolean) => Ok(Box::new(boolean)),
             Value::String(string) => Ok(Box::new(string)),
             Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
@@ -313,7 +316,7 @@ fn fancy_debug_print(
             ReflectRef::Opaque(_) => {
                 f += &format!("{reflect:?}");
             }
-            ReflectRef::Set(_) => todo!()
+            ReflectRef::Set(_) => todo!(),
         }
 
         f
