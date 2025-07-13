@@ -46,15 +46,16 @@ impl IntoResource {
 }
 
 pub fn object_to_dynamic_struct(
-    hashmap: HashMap<String, (Value, Span, &'static str)>,
+    _hashmap: HashMap<String, (Value, Span, &'static str)>,
 ) -> Result<DynamicStruct, EvalError> {
-    let mut dynamic_struct = DynamicStruct::default();
+    todo!()
+    // let mut dynamic_struct = DynamicStruct::default();
 
-    for (key, (value, span, reflect)) in hashmap {
-        dynamic_struct.insert_boxed(&key, value.reflect(span, reflect)?);
-    }
+    // for (key, (value, span, reflect)) in hashmap {
+    //     dynamic_struct.insert_boxed(&key, value.reflect(span, reflect)?);
+    // }
 
-    Ok(dynamic_struct)
+    // Ok(dynamic_struct)
 }
 
 pub fn mut_dyn_reflect<'a>(

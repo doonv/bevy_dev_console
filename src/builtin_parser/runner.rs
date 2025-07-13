@@ -8,8 +8,6 @@ use bevy::reflect::{
     DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
 };
 
-use crate::ui::COMMAND_RESULT_NAME;
-
 use self::error::EvalError;
 use self::member::{eval_member_expression, eval_path, Path};
 use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
@@ -142,7 +140,7 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
                 value => {
                     let value = value.try_format(span, world, &registrations)?;
 
-                    info!(name: COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX);
+                    info!(name: crate::ui::COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX);
                 }
             }
         }
@@ -332,7 +330,11 @@ fn eval_expression(
                                     }?;
 
                                     dynamic_tuple.insert_boxed(
-                                        element.value.into_inner().reflect(element.span, ty)?,
+                                        element
+                                            .value
+                                            .into_inner()
+                                            .reflect(element.span, ty)?
+                                            .into_partial_reflect(),
                                     );
                                 }
 
@@ -369,13 +371,9 @@ fn eval_expression(
                             .reflect_path_mut(resource.path.as_str())
                             .unwrap();
 
-                        reflect.set(value_reflect).map_err(|value_reflect| {
-                            EvalError::IncompatibleReflectTypes {
-                                span,
-                                expected: reflect.reflect_type_path().to_string(),
-                                actual: value_reflect.reflect_type_path().to_string(),
-                            }
-                        })?;
+                        reflect
+                            .try_apply(value_reflect.as_partial_reflect())
+                            .map_err(|apply_error| EvalError::ApplyError { apply_error, span })?;
                     }
                 }
 
@@ -441,7 +439,6 @@ fn eval_expression(
             )?;
             Ok(Value::StructTuple { name, tuple })
         }
-
         Expression::BinaryOp {
             left,
             operator,

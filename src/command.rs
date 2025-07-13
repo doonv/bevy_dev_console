@@ -3,7 +3,6 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
-use bevy::ecs::world::Command;
 use bevy::prelude::*;
 
 /// The command parser currently being used by the dev console.
@@ -168,6 +167,7 @@ impl Command for ExecuteCommand {
     }
 }
 
+#[allow(missing_docs)]
 #[derive(Resource, Default, Deref, DerefMut)]
 #[cfg(feature = "completions")]
 pub struct AutoCompletions(pub(crate) Vec<CompletionSuggestion>);

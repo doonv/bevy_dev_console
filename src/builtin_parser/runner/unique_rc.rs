@@ -46,7 +46,7 @@ impl<T> UniqueRc<T> {
             .into_inner()
     }
 }
-impl<T: ?Sized + Clone> Clone for UniqueRc<T> {
+impl<T: Clone> Clone for UniqueRc<T> {
     fn clone(&self) -> Self {
         let t = self.borrow_inner().clone().into_inner();
 

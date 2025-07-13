@@ -1,8 +1,7 @@
 //! Custom [LogPlugin](bevy::log::LogPlugin) functionality.
 
-use bevy::log::{BoxedLayer, Level};
+use bevy::log::tracing::Subscriber;
 use bevy::prelude::*;
-use bevy::utils::tracing::Subscriber;
 use std::sync::mpsc;
 use tracing_subscriber::field::Visit;
 use tracing_subscriber::Layer;
@@ -10,7 +9,7 @@ use web_time::SystemTime;
 
 /// A function that implements the log reading functionality for the
 /// developer console via [`LogPlugin::custom_layer`](bevy::log::LogPlugin::custom_layer).
-pub fn custom_log_layer(app: &mut App) -> Option<BoxedLayer> {
+pub fn custom_log_layer(app: &mut App) -> Option<bevy::log::BoxedLayer> {
     Some(Box::new(create_custom_log_layer(app)))
 }
 
@@ -39,7 +38,7 @@ pub(crate) struct LogMessage {
     pub target: &'static str,
 
     /// The level of verbosity of the described span.
-    pub level: Level,
+    pub level: bevy::log::Level,
 
     /// The name of the Rust module where the span occurred,
     /// or `None` if this could not be determined.
@@ -62,7 +61,7 @@ fn transfer_log_events(
     receiver: NonSend<CapturedLogEvents>,
     mut log_events: EventWriter<LogMessage>,
 ) {
-    log_events.send_batch(receiver.0.try_iter());
+    log_events.write_batch(receiver.0.try_iter());
 }
 
 /// This struct temporarily stores [`LogMessage`]s before they are
@@ -76,7 +75,7 @@ struct LogCaptureLayer {
 impl<S: Subscriber> Layer<S> for LogCaptureLayer {
     fn on_event(
         &self,
-        event: &bevy::utils::tracing::Event<'_>,
+        event: &bevy::log::tracing::Event<'_>,
         _ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         let mut message = None;
@@ -104,7 +103,7 @@ struct LogEventVisitor<'a>(&'a mut Option<String>);
 impl Visit for LogEventVisitor<'_> {
     fn record_debug(
         &mut self,
-        field: &bevy::utils::tracing::field::Field,
+        field: &bevy::log::tracing::field::Field,
         value: &dyn std::fmt::Debug,
     ) {
         // Only log out messages

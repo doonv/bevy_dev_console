@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 
+use bevy::reflect::ApplyError;
 use logos::Span;
 
 use crate::builtin_parser::number::Number;
@@ -75,6 +76,10 @@ pub enum EvalError {
         field_index: usize,
         tuple_size: usize,
     },
+    ApplyError {
+        apply_error: ApplyError,
+        span: Span,
+    },
 }
 
 impl EvalError {
@@ -106,6 +111,7 @@ impl EvalError {
             E::InvalidOperation { span, .. } => vec![span.clone()],
             E::IncorrectAccessOperation { span, .. } => vec![span.clone()],
             E::FieldNotFoundInTuple { span, .. } => vec![span.clone()],
+            E::ApplyError { span, .. } => vec![span.clone()],
         }
     }
     /// Returns all the hints for this error.
@@ -232,6 +238,15 @@ impl std::fmt::Display for EvalError {
                 f,
                 "Field {field_index} is out of bounds for tuple of size {tuple_size}"
             ),
+            E::ApplyError {
+                apply_error,
+                span: _,
+            } => {
+                write!(
+                    f,
+                    "Error while applying value (todo make this error better): {apply_error}"
+                )
+            }
         }
     }
 }

@@ -5,7 +5,7 @@ use std::fmt::Debug;
 
 use crate::builtin_parser::SpanExtension;
 use bevy::ecs::world::World;
-use bevy::log::warn;
+use bevy::prelude::*;
 use bevy::reflect::TypeRegistration;
 use logos::Span;
 

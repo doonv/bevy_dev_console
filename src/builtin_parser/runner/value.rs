@@ -12,7 +12,7 @@ use super::unique_rc::WeakRef;
 
 use bevy::ecs::world::World;
 use bevy::reflect::{
-    DynamicStruct, DynamicTuple, GetPath, Reflect, ReflectRef, TypeInfo, TypeRegistration,
+    DynamicStruct, DynamicTuple, GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration,
     VariantInfo, VariantType,
 };
 
@@ -61,13 +61,15 @@ pub enum Value {
 }
 
 impl Value {
-    /// Converts this value into a [`Box<dyn Reflect>`].
+    /// Converts this value into a [`Box<dyn PartialReflect>`].
     ///
     /// `ty` is used for type inference.
-    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn Reflect>, EvalError> {
+    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn PartialReflect>, EvalError> {
         match self {
             Value::None => Ok(Box::new(())),
-            Value::Number(number) => number.reflect(span, ty),
+            Value::Number(number) => number
+                .reflect(span, ty)
+                .map(PartialReflect::into_partial_reflect),
             Value::Boolean(boolean) => Ok(Box::new(boolean)),
             Value::String(string) => Ok(Box::new(string)),
             Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
@@ -245,7 +247,7 @@ fn fancy_debug_print(
 
     let reflect = dyn_reflect.reflect_path(resource.path.as_str()).unwrap();
 
-    fn debug_subprint(reflect: &dyn Reflect, indentation: usize) -> String {
+    fn debug_subprint(reflect: &dyn PartialReflect, indentation: usize) -> String {
         let mut f = String::new();
         let reflect_ref = reflect.reflect_ref();
         let indentation_string = TAB.repeat(indentation);
@@ -311,9 +313,10 @@ fn fancy_debug_print(
                     VariantType::Unit => {}
                 }
             }
-            ReflectRef::Value(_) => {
+            ReflectRef::Opaque(_) => {
                 f += &format!("{reflect:?}");
             }
+            ReflectRef::Set(_) => todo!(),
         }
 
         f
@@ -343,6 +346,7 @@ fn fancy_debug_print(
         ReflectRef::List(_) => todo!(),
         ReflectRef::Array(_) => todo!(),
         ReflectRef::Map(_) => todo!(),
+        ReflectRef::Set(_) => todo!(),
         ReflectRef::Enum(set_variant_info) => {
             // Print out the enum types
             f += &format!("enum {} {{\n", set_variant_info.reflect_short_type_path());
@@ -401,7 +405,7 @@ fn fancy_debug_print(
                 VariantType::Unit => {}
             }
         }
-        ReflectRef::Value(value) => {
+        ReflectRef::Opaque(value) => {
             f += &format!("{value:?}");
         }
     }
