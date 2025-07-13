@@ -24,6 +24,7 @@ builtin-parser = ["dep:logos"]
 [dependencies]
 # This crate by itself doesn't use any bevy features, but `bevy_egui` (dep) uses "bevy_asset".
 bevy = { version = "0.16.0", default-features = false, features = ["bevy_log", "bevy_color"] }
+bevy_reflect = "0.16.0"
 bevy_egui = "0.34.1"
 chrono = "0.4.31"
 tracing-log = "0.2.0"
