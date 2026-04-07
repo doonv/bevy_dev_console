@@ -35,7 +35,7 @@ pub fn console_log_layer(app: &mut App) -> Option<BoxedLayer> {
 ///
 /// Allows for colored text at the cost of a minor security vulnerability. The extent of it is that
 /// malicious ANSI codes can clear the screen, or embed malicious links, not much more than that.
-/// 
+///
 /// See [tokio-rs/tracing#3378](https://github.com/tokio-rs/tracing/issues/3378) for more info.
 #[must_use]
 pub fn colored_fmt_layer(_: &mut App) -> Option<BoxedFmtLayer> {

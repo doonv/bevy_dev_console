@@ -10,11 +10,11 @@ use bevy::reflect::TypeRegistration;
 use logos::Span;
 use variadics_please::all_tuples;
 
-use super::super::parser::Expression;
 use super::super::Spanned;
+use super::super::parser::Expression;
 use super::error::EvalError;
 use super::unique_rc::UniqueRc;
-use super::{eval_expression, stdlib, EvalParams, Value};
+use super::{EvalParams, Value, eval_expression, stdlib};
 
 /// Macro for mass registering functions.
 ///
@@ -336,7 +336,7 @@ impl Environment {
     /// The return value of the function must implement [`Into<Value>`]
     ///
     /// You should take a look at the [Standard Library] for examples.
-    /// 
+    ///
     /// [Standard Library](https://github.com/doonv/bevy_dev_console/blob/master/src/builtin_parser/runner/stdlib.rs)
     pub fn register_fn<T>(
         &mut self,

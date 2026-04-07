@@ -1,6 +1,6 @@
 //! A simple example showing how to setup the developer console plugin.
 
-use bevy::log::{LogPlugin, DEFAULT_FILTER};
+use bevy::log::{DEFAULT_FILTER, LogPlugin};
 use bevy::prelude::*;
 use bevy_dev_console::prelude::*;
 

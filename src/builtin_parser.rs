@@ -9,8 +9,8 @@ use logos::Span;
 
 use crate::builtin_parser::runner::ExecutionError;
 use crate::command::{
-    format_command_with_hints, CommandParser, DefaultCommandParser, COMMAND_MESSAGE_NAME,
-    COMMAND_MESSAGE_PREFIX,
+    COMMAND_MESSAGE_NAME, COMMAND_MESSAGE_PREFIX, CommandParser, DefaultCommandParser,
+    format_command_with_hints,
 };
 
 #[cfg(feature = "builtin-parser-completions")]

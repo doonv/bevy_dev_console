@@ -8,7 +8,7 @@ use std::rc::{Rc, Weak};
 /// This represents an [`Rc`] that is known to be uniquely owned -- that is, have exactly one strong
 /// reference.
 ///
-/// **TODO:** This is actually going to be a standard library feature. Use [`std::sync::UniqueArc`] when it is stabilized.
+/// **TODO:** This is actually going to be a standard library feature. Use [`std::rc::UniqueRc`] when it is stabilized.
 #[derive(Debug)]
 pub struct UniqueRc<T: ?Sized>(Rc<RefCell<T>>);
 impl<T: ?Sized> UniqueRc<T> {
@@ -133,7 +133,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic = "`into_inner` with multiple strong references"]
+    #[should_panic = "There are 2 strong pointers to a UniqueRc!"]
     fn strong_ref_panic() {
         let rc = UniqueRc::new(0);
 

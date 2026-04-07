@@ -243,7 +243,7 @@ impl std::fmt::Display for ParseError {
                 "expected a semicolon or endline after a complete statement, but got more tokens than expected."
             ),
             E::ExpectedLiteral(Spanned { span: _, value }) => write!(
-            f,
+                f,
                 "expected a literal token, got {value:?} which is not a valid literal."
             ),
             E::InvalidSuffixForFloat(Spanned {

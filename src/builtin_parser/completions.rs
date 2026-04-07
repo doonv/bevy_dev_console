@@ -1,7 +1,7 @@
 use bevy::prelude::*;
 
-use super::runner::environment::Variable;
 use super::Environment;
+use super::runner::environment::Variable;
 
 /// Stores the names of variables and functions for fast async access.
 #[derive(Resource)]

@@ -1,7 +1,6 @@
 //! A "standard library" for the builtin parser, this is a collection of functions that could
 //! be useful for whatever you need to do with the builtin parser.
 
-
 use crate::builtin_parser::runner::environment::Variable;
 use crate::register;
 use bevy::ecs::world::World;

@@ -75,7 +75,7 @@ impl From<Box<dyn CommandParser>> for DefaultCommandParser {
 /// # use bevy::ecs::world::World;
 /// # use bevy_dev_console::command::CommandParser;
 /// # use bevy::log::info;
-/// # use bevy_dev_console::ui::COMMAND_RESULT_NAME;
+/// # use bevy_dev_console::command::COMMAND_RESULT_NAME;
 ///
 /// pub struct MyCustomParser;
 /// impl CommandParser for MyCustomParser {

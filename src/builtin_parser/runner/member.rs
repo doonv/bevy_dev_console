@@ -2,11 +2,11 @@
 
 use kinded::Kinded;
 
-use crate::builtin_parser::parser::{access_unwrap, Access, Expression};
+use crate::builtin_parser::parser::{Access, Expression, access_unwrap};
 use crate::builtin_parser::{EvalError, SpanExtension, Spanned, WeakRef};
 
 use super::reflection::IntoResource;
-use super::{eval_expression, todo_error, EvalParams, Value};
+use super::{EvalParams, Value, eval_expression, todo_error};
 
 /// Evaluate a member expression.
 ///

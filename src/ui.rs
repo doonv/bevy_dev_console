@@ -9,8 +9,8 @@ use chrono::prelude::*;
 use web_time::SystemTime;
 
 use crate::command::{
-    ExecuteCommand, COMMAND_MESSAGE_NAME, COMMAND_MESSAGE_PREFIX, COMMAND_RESULT_NAME,
-    COMMAND_RESULT_PREFIX,
+    COMMAND_MESSAGE_NAME, COMMAND_MESSAGE_PREFIX, COMMAND_RESULT_NAME, COMMAND_RESULT_PREFIX,
+    ExecuteCommand,
 };
 use crate::logging::LogMessage;
 use crate::prelude::ConsoleConfig;
@@ -64,14 +64,7 @@ pub(crate) fn render_ui_system(
         .collapsible(false)
         .default_width(900.)
         .show(contexts.ctx_mut().unwrap(), |ui| {
-            render_ui(
-                ui,
-                &mut commands,
-                &mut state,
-                &key,
-                &config,
-                &completions,
-            );
+            render_ui(ui, &mut commands, &mut state, &key, &config, &completions);
         });
 }
 
