@@ -2,7 +2,6 @@
 //!
 //! **Warning:** This is very experimental, might not work.
 
-use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy_dev_console::prelude::*;
 
@@ -34,7 +33,6 @@ struct SubStruct {
 
 fn main() {
     App::new()
-        .register_type::<MyEnum>()
         .init_resource::<MyEnum>()
         .insert_resource(MyStruct {
             number: 5.6,
@@ -45,13 +43,11 @@ fn main() {
             },
             tuple: (-5, 255),
         })
-        .register_type::<MyStruct>()
-        .add_plugins((
-            DefaultPlugins.set(LogPlugin {
-                custom_layer: custom_log_layer,
-                ..default()
-            }),
-            DevConsolePlugin,
-        ))
+        .add_plugins((DefaultPlugins.set(console_log_plugin()), DevConsolePlugin))
+        .add_systems(Startup, spawn_camera)
         .run();
+}
+
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }

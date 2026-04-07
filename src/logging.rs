@@ -1,32 +1,55 @@
-//! Custom [LogPlugin](bevy::log::LogPlugin) functionality.
+//! Logging capturing and storage.
 
-use bevy::log::{BoxedLayer, Level};
+use bevy::log::tracing::Subscriber;
+use bevy::log::tracing_subscriber::field::Visit;
+use bevy::log::tracing_subscriber::{Layer, fmt};
+use bevy::log::{BoxedFmtLayer, BoxedLayer, Level, LogPlugin, tracing_subscriber as subscriber};
 use bevy::prelude::*;
-use bevy::utils::tracing::Subscriber;
 use std::sync::mpsc;
-use tracing_subscriber::field::Visit;
-use tracing_subscriber::Layer;
 use web_time::SystemTime;
 
-/// A function that implements the log reading functionality for the
-/// developer console via [`LogPlugin::custom_layer`](bevy::log::LogPlugin::custom_layer).
-pub fn custom_log_layer(app: &mut App) -> Option<BoxedLayer> {
-    Some(Box::new(create_custom_log_layer(app)))
+/// Convince function for setting the [`custom_layer`](LogPlugin::custom_layer) and
+/// [`fmt_layer`](LogPlugin::fmt_layer) of a [`LogPlugin`] with [`console_log_layer`] and [`colored_fmt_layer`].
+#[must_use]
+pub fn console_log_plugin() -> LogPlugin {
+    LogPlugin {
+        custom_layer: console_log_layer,
+        fmt_layer: colored_fmt_layer,
+        ..default()
+    }
 }
 
-fn create_custom_log_layer(app: &mut App) -> LogCaptureLayer {
+/// A [`LogPlugin::custom_layer`] that implements the log reading
+/// functionality for the developer console.
+#[must_use]
+pub fn console_log_layer(app: &mut App) -> Option<BoxedLayer> {
     let (sender, receiver) = mpsc::channel();
-    app.add_event::<LogMessage>();
+    app.add_message::<LogMessage>();
     app.insert_non_send_resource(CapturedLogEvents(receiver));
     app.add_systems(PostUpdate, transfer_log_events);
 
-    LogCaptureLayer { sender }
+    Some(Box::new(LogCaptureLayer { sender }))
+}
+
+/// A [`LogPlugin::fmt_layer`] that disables [ANSI sanitization](fmt::Layer::with_ansi_sanitization).
+///
+/// Allows for colored text at the cost of a minor security vulnerability. The extent of it is that
+/// malicious ANSI codes can clear the screen, or embed malicious links, not much more than that.
+/// 
+/// See [tokio-rs/tracing#3378](https://github.com/tokio-rs/tracing/issues/3378) for more info.
+#[must_use]
+pub fn colored_fmt_layer(_: &mut App) -> Option<BoxedFmtLayer> {
+    Some(Box::new(
+        fmt::Layer::default()
+            .with_ansi_sanitization(false)
+            .with_writer(std::io::stderr),
+    ))
 }
 
 /// A [`tracing`](bevy::utils::tracing) log message event.
 ///
 /// This event is helpful for creating custom log viewing systems such as consoles and terminals.
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub(crate) struct LogMessage {
     /// The message contents.
     pub message: String,
@@ -60,13 +83,13 @@ pub(crate) struct LogMessage {
 /// Transfers information from the [`CapturedLogEvents`] resource to [`Events<LogMessage>`](LogMessage).
 fn transfer_log_events(
     receiver: NonSend<CapturedLogEvents>,
-    mut log_events: EventWriter<LogMessage>,
+    mut log_events: MessageWriter<LogMessage>,
 ) {
-    log_events.send_batch(receiver.0.try_iter());
+    log_events.write_batch(receiver.0.try_iter());
 }
 
 /// This struct temporarily stores [`LogMessage`]s before they are
-/// written to [`EventWriter<LogMessage>`] by [`transfer_log_events`].
+/// written to [`MessageWriter<LogMessage>`] by [`transfer_log_events`].
 struct CapturedLogEvents(mpsc::Receiver<LogMessage>);
 
 /// A [`Layer`] that captures log events and saves them to [`CapturedLogEvents`].
@@ -76,8 +99,8 @@ struct LogCaptureLayer {
 impl<S: Subscriber> Layer<S> for LogCaptureLayer {
     fn on_event(
         &self,
-        event: &bevy::utils::tracing::Event<'_>,
-        _ctx: tracing_subscriber::layer::Context<'_, S>,
+        event: &bevy::log::tracing::Event<'_>,
+        _ctx: subscriber::layer::Context<'_, S>,
     ) {
         let mut message = None;
         event.record(&mut LogEventVisitor(&mut message));
@@ -104,7 +127,7 @@ struct LogEventVisitor<'a>(&'a mut Option<String>);
 impl Visit for LogEventVisitor<'_> {
     fn record_debug(
         &mut self,
-        field: &bevy::utils::tracing::field::Field,
+        field: &bevy::log::tracing::field::Field,
         value: &dyn std::fmt::Debug,
     ) {
         // Only log out messages

@@ -1,5 +1,7 @@
 //! Evaluation for member expressions and paths
 
+use kinded::Kinded;
+
 use crate::builtin_parser::parser::{access_unwrap, Access, Expression};
 use crate::builtin_parser::{EvalError, SpanExtension, Spanned, WeakRef};
 
@@ -254,7 +256,7 @@ pub fn eval_path(
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
                         Err(EvalError::CannotDereferenceValue(
-                            expr.span.wrap(borrow.natural_kind()),
+                            expr.span.wrap(borrow.kind()),
                         ))
                     }
                 }

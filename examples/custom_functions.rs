@@ -1,6 +1,5 @@
 //! An example showing how to create custom functions
 
-use bevy::log::LogPlugin;
 use bevy::prelude::*;
 use bevy_dev_console::builtin_parser::{Environment, EvalError, Number, Spanned, StrongRef, Value};
 use bevy_dev_console::prelude::*;
@@ -82,12 +81,11 @@ fn main() {
         .insert_resource(MyCounter(0))
         // Insert our new environment
         .insert_non_send_resource(custom_environment())
-        .add_plugins((
-            DefaultPlugins.set(LogPlugin {
-                custom_layer: custom_log_layer,
-                ..default()
-            }),
-            DevConsolePlugin,
-        ))
+        .add_plugins((DefaultPlugins.set(console_log_plugin()), DevConsolePlugin))
+        .add_systems(Startup, spawn_camera)
         .run();
+}
+
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }

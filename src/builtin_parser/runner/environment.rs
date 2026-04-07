@@ -8,6 +8,7 @@ use bevy::ecs::world::World;
 use bevy::log::warn;
 use bevy::reflect::TypeRegistration;
 use logos::Span;
+use variadics_please::all_tuples;
 
 use super::super::parser::Expression;
 use super::super::Spanned;
@@ -77,9 +78,10 @@ impl<T: Into<Value>, E> From<Result<T, E>> for ResultContainer<Value, E> {
 pub trait FunctionParam: Sized {
     /// TODO: Add `Self` as default when <https://github.com/rust-lang/rust/issues/29661> gets merged
     type Item<'world, 'env, 'reg>;
-    /// Whether this parameter requires a [`Spanned<Value>`].
-    /// If `false` then `FunctionParam::get`'s `value` will be [`None`], and vice versa.
-    const USES_VALUE: bool;
+    /// Whether this parameter is a function argument.
+    /// - If [`true`], an argument is consumed and [`get`](Self::get)'s `value` is populated with some [`Value`].
+    /// - Otherwise no argument is consumed and `value` is [`None`].
+    const IS_ARGUMENT: bool;
 
     fn get<'world, 'env, 'reg>(
         value: Option<Spanned<Value>>,
@@ -155,7 +157,7 @@ macro_rules! impl_into_function {
                     call_inner(
                         &mut self,
                         $($({
-                            let arg = if $params::USES_VALUE {
+                            let arg = if $params::IS_ARGUMENT {
                                 Some(args.next().unwrap())
                             } else {
                                 None
@@ -175,7 +177,7 @@ macro_rules! impl_into_function {
                 });
 
                 let argument_count = $($(
-                    $params::USES_VALUE as usize +
+                    $params::IS_ARGUMENT as usize +
                 )+)? 0;
 
                 Function { body, argument_count }
@@ -183,15 +185,8 @@ macro_rules! impl_into_function {
         }
     }
 }
-impl_into_function!();
-impl_into_function!(T1);
-impl_into_function!(T1, T2);
-impl_into_function!(T1, T2, T3);
-impl_into_function!(T1, T2, T3, T4);
-impl_into_function!(T1, T2, T3, T4, T5);
-impl_into_function!(T1, T2, T3, T4, T5, T6);
-impl_into_function!(T1, T2, T3, T4, T5, T6, T7);
-impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
+
+all_tuples!(impl_into_function, 0, 15, T);
 
 /// A variable inside the [`Environment`].
 #[derive(Debug)]
@@ -246,11 +241,11 @@ impl Environment {
         let var = env.variables.get_mut(name);
         let fn_obj = match var {
             Some(Variable::Function(_)) => {
-                let Variable::Function(mut fn_obj) = 
-                std::mem::replace(var.unwrap(), Variable::Moved)
-            else {
-                unreachable!()
-            };
+                let Variable::Function(mut fn_obj) =
+                    std::mem::replace(var.unwrap(), Variable::Moved)
+                else {
+                    unreachable!()
+                };
 
                 return_result = function(env, &mut fn_obj);
 
@@ -290,7 +285,7 @@ impl Environment {
             Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
                 span.wrap(name.to_owned()),
             )),
-            Some(variable_reference) => {
+            Some(variable_reference @ Variable::Unmoved(_)) => {
                 let Variable::Unmoved(reference) = variable_reference else {
                     unreachable!()
                 };
@@ -336,11 +331,13 @@ impl Environment {
     /// Registers a function for use inside the language.
     ///
     /// All parameters must implement [`FunctionParam`].
-    /// There is a limit of 8 parameters.
+    /// There is a limit of 15 parameters.
     ///
     /// The return value of the function must implement [`Into<Value>`]
     ///
-    /// You should take a look at the [Standard Library](super::stdlib) for examples.
+    /// You should take a look at the [Standard Library] for examples.
+    /// 
+    /// [Standard Library](https://github.com/doonv/bevy_dev_console/blob/master/src/builtin_parser/runner/stdlib.rs)
     pub fn register_fn<T>(
         &mut self,
         name: impl Into<String>,
@@ -358,7 +355,7 @@ impl Environment {
     /// Iterate over all the variables and functions in the current scope of the environment.
     ///
     /// Does not include variables and functions from higher scopes.
-    pub fn iter(&self) -> std::collections::hash_map::Iter<String, Variable> {
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Variable> {
         self.variables.iter()
     }
 }

@@ -8,7 +8,10 @@ use bevy::prelude::*;
 use logos::Span;
 
 use crate::builtin_parser::runner::ExecutionError;
-use crate::command::{CommandHints, CommandParser, DefaultCommandParser};
+use crate::command::{
+    format_command_with_hints, CommandParser, DefaultCommandParser, COMMAND_MESSAGE_NAME,
+    COMMAND_MESSAGE_PREFIX,
+};
 
 #[cfg(feature = "builtin-parser-completions")]
 use crate::command::CompletionSuggestion;
@@ -21,10 +24,10 @@ pub(crate) mod parser;
 pub(crate) mod runner;
 
 pub use number::*;
+pub use runner::Value;
 pub use runner::environment::Environment;
 pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
-pub use runner::Value;
 
 /// Additional traits for span.
 pub trait SpanExtension {
@@ -84,24 +87,26 @@ impl CommandParser for BuiltinCommandParser {
         let environment = world.non_send_resource::<Environment>();
         let ast = parser::parse(&mut tokens, environment);
 
-        dbg!(&ast);
-
         match ast {
             Ok(ast) => match runner::run(ast, world) {
-                Ok(()) => (),
+                Ok(()) => {
+                    info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{command}");
+                }
                 Err(error) => {
-                    if let ExecutionError::Eval(eval_error) = &error {
-                        world
-                            .resource_mut::<CommandHints>()
-                            .push(eval_error.hints());
-                    }
-                    error!("{error}")
+                    let spans = if let ExecutionError::Eval(eval_error) = &error {
+                        eval_error.spans()
+                    } else {
+                        vec![]
+                    };
+                    let highlighted = format_command_with_hints(command, &spans);
+                    info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{highlighted}");
+                    error!("{error}");
                 }
             },
             Err(err) => {
-                world.resource_mut::<CommandHints>().push([err.hint()]);
-
-                error!("{err}")
+                let highlighted = format_command_with_hints(command, &[err.span()]);
+                info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{highlighted}");
+                error!("{err}");
             }
         }
         #[cfg(feature = "builtin-parser-completions")]
@@ -124,9 +129,19 @@ impl CommandParser for BuiltinCommandParser {
             .function_names
             .iter()
             .chain(environment_cache.variable_names.iter())
-            .map(|name| (matcher.fuzzy_indices(name, command), name.clone()))
+            .cloned()
+            .chain(
+                world
+                    .resource::<AppTypeRegistry>()
+                    .read()
+                    .iter()
+                    .filter(|&v| world.components().get_resource_id(v.type_id()).is_some())
+                    .map(|v| v.type_info().type_path_table().short_path().to_owned()),
+            )
+            .map(|name| (matcher.fuzzy_indices(&name, command), name))
             .filter_map(|(fuzzy, name)| fuzzy.map(|v| (v, name)))
             .collect();
+
         names.sort_by_key(|((score, _), _)| std::cmp::Reverse(*score));
         names.truncate(crate::ui::MAX_COMPLETION_SUGGESTIONS);
 

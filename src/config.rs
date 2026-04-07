@@ -57,7 +57,7 @@ pub struct ConsoleTheme {
     pub trace: Color,
 }
 
-/// Helper trait that allows conversion between [`bevy::Color`](Color) and [`egui::Color32`].
+/// Helper trait that allows conversion between [`bevy::Color`](Color) and [`egui::Color32`](bevy_egui::egui::Color32).
 pub trait ToColor32 {
     /// Convert this [`bevy::Color`](Color) to a [`egui::Color32`].
     fn to_color32(&self) -> Color32;
@@ -71,6 +71,11 @@ impl ToColor32 for Color {
             alpha,
         } = self.to_srgba();
 
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "0-1 float maps perfectly"
+        )]
         Color32::from_rgba_unmultiplied(
             (red * 255.0) as u8,
             (green * 255.0) as u8,
@@ -98,11 +103,11 @@ impl ConsoleTheme {
         font: FontId::monospace(14.0),
         dark: Color::srgb(0.42, 0.44, 0.48),
         text_color: Color::srgb(0.67, 0.7, 0.75),
-        error: Color::srgb(0.91, 0.46, 0.5),
+        error: Color::srgb(0.88, 0.33, 0.38),
         warning: Color::srgb(0.82, 0.56, 0.32),
         info: Color::srgb(0.55, 0.76, 0.4),
         debug: Color::srgb(0.29, 0.65, 0.94),
-        trace: Color::srgb(0.78, 0.45, 0.89),
+        trace: Color::srgb(0.76, 0.38, 0.87),
     };
     /// High contrast theme, might help some people.
     pub const HIGH_CONTRAST: Self = Self {
@@ -112,11 +117,12 @@ impl ConsoleTheme {
         error: Color::srgb(1.0, 0.0, 0.0),
         warning: Color::srgb(1.0, 1.0, 0.0),
         info: Color::srgb(0.0, 1.0, 0.0),
-        debug: Color::srgb(0.25, 0.25, 1.0),
+        debug: Color::srgb(0.5, 0.5, 1.0),
         trace: Color::srgb(1.0, 0.0, 1.0),
     };
 
     /// Returns a [`Color32`] based on the `level`
+    #[must_use]
     pub fn color_level(&self, level: Level) -> Color32 {
         match level {
             Level::ERROR => self.error.to_color32(),
@@ -128,6 +134,7 @@ impl ConsoleTheme {
     }
 
     /// Returns a [`TextFormat`] with a color based on the [`Level`] and the [`ConsoleTheme`].
+    #[must_use]
     pub fn format_level(&self, level: Level) -> TextFormat {
         TextFormat {
             color: self.color_level(level),
@@ -136,21 +143,21 @@ impl ConsoleTheme {
     }
 
     /// Returns a [`TextFormat`] with the default font and color.
+    #[must_use]
     pub fn format_text(&self) -> TextFormat {
         TextFormat {
             font_id: self.font.clone(),
             color: self.text_color.to_color32(),
-
             ..default()
         }
     }
 
     /// Returns a [`TextFormat`] with the default font and white color.
+    #[must_use]
     pub fn format_bold(&self) -> TextFormat {
         TextFormat {
             font_id: self.font.clone(),
             color: Color32::WHITE,
-
             ..default()
         }
     }

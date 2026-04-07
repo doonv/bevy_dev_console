@@ -8,11 +8,11 @@ use bevy::reflect::{
     DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
 };
 
-use crate::ui::COMMAND_RESULT_NAME;
+use crate::command::{COMMAND_RESULT_NAME, COMMAND_RESULT_PREFIX};
 
 use self::error::EvalError;
-use self::member::{eval_member_expression, eval_path, Path};
-use self::reflection::{object_to_dynamic_struct, CreateRegistration, IntoResource};
+use self::member::{Path, eval_member_expression, eval_path};
+use self::reflection::{CreateRegistration, IntoResource, object_to_dynamic_struct};
 use self::unique_rc::UniqueRc;
 
 use super::parser::{Ast, Expression, Operator};
@@ -118,14 +118,25 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
             .collect();
 
         for mut statement in ast {
+            fn autoborrow(statement: Spanned<Expression>) -> Spanned<Expression> {
+                let value = match statement.value {
+                    Expression::Variable(variable) => Expression::Borrow(Box::new(Spanned {
+                        span: statement.span.clone(),
+                        value: Expression::Variable(variable),
+                    })),
+                    Expression::Member { mut left, right } => {
+                        *left = autoborrow(*left);
+                        Expression::Member { left, right }
+                    }
+                    expr => expr,
+                };
+                Spanned {
+                    span: statement.span,
+                    value,
+                }
+            }
             // Automatically borrow variables
-            statement.value = match statement.value {
-                Expression::Variable(variable) => Expression::Borrow(Box::new(Spanned {
-                    span: statement.span.clone(),
-                    value: Expression::Variable(variable),
-                })),
-                expr => expr,
-            };
+            statement = autoborrow(statement);
 
             let span = statement.span.clone();
             let value = eval_expression(
@@ -142,7 +153,7 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
                 value => {
                     let value = value.try_format(span, world, &registrations)?;
 
-                    info!(name: COMMAND_RESULT_NAME, "{}{value}", crate::ui::COMMAND_RESULT_PREFIX);
+                    info!(name: COMMAND_RESULT_NAME, "{}{value}", COMMAND_RESULT_PREFIX);
                 }
             }
         }
@@ -220,6 +231,7 @@ fn eval_expression(
                     .reflect_path_mut(resource.path.as_str())
                     .unwrap();
 
+                #[expect(clippy::single_match_else, reason = "more should be added later")]
                 match reflect.reflect_mut() {
                     ReflectMut::Enum(dyn_enum) => {
                         let TypeInfo::Enum(enum_info) = registration.type_info() else {
@@ -231,7 +243,9 @@ fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
+                                        return Err(EvalError::EnumVariantNotFound(
+                                            span.wrap(name),
+                                        ));
                                     }
                                 };
                                 let VariantInfo::Unit(_) = variant_info else {
@@ -246,7 +260,9 @@ fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
+                                        return Err(EvalError::EnumVariantNotFound(
+                                            span.wrap(name),
+                                        ));
                                     }
                                 };
                                 let VariantInfo::Struct(variant_info) = variant_info else {
@@ -303,7 +319,9 @@ fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(EvalError::EnumVariantNotFound(span.wrap(name)))
+                                        return Err(EvalError::EnumVariantNotFound(
+                                            span.wrap(name),
+                                        ));
                                     }
                                 };
                                 let VariantInfo::Tuple(variant_info) = variant_info else {
@@ -332,7 +350,11 @@ fn eval_expression(
                                     }?;
 
                                     dynamic_tuple.insert_boxed(
-                                        element.value.into_inner().reflect(element.span, ty)?.into_partial_reflect(),
+                                        element
+                                            .value
+                                            .into_inner()
+                                            .reflect(element.span, ty)?
+                                            .into_partial_reflect(),
                                     );
                                 }
 
@@ -369,9 +391,9 @@ fn eval_expression(
                             .reflect_path_mut(resource.path.as_str())
                             .unwrap();
 
-                        reflect.try_apply(value_reflect.as_partial_reflect()).map_err(|apply_error| {
-                            EvalError::ApplyError {apply_error, span}
-                        })?;
+                        reflect
+                            .try_apply(value_reflect.as_partial_reflect())
+                            .map_err(|apply_error| EvalError::ApplyError { apply_error, span })?;
                     }
                 }
 
@@ -518,7 +540,7 @@ fn eval_expression(
                     value => Ok(value.clone()),
                 }
             } else {
-                Err(EvalError::CannotDereferenceValue(
+                Err(EvalError::CannotDereferenceValueExpr(
                     expr.span.wrap(inner.value.kind()),
                 ))
             }

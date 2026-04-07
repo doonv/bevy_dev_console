@@ -4,8 +4,7 @@
 
 ![Image of the developer console](doc/console.png)
 
-> [!WARNING]  
->
+> [!WARNING]
 > `bevy_dev_console` is currently in its early development stages. Expect breaking changes in the near future (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
 
 ## Features
@@ -58,9 +57,9 @@
         .run();
     ```
 
-4. That should be it! You can now press the `` ` `` / `~` key on your keyboard and it should open the console!
+4. That should be it! You can now press the <kbd>\`</kbd> / <kbd>~</kbd> key on your keyboard and it should open the console!
 
-## Togglable Features
+## Toggleable Features
 
 **(default)** `builtin-parser` includes the default parser. Disabling this allows you to remove the built-in parser and replace it with your own (or you could do nothing and make the console into a log reader).
 
@@ -68,4 +67,4 @@
 
 | bevy   | bevy_dev_console |
 | ------ | ---------------- |
-| 0.14.* | git (master)     |
+| 0.18.* | git (master)     |

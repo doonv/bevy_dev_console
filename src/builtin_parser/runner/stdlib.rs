@@ -1,8 +1,13 @@
+//! A "standard library" for the builtin parser, this is a collection of functions that could
+//! be useful for whatever you need to do with the builtin parser.
+
+
 use crate::builtin_parser::runner::environment::Variable;
 use crate::register;
 use bevy::ecs::world::World;
 use bevy::log::info;
 use bevy::reflect::TypeRegistration;
+use kinded::Kinded;
 use std::cell::Ref;
 use std::ops::Range;
 
@@ -71,13 +76,13 @@ fn print_env(env: &mut Environment) {
 }
 
 fn typeof_value(value: Value) -> String {
-    value.kind().to_string()
+    value.kind().as_str().to_owned()
 }
 
 /// Disposes of a [`Value`].
 fn drop(_: Value) {}
 
-pub fn register(environment: &mut Environment) {
+pub(super) fn register(environment: &mut Environment) {
     math::register(environment);
 
     register!(environment => {

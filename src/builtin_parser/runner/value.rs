@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::builtin_parser::number::Number;
-use crate::builtin_parser::{Environment, StrongRef, UniqueRc};
+use crate::builtin_parser::{Environment, NumberKind, StrongRef, UniqueRc};
 
 use super::super::Spanned;
 use super::environment::FunctionParam;
@@ -12,9 +12,11 @@ use super::unique_rc::WeakRef;
 
 use bevy::ecs::world::World;
 use bevy::reflect::{
-    DynamicStruct, DynamicTuple, GetPath, PartialReflect, Reflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType
+    DynamicStruct, DynamicTuple, GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration,
+    VariantInfo, VariantType,
 };
 
+use kinded::{Kind, Kinded};
 use logos::Span;
 
 /// A runtime value
@@ -36,6 +38,9 @@ pub enum Value {
     /// the owner of the value have a strong reference, while every
     /// other value has a weak reference. This causes
     /// [`Rc::try_unwrap`] to succeed every time)
+    ///
+    /// [`Rc::try_unwrap`]: std::rc::Rc::try_unwrap
+    /// [`Rc<RefCell<T>>`]: std::rc::Rc
     Reference(WeakRef<Value>),
     /// A dynamic [`HashMap`].
     Object(HashMap<String, UniqueRc<Value>>),
@@ -66,7 +71,9 @@ impl Value {
     pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn PartialReflect>, EvalError> {
         match self {
             Value::None => Ok(Box::new(())),
-            Value::Number(number) => number.reflect(span, ty).map(PartialReflect::into_partial_reflect),
+            Value::Number(number) => number
+                .reflect(span, ty)
+                .map(PartialReflect::into_partial_reflect),
             Value::Boolean(boolean) => Ok(Box::new(boolean)),
             Value::String(string) => Ok(Box::new(string)),
             Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
@@ -194,39 +201,104 @@ impl Value {
             Value::Resource(resource) => Ok(fancy_debug_print(resource, world, registrations)),
         }
     }
+    // /// Returns the kind of [`Value`] as a [string slice](str).
+    // /// You may want to use [`natural_kind`](Self::natural_kind)
+    // /// instead for more natural sounding error messages
+    // pub const fn kind(&self) -> &'static str {
+    //     match self {
+    //         Value::None => "none",
+    //         Value::Number(number) => number.as_str(),
+    //         Value::Boolean(..) => "boolean",
+    //         Value::String(..) => "string",
+    //         Value::Reference(..) => "reference",
+    //         Value::Object(..) => "object",
+    //         Value::StructObject { .. } => "struct object",
+    //         Value::Tuple(..) => "tuple",
+    //         Value::StructTuple { .. } => "struct tuple",
+    //         Value::Resource(..) => "resource",
+    //     }
+    // }
+}
 
-    /// Returns the kind of [`Value`] as a [string slice](str).
-    /// You may want to use [`natural_kind`](Self::natural_kind)
-    /// instead for more natural sounding error messages
-    pub const fn kind(&self) -> &'static str {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValueKind {
+    None,
+    Number(NumberKind),
+    AnyNumber,
+    Boolean,
+    String,
+    Reference,
+    Object,
+    StructObject,
+    Tuple,
+    StructTuple,
+    Resource,
+}
+impl Kinded for Value {
+    type Kind = ValueKind;
+
+    fn kind(&self) -> Self::Kind {
         match self {
-            Value::None => "none",
-            Value::Number(number) => number.kind(),
-            Value::Boolean(..) => "boolean",
-            Value::String(..) => "string",
-            Value::Reference(..) => "reference",
-            Value::Object(..) => "object",
-            Value::StructObject { .. } => "struct object",
-            Value::Tuple(..) => "tuple",
-            Value::StructTuple { .. } => "struct tuple",
-            Value::Resource(..) => "resource",
+            Self::None => ValueKind::None,
+            Self::Number(number) => ValueKind::Number(number.kind()),
+            Self::Boolean(..) => ValueKind::Boolean,
+            Self::String(..) => ValueKind::String,
+            Self::Reference(..) => ValueKind::Reference,
+            Self::Object(..) => ValueKind::Object,
+            Self::StructObject { .. } => ValueKind::StructObject,
+            Self::Tuple(..) => ValueKind::Tuple,
+            Self::StructTuple { .. } => ValueKind::StructTuple,
+            Self::Resource(..) => ValueKind::Resource,
         }
     }
-
+}
+impl Kind for ValueKind {
+    fn all() -> &'static [Self] {
+        unimplemented!()
+    }
+}
+impl ValueKind {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Number(number) => number.as_str(),
+            Self::AnyNumber => "float/integer",
+            Self::Boolean => "boolean",
+            Self::String => "string",
+            Self::Reference => "reference",
+            Self::Object => "object",
+            Self::StructObject => "struct object",
+            Self::Tuple => "tuple",
+            Self::StructTuple => "struct tuple",
+            Self::Resource => "resource",
+        }
+    }
     /// Returns the kind of [`Value`] as a [string slice](str) with an `a` or `an`  prepended to it.
     /// Used for more natural sounding error messages.
-    pub const fn natural_kind(&self) -> &'static str {
+    pub const fn as_natural(&self) -> &'static str {
         match self {
-            Value::None => "nothing",
-            Value::Number(number) => number.natural_kind(),
-            Value::Boolean(..) => "a boolean",
-            Value::String(..) => "a string",
-            Value::Reference(..) => "a reference",
-            Value::Object(..) => "a object",
-            Value::StructObject { .. } => "a struct object",
-            Value::Tuple(..) => "a tuple",
-            Value::StructTuple { .. } => "a struct tuple",
-            Value::Resource(..) => "a resource",
+            ValueKind::None => "nothing",
+            ValueKind::Number(number) => number.as_natural(),
+            ValueKind::AnyNumber => "any number",
+            ValueKind::Boolean => "a boolean",
+            ValueKind::String => "a string",
+            ValueKind::Reference => "a reference",
+            ValueKind::Object => "a object",
+            ValueKind::StructObject => "a struct object",
+            ValueKind::Tuple => "a tuple",
+            ValueKind::StructTuple => "a struct tuple",
+            ValueKind::Resource => "a resource",
+        }
+    }
+}
+
+impl std::fmt::Display for ValueKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.write_str(self.as_natural())
+        } else {
+            f.write_str(self.as_str())
         }
     }
 }
@@ -264,14 +336,29 @@ fn fancy_debug_print(
                 f += &indentation_string;
                 f += "}";
             }
-            ReflectRef::TupleStruct(_) => todo!(),
+            ReflectRef::TupleStruct(tuple_struct) => {
+                f += "(";
+                f += &tuple_struct
+                    .iter_fields()
+                    .map(|field| debug_subprint(field, indentation + 1))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                f += ")";
+            }
             ReflectRef::Tuple(tuple_info) => {
-                f += "(\n";
-                for field in tuple_info.iter_fields() {
-                    let field_value = debug_subprint(field, indentation + 1);
-                    f += &format!("{indentation_string}{TAB}{field_value},\n",);
-                }
-                f += &indentation_string;
+                // f += "(\n";
+                // for field in tuple_info.iter_fields() {
+                //     let field_value = debug_subprint(field, indentation + 1);
+                //     f += &format!("{indentation_string}{TAB}{field_value},\n");
+                // }
+                // f += &indentation_string;
+                // f += ")";
+                f += "(";
+                f += &tuple_info
+                    .iter_fields()
+                    .map(|field| debug_subprint(field, indentation + 1))
+                    .collect::<Vec<_>>()
+                    .join(", ");
                 f += ")";
             }
             ReflectRef::List(_) => todo!(),
@@ -313,7 +400,7 @@ fn fancy_debug_print(
             ReflectRef::Opaque(_) => {
                 f += &format!("{reflect:?}");
             }
-            ReflectRef::Set(_) => todo!()
+            ReflectRef::Set(_) => todo!(),
         }
 
         f
@@ -338,17 +425,11 @@ fn fancy_debug_print(
             }
             f += "}";
         }
-        ReflectRef::TupleStruct(_) => todo!(),
-        ReflectRef::Tuple(_) => todo!(),
-        ReflectRef::List(_) => todo!(),
-        ReflectRef::Array(_) => todo!(),
-        ReflectRef::Map(_) => todo!(),
-        ReflectRef::Set(_) => todo!(),
         ReflectRef::Enum(set_variant_info) => {
             // Print out the enum types
             f += &format!("enum {} {{\n", set_variant_info.reflect_short_type_path());
             let TypeInfo::Enum(enum_info) = registration.type_info() else {
-                unreachable!()
+                unreachable!("{:?}", registration.type_info())
             };
             for variant in enum_info.iter() {
                 f += "\t";
@@ -405,6 +486,7 @@ fn fancy_debug_print(
         ReflectRef::Opaque(value) => {
             f += &format!("{value:?}");
         }
+        _ => f += &debug_subprint(reflect, 1),
     }
     f
 }
@@ -447,7 +529,7 @@ from_t!(impl HashMap<String, Value>: hashmap => Value::Object(
 
 impl FunctionParam for Spanned<Value> {
     type Item<'world, 'env, 'reg> = Self;
-    const USES_VALUE: bool = true;
+    const IS_ARGUMENT: bool = true;
 
     fn get<'world, 'env, 'reg>(
         value: Option<Spanned<Value>>,
@@ -460,7 +542,7 @@ impl FunctionParam for Spanned<Value> {
 }
 impl<T: TryFrom<Spanned<Value>, Error = EvalError>> FunctionParam for Spanned<T> {
     type Item<'world, 'env, 'reg> = Self;
-    const USES_VALUE: bool = true;
+    const IS_ARGUMENT: bool = true;
 
     fn get<'world, 'env, 'reg>(
         value: Option<Spanned<Value>>,
@@ -477,7 +559,7 @@ impl<T: TryFrom<Spanned<Value>, Error = EvalError>> FunctionParam for Spanned<T>
 }
 impl FunctionParam for Value {
     type Item<'world, 'env, 'reg> = Self;
-    const USES_VALUE: bool = true;
+    const IS_ARGUMENT: bool = true;
 
     fn get<'world, 'env, 'reg>(
         value: Option<Spanned<Value>>,
@@ -490,10 +572,13 @@ impl FunctionParam for Value {
 }
 
 macro_rules! impl_function_param_for_value {
-    (impl $type:ty: $value_pattern:pat => $return:expr) => {
+    (impl $type:ty: $value_kind:ident($value_name:ident) => $return:expr) => {
+        impl_function_param_for_value!(impl $type: $value_kind($value_name) {$value_kind} => $return);
+    };
+    (impl $type:ty: $value_kind:ident($value_name:ident) {$kind:ident} => $return:expr) => {
         impl FunctionParam for $type {
             type Item<'world, 'env, 'reg> = Self;
-            const USES_VALUE: bool = true;
+            const IS_ARGUMENT: bool = true;
 
             fn get<'world, 'env, 'reg>(
                 value: Option<Spanned<Value>>,
@@ -501,14 +586,14 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
             ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
-                let value = value.unwrap();
-                if let $value_pattern = value.value {
+                let Spanned { span, value } = value.unwrap();
+                if let Value::$value_kind($value_name) = value {
                     Ok($return)
                 } else {
-                    Err(EvalError::IncompatibleFunctionParameter {
-                        expected: stringify!($type),
-                        actual: value.value.natural_kind(),
-                        span: value.span,
+                    Err(EvalError::IncorrectFunctionParameterType {
+                        expected: ValueKind::$kind,
+                        actual: value.kind(),
+                        span,
                     })
                 }
             }
@@ -516,11 +601,15 @@ macro_rules! impl_function_param_for_value {
         impl TryFrom<Spanned<Value>> for $type {
             type Error = EvalError;
 
-            fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
-                if let $value_pattern = value.value {
+            fn try_from(Spanned { span, value }: Spanned<Value>) -> Result<Self, Self::Error> {
+                if let Value::$value_kind($value_name) = value {
                     Ok($return)
                 } else {
-                    todo!()
+                    Err(EvalError::IncorrectFunctionParameterType {
+                        expected: ValueKind::$kind,
+                        actual: value.kind(),
+                        span,
+                    })
                 }
             }
         }
@@ -531,7 +620,7 @@ macro_rules! impl_function_param_for_numbers {
         $(
             impl FunctionParam for $number {
                 type Item<'world, 'env, 'reg> = Self;
-                const USES_VALUE: bool = true;
+                const IS_ARGUMENT: bool = true;
 
                 fn get<'world, 'env, 'reg>(
                     value: Option<Spanned<Value>>,
@@ -539,14 +628,14 @@ macro_rules! impl_function_param_for_numbers {
                     _: &mut Option<&'env mut Environment>,
                     _: &'reg [&'reg TypeRegistration],
                 ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError> {
-                    let value = value.unwrap();
-                    match value.value {
+                    let Spanned { span, value } = value.unwrap();
+                    match value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => Err(EvalError::IncompatibleFunctionParameter {
-                            expected: concat!("a ", stringify!($number)),
-                            actual: value.value.natural_kind(),
-                            span: value.span,
+                        _ => Err(EvalError::IncorrectFunctionParameterType {
+                            expected: ValueKind::Number(NumberKind::$number),
+                            actual: value.kind(),
+                            span,
                         })
                     }
                 }
@@ -554,14 +643,14 @@ macro_rules! impl_function_param_for_numbers {
             impl TryFrom<Spanned<Value>> for $number {
                 type Error = EvalError;
 
-                fn try_from(value: Spanned<Value>) -> Result<Self, Self::Error> {
-                    match value.value {
+                fn try_from(Spanned {span, value}: Spanned<Value>) -> Result<Self, Self::Error> {
+                    match value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => Err(EvalError::IncompatibleFunctionParameter {
-                            expected: concat!("a ", stringify!($number)),
-                            actual: value.value.natural_kind(),
-                            span: value.span
+                        _ => Err(EvalError::IncorrectFunctionParameterType {
+                            expected: ValueKind::Number(NumberKind::$number),
+                            actual: value.kind(),
+                            span
                         })
                     }
                 }
@@ -573,18 +662,18 @@ macro_rules! impl_function_param_for_numbers {
 impl_function_param_for_numbers!(Float(f32, f64));
 impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize));
 
-impl_function_param_for_value!(impl bool: Value::Boolean(boolean) => boolean);
-impl_function_param_for_value!(impl Number: Value::Number(number) => number);
-impl_function_param_for_value!(impl String: Value::String(string) => string);
+impl_function_param_for_value!(impl bool: Boolean(boolean) => boolean);
+impl_function_param_for_value!(impl Number: Number(number) {AnyNumber} => number);
+impl_function_param_for_value!(impl String: String(string) => string);
 // impl_function_param_for_value!(impl HashMap<String, UniqueRc<Value>>: Value::Object(object) => object);
-impl_function_param_for_value!(impl HashMap<String, Value>: Value::Object(object) => {
+impl_function_param_for_value!(impl HashMap<String, Value>: Object(object) => {
     object.into_iter().map(|(k, v)| (k, v.into_inner())).collect()
 });
-impl_function_param_for_value!(impl StrongRef<Value>: Value::Reference(reference) => reference.upgrade().unwrap());
+impl_function_param_for_value!(impl StrongRef<Value>: Reference(reference) => reference.upgrade().unwrap());
 
 impl FunctionParam for &mut World {
     type Item<'world, 'env, 'reg> = &'world mut World;
-    const USES_VALUE: bool = false;
+    const IS_ARGUMENT: bool = false;
 
     fn get<'world, 'env, 'reg>(
         _: Option<Spanned<Value>>,
@@ -604,7 +693,7 @@ impl FunctionParam for &mut World {
 // This probably isn't a good idea. But eh who cares, more power to the user.
 impl FunctionParam for &mut Environment {
     type Item<'world, 'env, 'reg> = &'env mut Environment;
-    const USES_VALUE: bool = false;
+    const IS_ARGUMENT: bool = false;
 
     fn get<'world, 'env, 'reg>(
         _: Option<Spanned<Value>>,
@@ -618,7 +707,7 @@ impl FunctionParam for &mut Environment {
 
 impl FunctionParam for &[&TypeRegistration] {
     type Item<'world, 'env, 'reg> = &'reg [&'reg TypeRegistration];
-    const USES_VALUE: bool = false;
+    const IS_ARGUMENT: bool = false;
 
     fn get<'world, 'env, 'reg>(
         _: Option<Spanned<Value>>,

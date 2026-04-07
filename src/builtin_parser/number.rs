@@ -1,7 +1,10 @@
+#![allow(missing_docs, non_camel_case_types)]
+
 use std::fmt::Display;
 use std::ops::*;
 
 use bevy::reflect::Reflect;
+use kinded::Kinded;
 use logos::Span;
 
 use super::{EvalError, SpanExtension, Spanned};
@@ -11,8 +14,8 @@ use super::{EvalError, SpanExtension, Spanned};
 /// The [`Integer`](Number::Integer) and [`Float`](Number::Float) types
 /// are generic types that then get downcasted when they first interact
 /// with a concrete type. (i.e. calling a function, etc)
-#[derive(Debug, Clone, Copy)]
-#[allow(missing_docs, non_camel_case_types)]
+#[derive(Debug, Clone, Copy, Kinded)]
+#[kinded(skip_derive(Display))]
 pub enum Number {
     /// Generic integer that can get downcasted.
     Integer(i128),
@@ -77,49 +80,6 @@ impl Number {
             },
         }
     }
-
-    /// Returns the kind of [`Number`] as a [string slice](str).
-    /// You may want to use [`natural_kind`](Self::natural_kind)
-    /// instead for more natural sounding error messages
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Number::Float(_) => "float",
-            Number::Integer(_) => "integer",
-            Number::u8(_) => "u8",
-            Number::u16(_) => "u16",
-            Number::u32(_) => "u32",
-            Number::u64(_) => "u64",
-            Number::usize(_) => "usize",
-            Number::i8(_) => "i8",
-            Number::i16(_) => "i16",
-            Number::i32(_) => "i32",
-            Number::i64(_) => "i64",
-            Number::isize(_) => "usize",
-            Number::f32(_) => "f32",
-            Number::f64(_) => "f64",
-        }
-    }
-
-    /// Returns the kind of [`Number`] as a [string slice](str) with an `a` or `an` prepended to it.
-    /// Used for more natural sounding error messages.
-    pub const fn natural_kind(&self) -> &'static str {
-        match self {
-            Number::Float(_) => "a float",
-            Number::Integer(_) => "an integer",
-            Number::u8(_) => "a u8",
-            Number::u16(_) => "a u16",
-            Number::u32(_) => "a u32",
-            Number::u64(_) => "a u64",
-            Number::usize(_) => "a usize",
-            Number::i8(_) => "a i8",
-            Number::i16(_) => "a i16",
-            Number::i32(_) => "a i32",
-            Number::i64(_) => "a i64",
-            Number::isize(_) => "a usize",
-            Number::f32(_) => "a f32",
-            Number::f64(_) => "a f64",
-        }
-    }
 }
 
 impl Display for Number {
@@ -139,6 +99,60 @@ impl Display for Number {
             Number::isize(number) => write!(f, "{number} (isize)"),
             Number::f32(number) => write!(f, "{number} (f32)"),
             Number::f64(number) => write!(f, "{number} (f64)"),
+        }
+    }
+}
+
+impl NumberKind {
+    /// Converts this [`NumberKind`] into a [`&'static str`](str)
+    /// You may want to use [`natural_kind`](Self::natural_kind)
+    /// instead for more natural sounding error messages
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Float => "float",
+            Self::Integer => "integer",
+            Self::u8 => "u8",
+            Self::u16 => "u16",
+            Self::u32 => "u32",
+            Self::u64 => "u64",
+            Self::usize => "usize",
+            Self::i8 => "i8",
+            Self::i16 => "i16",
+            Self::i32 => "i32",
+            Self::i64 => "i64",
+            Self::isize => "usize",
+            Self::f32 => "f32",
+            Self::f64 => "f64",
+        }
+    }
+
+    /// Returns the kind of [`Number`] as a [string slice](str) with an `a` or `an` prepended to it.
+    /// Used for more natural sounding error messages.
+    pub const fn as_natural(&self) -> &'static str {
+        match self {
+            Self::Float => "a float",
+            Self::Integer => "an integer",
+            Self::u8 => "a u8",
+            Self::u16 => "a u16",
+            Self::u32 => "a u32",
+            Self::u64 => "a u64",
+            Self::usize => "a usize",
+            Self::i8 => "a i8",
+            Self::i16 => "a i16",
+            Self::i32 => "a i32",
+            Self::i64 => "a i64",
+            Self::isize => "a usize",
+            Self::f32 => "a f32",
+            Self::f64 => "a f64",
+        }
+    }
+}
+impl Display for NumberKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if f.alternate() {
+            f.write_str(self.as_natural())
+        } else {
+            f.write_str(self.as_str())
         }
     }
 }
@@ -196,8 +210,8 @@ macro_rules! impl_op {
                     (Number::f32(left), Number::Float(right)) => Ok(Number::f32(left $op right as f32)),
                     (Number::f64(left), Number::Float(right)) => Ok(Number::f64(left $op right as f64)),
                     _ => Err(EvalError::IncompatibleNumberTypes {
-                        left: left.natural_kind(),
-                        right: right.natural_kind(),
+                        left: left.kind(),
+                        right: right.kind(),
                         span
                     })
                 }
@@ -234,26 +248,12 @@ impl Number {
     /// Performs the unary `-` operation.
     pub fn neg(self, span: Span) -> Result<Number, EvalError> {
         match self {
-            Number::u8(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
-                span,
-                value: self,
-            })),
-            Number::u16(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
-                span,
-                value: self,
-            })),
-            Number::u32(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
-                span,
-                value: self,
-            })),
-            Number::u64(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
-                span,
-                value: self,
-            })),
-            Number::usize(_) => Err(EvalError::CannotNegateUnsignedInteger(Spanned {
-                span,
-                value: self,
-            })),
+            Number::u8(_) | Number::u16(_) | Number::u32(_) | Number::u64(_) | Number::usize(_) => {
+                Err(EvalError::CannotNegateUnsignedInteger(Spanned {
+                    span,
+                    value: self.kind(),
+                }))
+            }
             Number::i8(number) => Ok(Number::i8(-number)),
             Number::i16(number) => Ok(Number::i16(-number)),
             Number::i32(number) => Ok(Number::i32(-number)),

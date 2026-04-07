@@ -1,16 +1,17 @@
 use std::borrow::Cow;
 
 use bevy::reflect::ApplyError;
+use kinded::Kinded;
 use logos::Span;
 
 use crate::builtin_parser::number::Number;
-use crate::builtin_parser::parser::Access;
-use crate::builtin_parser::Spanned;
-use crate::command::{CommandHint, CommandHintColor};
+use crate::builtin_parser::parser::{Access, ExpressionKind};
+use crate::builtin_parser::runner::value::ValueKind;
+use crate::builtin_parser::{NumberKind, Spanned};
 
 use super::Value;
 
-/// An error occurring during the while executing the [`AST`](Ast) of the command.
+/// An error occurring during the while executing the [`AST`](crate::builtin_parser::parser::Ast) of the command.
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub enum EvalError {
@@ -31,8 +32,9 @@ pub enum EvalError {
     CannotIndexValue(Spanned<Value>),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
-    CannotDereferenceValue(Spanned<&'static str>),
-    CannotBorrowValue(Spanned<&'static str>),
+    CannotDereferenceValue(Spanned<ValueKind>),
+    CannotDereferenceValueExpr(Spanned<ExpressionKind>),
+    CannotBorrowValue(Spanned<ExpressionKind>),
     IncompatibleReflectTypes {
         expected: String,
         actual: String,
@@ -40,15 +42,15 @@ pub enum EvalError {
     },
     EnumVariantNotFound(Spanned<String>),
     CannotMoveOutOfResource(Spanned<String>),
-    CannotNegateUnsignedInteger(Spanned<Number>),
+    CannotNegateUnsignedInteger(Spanned<NumberKind>),
     IncompatibleNumberTypes {
-        left: &'static str,
-        right: &'static str,
+        left: NumberKind,
+        right: NumberKind,
         span: Span,
     },
-    IncompatibleFunctionParameter {
-        expected: &'static str,
-        actual: &'static str,
+    IncorrectFunctionParameterType {
+        expected: ValueKind,
+        actual: ValueKind,
         span: Span,
     },
     EnumVariantStructFieldNotFound {
@@ -78,8 +80,8 @@ pub enum EvalError {
     },
     ApplyError {
         apply_error: ApplyError,
-        span: Span
-    }
+        span: Span,
+    },
 }
 
 impl EvalError {
@@ -94,6 +96,7 @@ impl EvalError {
             E::CannotIndexValue(Spanned { span, .. }) => vec![span.clone()],
             E::FieldNotFoundInStruct(Spanned { span, value: _ }) => vec![span.clone()],
             E::CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
+            E::CannotDereferenceValueExpr(Spanned { span, .. }) => vec![span.clone()],
             E::ReferenceToMovedData(span) => vec![span.clone()],
             E::VariableMoved(Spanned { span, .. }) => vec![span.clone()],
             E::CannotBorrowValue(Spanned { span, .. }) => vec![span.clone()],
@@ -104,22 +107,15 @@ impl EvalError {
             E::CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
             E::CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
             E::IncompatibleNumberTypes { span, .. } => vec![span.clone()],
-            E::IncompatibleFunctionParameter { span, .. } => vec![span.clone()],
+            E::IncorrectFunctionParameterType { span, .. } => vec![span.clone()],
             E::ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
             E::CannotReflectReference(span) => vec![span.clone()],
             E::CannotReflectResource(span) => vec![span.clone()],
             E::InvalidOperation { span, .. } => vec![span.clone()],
             E::IncorrectAccessOperation { span, .. } => vec![span.clone()],
             E::FieldNotFoundInTuple { span, .. } => vec![span.clone()],
-            E::ApplyError { span , ..} => vec![span.clone()],
+            E::ApplyError { span, .. } => vec![span.clone()],
         }
-    }
-    /// Returns all the hints for this error.
-    pub fn hints(&self) -> Vec<CommandHint> {
-        self.spans()
-            .into_iter()
-            .map(|span| CommandHint::new(span, CommandHintColor::Error, self.to_string()))
-            .collect()
     }
 }
 
@@ -135,7 +131,7 @@ impl std::fmt::Display for EvalError {
             E::ExpectedNumberAfterUnaryOperator(Spanned { value, .. }) => write!(
                 f,
                 "Expected a number after unary operator (-) but got {} instead.",
-                value.natural_kind()
+                value.kind()
             ),
             E::CannotIndexValue(Spanned { span: _, value }) => {
                 write!(f, "Cannot index {} with a member expression.", value.kind())
@@ -145,6 +141,9 @@ impl std::fmt::Display for EvalError {
                 write!(f, "Variable `{value}` was moved.")
             }
             E::CannotDereferenceValue(Spanned { value: kind, .. }) => {
+                write!(f, "Cannot dereference {kind}.")
+            }
+            E::CannotDereferenceValueExpr(Spanned { value: kind, .. }) => {
                 write!(f, "Cannot dereference {kind}.")
             }
             E::CannotBorrowValue(Spanned { value: kind, .. }) => {
@@ -177,22 +176,20 @@ impl std::fmt::Display for EvalError {
             ),
             E::CannotMoveOutOfResource(Spanned { value, .. }) => write!(
                 f,
-                "Cannot move out of resource `{value}`, try borrowing it instead."
+                "cannot move out of resource `{value}`, try borrowing it instead."
             ),
-            E::CannotNegateUnsignedInteger(Spanned { value, .. }) => write!(
-                f,
-                "Unsigned integers cannot be negated. (Type: {})",
-                value.natural_kind()
-            ),
+            E::CannotNegateUnsignedInteger(Spanned { value, .. }) => {
+                write!(f, "cannot apply unary operator `-` to type `{value}`",)
+            }
             E::IncompatibleNumberTypes { left, right, .. } => write!(
                 f,
                 "Incompatible number types; `{left}` and `{right}` are incompatible."
             ),
-            E::IncompatibleFunctionParameter {
+            E::IncorrectFunctionParameterType {
                 expected, actual, ..
             } => write!(
                 f,
-                "Mismatched function parameter type. Expected {expected} but got {actual}"
+                "Mismatched function parameter type. Expected {expected:#} but got {actual:#}"
             ),
             E::ExpectedVariableGotFunction(Spanned { value, .. }) => write!(
                 f,
@@ -223,9 +220,9 @@ impl std::fmt::Display for EvalError {
                 span: _,
             } => write!(
                 f,
-                "Expected {} access to access {expected_type} but got {}",
+                "Expected {} access to access {expected_type} but got {:#}",
                 expected_access.join(" and "),
-                got.natural_kind()
+                got.kind()
             ),
             E::FieldNotFoundInStruct(Spanned { span: _, value }) => {
                 write!(f, "Field {value} not found in struct")
@@ -238,8 +235,14 @@ impl std::fmt::Display for EvalError {
                 f,
                 "Field {field_index} is out of bounds for tuple of size {tuple_size}"
             ),
-            E::ApplyError { apply_error, span: _} => {
-                write!(f, "Error while applying value (todo make this error better): {apply_error}")
+            E::ApplyError {
+                apply_error,
+                span: _,
+            } => {
+                write!(
+                    f,
+                    "Error while applying value (todo make this error better): {apply_error}"
+                )
             }
         }
     }

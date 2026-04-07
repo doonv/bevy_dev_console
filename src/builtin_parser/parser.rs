@@ -1,10 +1,9 @@
 //! Generates an abstract syntax tree from a list of tokens.
 
+use kinded::Kinded;
 use logos::Span;
 use std::collections::HashMap;
 use std::num::IntErrorKind;
-
-use crate::command::{CommandHint, CommandHintColor};
 
 use super::lexer::{FailedToLexCharacter, Token, TokenStream};
 use super::number::Number;
@@ -36,7 +35,7 @@ macro_rules! expect {
 }
 
 /// A type that represents an expression.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Kinded)]
 pub enum Expression {
     // Primitives
     None,
@@ -85,10 +84,35 @@ pub enum Expression {
     },
 }
 
+impl ExpressionKind {
+    pub const fn as_natural(&self) -> &'static str {
+        match self {
+            ExpressionKind::None => "nothing",
+            ExpressionKind::Boolean => "a boolean",
+            ExpressionKind::Number => "a number",
+            ExpressionKind::Variable => "a variable name",
+            ExpressionKind::String => "a string",
+            ExpressionKind::Borrow => "a borrow",
+            ExpressionKind::Dereference => "a dereference",
+            ExpressionKind::Object => "an object",
+            ExpressionKind::StructObject => "a struct object",
+            ExpressionKind::Tuple => "a tuple",
+            ExpressionKind::StructTuple => "a struct tuple",
+
+            ExpressionKind::BinaryOp => "a binary operation",
+            ExpressionKind::UnaryOp => "a unary operation",
+            ExpressionKind::Member => "a member expression",
+            ExpressionKind::VarAssign => "a variable assignment",
+            ExpressionKind::Function => "a function call",
+            ExpressionKind::ForLoop => "a for loop",
+        }
+    }
+}
+
 /// A singular element access within a [`Expression::Member`].
 ///
 /// Based on `bevy_reflect`'s `Access`.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Kinded)]
 pub enum Access {
     /// A name-based field access on a struct.
     Field(String),
@@ -97,28 +121,10 @@ pub enum Access {
     // /// An index-based access on a list.
     // ListIndex(usize),
 }
-pub enum AccessKind {
-    Field,
-    TupleIndex,
-}
-impl Access {
-    pub const fn kind(&self) -> AccessKind {
-        match self {
-            Access::Field(_) => AccessKind::Field,
-            Access::TupleIndex(_) => AccessKind::TupleIndex,
-        }
-    }
-    /// Returns the kind of [`Access`] as a [string slice](str) with an `a` or `an` prepended to it.
-    /// Used for more natural sounding error messages.
-    pub const fn natural_kind(&self) -> &'static str {
-        self.kind().natural()
-    }
-}
-
 impl AccessKind {
     /// Returns the kind of [`Access`] as a [string slice](str) with an `a` or `an` prepended to it.
     /// Used for more natural sounding error messages.
-    pub const fn natural(&self) -> &'static str {
+    pub const fn as_natural(&self) -> &'static str {
         match self {
             AccessKind::Field => "a field",
             AccessKind::TupleIndex => "a tuple",
@@ -138,7 +144,7 @@ macro_rules! access_unwrap {
 
             // We have to put this in a `const` first to avoid a
             // `temporary value dropped while borrowed` error.
-            const EXPECTED_ACCESS: &[&str] = &[$(AccessKind::$variant.natural()),+];
+            const EXPECTED_ACCESS: &[&str] = &[$(AccessKind::$variant.as_natural()),+];
             Err(EvalError::IncorrectAccessOperation {
                 span: val.span,
                 expected_access: EXPECTED_ACCESS,
@@ -149,31 +155,6 @@ macro_rules! access_unwrap {
     }};
 }
 pub(crate) use access_unwrap;
-
-impl Expression {
-    pub const fn kind(&self) -> &'static str {
-        match self {
-            Expression::None => "nothing",
-            Expression::Boolean(..) => "a boolean",
-            Expression::Number(..) => "a number",
-            Expression::Variable(..) => "a variable name",
-            Expression::String(..) => "a string",
-            Expression::Borrow(..) => "a borrow",
-            Expression::Dereference(..) => "a dereference",
-            Expression::Object(..) => "an object",
-            Expression::StructObject { .. } => "a struct object",
-            Expression::Tuple(..) => "a tuple",
-            Expression::StructTuple { .. } => "a struct tuple",
-
-            Expression::BinaryOp { .. } => "a binary operation",
-            Expression::UnaryOp(..) => "a unary operation",
-            Expression::Member { .. } => "a member expression",
-            Expression::VarAssign { .. } => "a variable assignment",
-            Expression::Function { .. } => "a function call",
-            Expression::ForLoop { .. } => "a for loop",
-        }
-    }
-}
 
 #[derive(Debug, Clone)]
 pub enum Operator {
@@ -211,8 +192,13 @@ pub enum ParseError {
         got: Token,
         span: Span,
     },
-    UnsupportedLoop {
+    UnsupportedFeature {
         ty: &'static str,
+        span: Span,
+        issue: u8,
+    },
+    MismatchedDelimiter {
+        delimiter: char,
         span: Span,
     },
 }
@@ -220,7 +206,6 @@ pub enum ParseError {
 impl ParseError {
     pub fn span(&self) -> Span {
         use ParseError as E;
-
         match self {
             E::FailedToLexCharacters(Spanned { span, value: _ }) => span,
             E::ExpectedMoreTokens(span) => span,
@@ -232,17 +217,10 @@ impl ParseError {
             E::NegativeIntOverflow { span, .. } => span,
             E::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
             E::ExpectedIndexer { got: _, span } => span,
-            E::UnsupportedLoop { ty: _, span } => span,
+            E::UnsupportedFeature { span, .. } => span,
+            E::MismatchedDelimiter { span, .. } => span,
         }
         .clone()
-    }
-
-    pub fn hint(&self) -> CommandHint {
-        CommandHint {
-            color: CommandHintColor::Error,
-            span: self.span(),
-            description: self.to_string().into(),
-        }
     }
 }
 
@@ -251,21 +229,64 @@ impl std::fmt::Display for ParseError {
         use ParseError as E;
 
         match self {
-            E::FailedToLexCharacters(Spanned { span: _, value }) => write!(f, "Invalid character(s) \"{value}\" (Did you mean to use a string?)"),
-            E::ExpectedMoreTokens(_) => write!(f, "Expected more tokens, got nothing."),
+            E::FailedToLexCharacters(Spanned { span: _, value }) => {
+                write!(f, "unknown token character: {value}")
+            }
+            E::ExpectedMoreTokens(_) => write!(f, "expected more tokens, got nothing."),
             E::ExpectedTokenButGot {
                 expected,
                 got,
                 span: _,
-            } => write!(f, "Expected token {expected:?}, got token {got:?} instead."),
-            E::ExpectedEndline(_) => write!(f, "Expected a semicolon or endline after a complete statement, but got more tokens than expected."),
-            E::ExpectedLiteral(Spanned { span: _, value }) => write!(f, "Expected a literal token, got {value:?} which is not a valid literal."),
-            E::InvalidSuffixForFloat(Spanned { span: _, value: suffix }) => write!(f, r#""{suffix}" is an invalid suffix for a float. The only valid suffixes are "f32" and "f64"."#),
-            E::NegativeIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too small."),
-            E::PositiveIntOverflow { span: _, number, number_kind } => write!(f, "{number} cannot be represented as a {number_kind} as it is too large."),
-            E::ExpectedObjectContinuation(Spanned { span: _, value: got }) => write!(f, "Expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."),
-            E::ExpectedIndexer { got, span: _ } => write!(f, "Expected an identifier or integer when accessing member of variable, got {got:?} instead."),
-            E::UnsupportedLoop { ty, span : _} => write!(f, "{ty} loops are not yet supported. See issue #8.")
+            } => write!(f, "expected token {expected:?}, got token {got:?} instead."),
+            E::ExpectedEndline(_) => write!(
+                f,
+                "expected a semicolon or endline after a complete statement, but got more tokens than expected."
+            ),
+            E::ExpectedLiteral(Spanned { span: _, value }) => write!(
+            f,
+                "expected a literal token, got {value:?} which is not a valid literal."
+            ),
+            E::InvalidSuffixForFloat(Spanned {
+                span: _,
+                value: suffix,
+            }) => write!(
+                f,
+                r#""{suffix}" is an invalid suffix for a float. The only valid suffixes are "f32" and "f64"."#
+            ),
+            E::NegativeIntOverflow {
+                span: _,
+                number,
+                number_kind,
+            } => write!(
+                f,
+                "{number} cannot be represented as a {number_kind} as it is too small."
+            ),
+            E::PositiveIntOverflow {
+                span: _,
+                number,
+                number_kind,
+            } => write!(
+                f,
+                "{number} cannot be represented as a {number_kind} as it is too large."
+            ),
+            E::ExpectedObjectContinuation(Spanned {
+                span: _,
+                value: got,
+            }) => write!(
+                f,
+                "expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."
+            ),
+            E::ExpectedIndexer { got, span: _ } => write!(
+                f,
+                "expected an identifier or integer when accessing member of variable, got {got:?} instead."
+            ),
+            E::UnsupportedFeature { ty, span: _, issue } => write!(
+                f,
+                "{ty} are not yet supported. see bevy_dev_console issue #{issue}"
+            ),
+            E::MismatchedDelimiter { delimiter, span: _ } => {
+                write!(f, "unexpected closing delimiter: `{delimiter}`")
+            }
         }
     }
 }
@@ -288,7 +309,7 @@ pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast,
             Some(Err(FailedToLexCharacter)) => {
                 return Err(ParseError::FailedToLexCharacters(
                     tokens.span().wrap(tokens.slice().to_string()),
-                ))
+                ));
             }
             None => break,
         }
@@ -302,17 +323,20 @@ fn parse_expression(
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
     match tokens.peek() {
-        Some(Ok(Token::Loop)) => Err(ParseError::UnsupportedLoop {
-            ty: "infinite",
+        Some(Ok(Token::Loop)) => Err(ParseError::UnsupportedFeature {
+            ty: "infinite loops",
             span: tokens.peek_span(),
+            issue: 8,
         }),
-        Some(Ok(Token::While)) => Err(ParseError::UnsupportedLoop {
-            ty: "while",
+        Some(Ok(Token::While)) => Err(ParseError::UnsupportedFeature {
+            ty: "while loops",
             span: tokens.peek_span(),
+            issue: 8,
         }),
-        Some(Ok(Token::For)) => Err(ParseError::UnsupportedLoop {
-            ty: "for",
+        Some(Ok(Token::For)) => Err(ParseError::UnsupportedFeature {
+            ty: "for loops",
             span: tokens.peek_span(),
+            issue: 8,
         }),
         Some(Ok(_)) => {
             let expr = parse_additive(tokens, environment)?;
@@ -555,6 +579,22 @@ fn parse_value(
             }
             Some(Ok(Token::True)) => Ok(tokens.span().wrap(Expression::Boolean(true))),
             Some(Ok(Token::False)) => Ok(tokens.span().wrap(Expression::Boolean(false))),
+            Some(Ok(Token::LeftBrace)) => Err(ParseError::UnsupportedFeature {
+                ty: "lists/vectors",
+                span: tokens.span_until(Token::RightBrace),
+                issue: 10,
+            }),
+            Some(Ok(Token::Pipe)) => Err(ParseError::UnsupportedFeature {
+                ty: "closures",
+                span: tokens.span_until(Token::Pipe),
+                issue: 12,
+            }),
+            Some(Ok(Token::RightBrace | Token::RightBracket | Token::RightParen)) => {
+                Err(ParseError::MismatchedDelimiter {
+                    delimiter: tokens.slice().chars().next().unwrap(),
+                    span: tokens.span(),
+                })
+            }
             Some(Ok(token)) => Err(ParseError::ExpectedLiteral(tokens.span().wrap(token))),
             Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacters(
                 tokens.span().wrap(tokens.slice().to_string()),
@@ -597,12 +637,12 @@ fn parse_value(
                 return Err(ParseError::ExpectedIndexer {
                     got: token,
                     span: tokens.span(),
-                })
+                });
             }
             Some(Err(FailedToLexCharacter)) => {
                 return Err(ParseError::FailedToLexCharacters(
                     tokens.span().wrap(tokens.slice().to_string()),
-                ))
+                ));
             }
             None => return Err(ParseError::ExpectedMoreTokens(tokens.span())),
         }
@@ -752,8 +792,8 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
-    use super::super::lexer::TokenStream;
     use super::super::Environment;
+    use super::super::lexer::TokenStream;
     use super::parse;
 
     #[test]

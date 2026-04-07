@@ -57,6 +57,8 @@ pub enum Token {
     SemiColon,
     #[token(",")]
     Comma,
+    #[token("|")]
+    Pipe,
 
     #[token("true")]
     True,
@@ -152,6 +154,24 @@ impl<'a> TokenStream<'a> {
     #[must_use]
     pub fn span(&self) -> Span {
         self.current_span.clone()
+    }
+
+    /// Advances the stream until a certain [`Token`] is reached and returns the entire span between now and that [`Token`].
+    #[must_use]
+    pub fn span_until(&mut self, token: Token) -> Span {
+        let start = self.current_span.start;
+        loop {
+            match self.next() {
+                Some(Ok(t)) if t == token => break,
+                Some(Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            }
+        }
+
+        Span {
+            start,
+            end: self.current_span.end,
+        }
     }
 
     /// Get a [`str`] slice of the current [`Token`].
