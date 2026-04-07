@@ -8,10 +8,7 @@ use bevy_egui::prelude::*;
 use chrono::prelude::*;
 use web_time::SystemTime;
 
-use crate::command::{
-    COMMAND_MESSAGE_NAME, COMMAND_MESSAGE_PREFIX, COMMAND_RESULT_NAME, COMMAND_RESULT_PREFIX,
-    ExecuteCommand,
-};
+use crate::command::{COMMAND_MESSAGE_NAME, COMMAND_RESULT_NAME, ExecuteCommand};
 use crate::logging::LogMessage;
 use crate::prelude::ConsoleConfig;
 
@@ -228,31 +225,12 @@ fn format_line(
         config.theme.format_dark(),
     );
     match *name {
-        COMMAND_MESSAGE_NAME => {
-            let message_stripped = message
-                .strip_prefix(COMMAND_MESSAGE_PREFIX)
-                .unwrap_or(message);
-            text.append(COMMAND_MESSAGE_PREFIX, 0.0, config.theme.format_dark());
-            ansi_to_layout_job(message_stripped, config, &mut text);
-            text
-        }
-        COMMAND_RESULT_NAME => {
-            text.append(COMMAND_RESULT_PREFIX, 0.0, config.theme.format_dark());
-            text.append(
-                message
-                    .strip_prefix(COMMAND_RESULT_PREFIX)
-                    .unwrap_or(message),
-                0.0,
-                config.theme.format_text(),
-            );
-            text
-        }
+        COMMAND_MESSAGE_NAME | COMMAND_RESULT_NAME => {}
         _ => {
             text.append(level.as_str(), 0.0, config.theme.format_level(*level));
             text.append(" ", 0.0, config.theme.format_text());
-            ansi_to_layout_job(message, config, &mut text);
-
-            text
         }
     }
+    ansi_to_layout_job(message, config, &mut text);
+    text
 }

@@ -160,17 +160,17 @@ pub fn eval_path(
                     span: expr.span,
                     value: Path::Resource(IntoResource::new(registration.type_id())),
                 })
-            } else if let Ok(variable) = environment.get(&variable, expr.span.clone()) {
+            } else { match environment.get(&variable, expr.span.clone()) { Ok(variable) => {
                 Ok(Spanned {
                     span: expr.span,
                     value: Path::Variable(variable.borrow()),
                 })
-            } else {
+            } _ => {
                 Ok(Spanned {
                     span: expr.span,
                     value: Path::NewVariable(variable),
                 })
-            }
+            }}}
         }
         Expression::Member { left, right } => {
             let left = eval_path(
@@ -252,7 +252,7 @@ pub fn eval_path(
                         .ok_or(EvalError::ReferenceToMovedData(path.span))?;
                     let borrow = strong.borrow();
 
-                    if let Value::Reference(ref reference) = &*borrow {
+                    if let Value::Reference(reference) = &*borrow {
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
                         Err(EvalError::CannotDereferenceValue(

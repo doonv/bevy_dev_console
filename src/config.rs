@@ -59,7 +59,7 @@ pub struct ConsoleTheme {
 
 /// Helper trait that allows conversion between [`bevy::Color`](Color) and [`egui::Color32`](bevy_egui::egui::Color32).
 pub trait ToColor32 {
-    /// Convert this [`bevy::Color`](Color) to a [`egui::Color32`].
+    /// Convert this [`bevy::Color`](Color) to a [`egui::Color32`](Color32).
     fn to_color32(&self) -> Color32;
 }
 impl ToColor32 for Color {

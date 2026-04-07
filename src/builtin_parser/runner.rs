@@ -8,8 +8,6 @@ use bevy::reflect::{
     DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, TypeRegistration, VariantInfo,
 };
 
-use crate::command::{COMMAND_RESULT_NAME, COMMAND_RESULT_PREFIX};
-
 use self::error::EvalError;
 use self::member::{Path, eval_member_expression, eval_path};
 use self::reflection::{CreateRegistration, IntoResource, object_to_dynamic_struct};
@@ -38,7 +36,7 @@ macro_rules! todo_error {
     };
     ($($arg:tt)+) => {
         Err(EvalError::Custom {
-            text: format!(concat!("todo error invoked at ", file!(), ":", line!(), ":", column!(), " : {}"), format_args!($($arg)+)).into(),
+            text: format!(concat!("todo error invoked at ", file!(), ":", line!(), ":", column!(), ": {}"), format_args!($($arg)+)).into(),
             span: 0..0
         })?
     };
@@ -89,7 +87,7 @@ impl From<EvalError> for ExecutionError {
     }
 }
 
-pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
+pub fn run(ast: Ast, world: &mut World) -> Result<Option<String>, ExecutionError> {
     // Temporarily remove the [`Environment`] resource to gain
     // mutability without needing a mutable reference.
     let mut environment = world
@@ -116,7 +114,7 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
                     .is_some()
             })
             .collect();
-
+        let mut last_value = None;
         for mut statement in ast {
             fn autoborrow(statement: Spanned<Expression>) -> Spanned<Expression> {
                 let value = match statement.value {
@@ -148,17 +146,13 @@ pub fn run(ast: Ast, world: &mut World) -> Result<(), ExecutionError> {
                 },
             )?;
 
-            match value {
-                Value::None => {}
-                value => {
-                    let value = value.try_format(span, world, &registrations)?;
-
-                    info!(name: COMMAND_RESULT_NAME, "{}{value}", COMMAND_RESULT_PREFIX);
-                }
+            last_value = match value {
+                Value::None => None,
+                value => Some(value.try_format(span, world, &registrations)?),
             }
         }
 
-        Ok(())
+        Ok(last_value)
     })();
 
     // Add back the resources

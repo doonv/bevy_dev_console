@@ -7,6 +7,8 @@ use bevy::reflect::Reflect;
 use kinded::Kinded;
 use logos::Span;
 
+use crate::builtin_parser::YELLOW;
+
 use super::{EvalError, SpanExtension, Spanned};
 
 /// An enum that contains any type of number.
@@ -85,27 +87,27 @@ impl Number {
 impl Display for Number {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Number::Float(number) => write!(f, "{number} (float)"),
-            Number::Integer(number) => write!(f, "{number} (integer)"),
-            Number::u8(number) => write!(f, "{number} (u8)"),
-            Number::u16(number) => write!(f, "{number} (u16)"),
-            Number::u32(number) => write!(f, "{number} (u32)"),
-            Number::u64(number) => write!(f, "{number} (u64)"),
-            Number::usize(number) => write!(f, "{number} (usize)"),
-            Number::i8(number) => write!(f, "{number} (i8)"),
-            Number::i16(number) => write!(f, "{number} (i16)"),
-            Number::i32(number) => write!(f, "{number} (i32)"),
-            Number::i64(number) => write!(f, "{number} (i64)"),
-            Number::isize(number) => write!(f, "{number} (isize)"),
-            Number::f32(number) => write!(f, "{number} (f32)"),
-            Number::f64(number) => write!(f, "{number} (f64)"),
+            Number::Float(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (float)"),
+            Number::Integer(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (integer)"),
+            Number::u8(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u8)"),
+            Number::u16(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u16)"),
+            Number::u32(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u32)"),
+            Number::u64(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u64)"),
+            Number::usize(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (usize)"),
+            Number::i8(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i8)"),
+            Number::i16(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i16)"),
+            Number::i32(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i32)"),
+            Number::i64(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i64)"),
+            Number::isize(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (isize)"),
+            Number::f32(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (f32)"),
+            Number::f64(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (f64)"),
         }
     }
 }
 
 impl NumberKind {
     /// Converts this [`NumberKind`] into a [`&'static str`](str)
-    /// You may want to use [`natural_kind`](Self::natural_kind)
+    /// You may want to use [`as_natural`](Self::as_natural)
     /// instead for more natural sounding error messages
     pub const fn as_str(&self) -> &'static str {
         match self {
@@ -158,7 +160,10 @@ impl Display for NumberKind {
 }
 
 macro_rules! impl_op {
-    ($fn:ident, $op:tt, $checked:ident)=> {
+    ($fn:ident, $op:tt, $checked:ident) => {
+        impl_op!($fn, $op, $checked, stringify!($fn));
+    };
+    ($fn:ident, $op:tt, $checked:ident, $name:expr) => {
         impl Number {
             #[doc = concat!("Performs the `", stringify!($op), "` calculation.")]
             pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, EvalError> {
@@ -221,10 +226,10 @@ macro_rules! impl_op {
 }
 
 impl_op!(add, +, checked_add);
-impl_op!(sub, -, checked_sub);
-impl_op!(mul, *, checked_mul);
-impl_op!(div, /, checked_div);
-impl_op!(rem, %, checked_rem);
+impl_op!(sub, -, checked_sub, "subtract");
+impl_op!(mul, *, checked_mul, "multiply");
+impl_op!(div, /, checked_div, "divide");
+impl_op!(rem, %, checked_rem, "mod");
 
 macro_rules! impl_op_spanned {
     ($trait:ident, $method:ident) => {

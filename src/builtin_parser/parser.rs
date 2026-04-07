@@ -176,6 +176,7 @@ pub enum ParseError {
     },
     ExpectedEndline(Spanned<Token>),
     ExpectedLiteral(Spanned<Token>),
+    InvalidSuffixForNumber(Spanned<String>, bool),
     InvalidSuffixForFloat(Spanned<String>),
     NegativeIntOverflow {
         span: Span,
@@ -212,6 +213,7 @@ impl ParseError {
             E::ExpectedTokenButGot { span, .. } => span,
             E::ExpectedEndline(Spanned { span, value: _ }) => span,
             E::ExpectedLiteral(Spanned { span, value: _ }) => span,
+            E::InvalidSuffixForNumber(Spanned { span, .. }, ..) => span,
             E::InvalidSuffixForFloat(Spanned { span, value: _ }) => span,
             E::PositiveIntOverflow { span, .. } => span,
             E::NegativeIntOverflow { span, .. } => span,
@@ -227,7 +229,6 @@ impl ParseError {
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         use ParseError as E;
-
         match self {
             E::FailedToLexCharacters(Spanned { span: _, value }) => {
                 write!(f, "unknown token character: {value}")
@@ -246,12 +247,26 @@ impl std::fmt::Display for ParseError {
                 f,
                 "expected a literal token, got {value:?} which is not a valid literal."
             ),
+            E::InvalidSuffixForNumber(Spanned { span: _, value }, is_float) => {
+                write!(f, "invalid suffix `{value}` for number literal. ")?;
+                if *is_float {
+                    write!(
+                        f,
+                        "the suffix must be one of the float types (`f32`, `f64`)"
+                    )
+                } else {
+                    write!(
+                        f,
+                        "the suffix must be one of the numeric types (`u32`, `isize`, `f32`, etc.)"
+                    )
+                }
+            }
             E::InvalidSuffixForFloat(Spanned {
                 span: _,
                 value: suffix,
             }) => write!(
                 f,
-                r#""{suffix}" is an invalid suffix for a float. The only valid suffixes are "f32" and "f64"."#
+                r#""{suffix}" is an invalid suffix for a float. the valid suffixes are "f32" and "f64"."#
             ),
             E::NegativeIntOverflow {
                 span: _,
@@ -280,10 +295,13 @@ impl std::fmt::Display for ParseError {
                 f,
                 "expected an identifier or integer when accessing member of variable, got {got:?} instead."
             ),
-            E::UnsupportedFeature { ty, span: _, issue } => write!(
-                f,
-                "{ty} are not yet supported. see bevy_dev_console issue #{issue}"
-            ),
+            &E::UnsupportedFeature { ty, span: _, issue } => {
+                write!(f, "{ty} are not yet supported. ")?;
+                if issue != 0 {
+                    write!(f, "see bevy_dev_console issue #{issue}")?;
+                }
+                Ok(())
+            }
             E::MismatchedDelimiter { delimiter, span: _ } => {
                 write!(f, "unexpected closing delimiter: `{delimiter}`")
             }
@@ -294,8 +312,6 @@ impl std::error::Error for ParseError {}
 
 const FLOAT_PARSE_EXPECT_REASON: &str =
     "Float parsing errors are handled by the lexer, and floats cannot overflow.";
-const NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON: &str =
-    "Lexer guarantees `NumberType`'s slice to be included one of the match arms.";
 
 pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
     let mut ast = Vec::new();
@@ -337,6 +353,11 @@ fn parse_expression(
             ty: "for loops",
             span: tokens.peek_span(),
             issue: 8,
+        }),
+        Some(Ok(Token::If)) => Err(ParseError::UnsupportedFeature {
+            ty: "if statements",
+            span: tokens.discard().span_until(Token::RightBracket),
+            issue: 0,
         }),
         Some(Ok(_)) => {
             let expr = parse_additive(tokens, environment)?;
@@ -546,36 +567,29 @@ fn parse_value(
                 parse_number(tokens).map(|s| s.map(Expression::Number))
             }
             Some(Ok(Token::FloatNumber)) => {
-                if let Some(Ok(Token::NumberType)) = tokens.peek() {
-                    let number: Number = match tokens.peek_slice() {
-                        "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
-                        | "isize" => Err(ParseError::InvalidSuffixForFloat(
-                            tokens.span().wrap(tokens.slice().to_string()),
-                        ))?,
-                        "f32" => {
-                            Number::f32(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON))
-                        }
-                        "f64" => {
-                            Number::f64(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON))
-                        }
-                        _ => unreachable!("{NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON}"),
-                    };
-                    let start_span = tokens.span().end;
+                let (number, suffix) = split_number(tokens);
+                let number: Number = match suffix {
+                    "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
+                    | "isize" => Err(ParseError::InvalidSuffixForFloat(
+                        tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
+                    ))?,
+                    "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+                    "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+                    _ => {
+                        return Err(ParseError::InvalidSuffixForNumber(
+                            tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
+                            true,
+                        ));
+                    }
+                };
+                let start_span = tokens.span().end;
 
-                    tokens.next();
+                tokens.next();
 
-                    Ok(Spanned {
-                        span: start_span..tokens.span().end,
-                        value: Expression::Number(number),
-                    })
-                } else {
-                    let number = Number::Float(tokens.slice().parse().unwrap());
-
-                    Ok(Spanned {
-                        span: tokens.span(),
-                        value: Expression::Number(number),
-                    })
-                }
+                Ok(Spanned {
+                    span: start_span..tokens.span().end,
+                    value: Expression::Number(number),
+                })
             }
             Some(Ok(Token::True)) => Ok(tokens.span().wrap(Expression::Boolean(true))),
             Some(Ok(Token::False)) => Ok(tokens.span().wrap(Expression::Boolean(false))),
@@ -674,72 +688,44 @@ fn map_parseint_error<'s>(
 }
 
 fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
-    if let Some(Ok(Token::NumberType)) = tokens.peek() {
-        let number: Number = match tokens.peek_slice() {
-            "u8" => Number::u8(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "u8",
-            ))?),
-            "u16" => Number::u16(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "u16",
-            ))?),
-            "u32" => Number::u32(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "u32",
-            ))?),
-            "u64" => Number::u64(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "u64",
-            ))?),
-            "usize" => Number::usize(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "usize",
-            ))?),
-            "i8" => Number::i8(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "i8",
-            ))?),
-            "i16" => Number::i16(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "i16",
-            ))?),
-            "i32" => Number::i32(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "i32",
-            ))?),
-            "isize" => Number::isize(tokens.slice().parse().map_err(map_parseint_error(
-                tokens.span(),
-                tokens.slice(),
-                "isize",
-            ))?),
-            "f32" => Number::f32(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON)),
-            "f64" => Number::f64(tokens.slice().parse().expect(FLOAT_PARSE_EXPECT_REASON)),
-            _ => unreachable!("{}", NUMBER_TYPE_WILDCARD_UNREACHABLE_REASON),
-        };
-        let start_span = tokens.span().end;
-        tokens.next();
+    let (number, suffix) = split_number(tokens);
+    let map = |s| map_parseint_error(tokens.span(), tokens.slice(), s);
+    let number = match suffix {
+        "u8" => Number::u8(number.parse().map_err(map("u8"))?),
+        "u16" => Number::u16(number.parse().map_err(map("u16"))?),
+        "u32" => Number::u32(number.parse().map_err(map("u32"))?),
+        "u64" => Number::u64(number.parse().map_err(map("u64"))?),
+        "usize" => Number::usize(number.parse().map_err(map("usize"))?),
+        "i8" => Number::i8(number.parse().map_err(map("i8"))?),
+        "i16" => Number::i16(number.parse().map_err(map("i16"))?),
+        "i32" => Number::i32(number.parse().map_err(map("i32"))?),
+        "isize" => Number::isize(number.parse().map_err(map("isize"))?),
+        "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+        "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+        "" => Number::Integer(number.parse().unwrap()),
+        _ => {
+            return Err(ParseError::InvalidSuffixForNumber(
+                tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
+                false,
+            ));
+        }
+    };
+    Ok(Spanned {
+        span: tokens.span(),
+        value: number,
+    })
+}
 
-        Ok(Spanned {
-            span: start_span..tokens.span().end,
-            value: number,
-        })
-    } else {
-        let number = Number::Integer(tokens.slice().parse().unwrap());
+fn split_number<'s>(tokens: &'s TokenStream<'_>) -> (&'s str, &'s str) {
+    let s = tokens.slice();
+    let i = s
+        .as_bytes()
+        .iter()
+        .position(|b| b.is_ascii_alphabetic() || *b == b'_')
+        .unwrap_or(s.len());
 
-        Ok(Spanned {
-            span: tokens.span(),
-            value: number,
-        })
-    }
+    let (number, suffix) = s.split_at(i);
+    (number, suffix)
 }
 
 fn parse_var_assign(
@@ -749,7 +735,7 @@ fn parse_var_assign(
 ) -> Result<Spanned<Expression>, ParseError> {
     tokens.next(); // We already know that the next token is an equals
 
-    let value = parse_additive(tokens, environment)?;
+    let value = parse_expression(tokens, environment)?;
 
     Ok(Spanned {
         span: name.span.start..value.span.end,

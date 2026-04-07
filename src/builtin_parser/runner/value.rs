@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 
 use crate::builtin_parser::number::Number;
-use crate::builtin_parser::{Environment, NumberKind, StrongRef, UniqueRc};
+use crate::builtin_parser::{
+    BRIGHT_YELLOW, Environment, GREEN, NumberKind, RED, StrongRef, UniqueRc, YELLOW,
+};
 
 use super::super::Spanned;
 use super::environment::FunctionParam;
@@ -112,15 +114,12 @@ impl Value {
         match self {
             Value::None => Ok(format!("()")),
             Value::Number(number) => Ok(format!("{number}")),
-            Value::Boolean(bool) => Ok(format!("{bool}")),
-            Value::String(string) => Ok(format!("\"{string}\"")),
-            Value::Reference(reference) => {
-                if let Some(rc) = reference.upgrade() {
-                    Ok(rc.borrow().try_format(span, world, registrations)?)
-                } else {
-                    Err(EvalError::ReferenceToMovedData(span))
-                }
-            }
+            Value::Boolean(bool) => Ok(format!("{YELLOW}{bool}{YELLOW:#}")),
+            Value::String(string) => Ok(format!("{GREEN}\"{string}\"{GREEN:#}")),
+            Value::Reference(reference) => match reference.upgrade() {
+                Some(rc) => Ok(rc.borrow().try_format(span, world, registrations)?),
+                _ => Err(EvalError::ReferenceToMovedData(span)),
+            },
             Value::Object(map) => {
                 let mut string = String::new();
                 string.push('{');
@@ -397,8 +396,15 @@ fn fancy_debug_print(
                     VariantType::Unit => {}
                 }
             }
-            ReflectRef::Opaque(_) => {
-                f += &format!("{reflect:?}");
+            ReflectRef::Opaque(reflect) => {
+                let Some(TypeInfo::Opaque(opaque)) = reflect.get_represented_type_info() else {
+                    return format!("{reflect:?}");
+                };
+                if opaque.is::<String>() {
+                    return format!("{GREEN}{reflect:?}{GREEN:#}");
+                } else {
+                    return format!("{YELLOW}{reflect:?}{YELLOW:#}");
+                }
             }
             ReflectRef::Set(_) => todo!(),
         }
@@ -417,7 +423,7 @@ fn fancy_debug_print(
 
                 let field_value = debug_subprint(field, 1);
                 f += &format!(
-                    "{TAB}{}: {} = {},\n",
+                    "{TAB}{RED}{}{RED:#}: {BRIGHT_YELLOW}{}{BRIGHT_YELLOW:#} = {},\n",
                     field_name,
                     field.reflect_short_type_path(),
                     field_value

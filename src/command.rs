@@ -3,10 +3,6 @@
 use bevy::prelude::*;
 use std::ops::Range;
 
-/// Prefix for log messages that show a previous command.
-pub const COMMAND_MESSAGE_PREFIX: &str = "$ ";
-/// Prefix for log messages that show the result of a command.
-pub const COMMAND_RESULT_PREFIX: &str = "> ";
 /// Identifier for log messages that show a previous command.
 pub const COMMAND_MESSAGE_NAME: &str = "console_command";
 /// Identifier for log messages that show the result of a command.
@@ -24,10 +20,13 @@ pub fn format_command_with_hints(command: &str, spans: &[Range<usize>]) -> Strin
         if span.start > last_end {
             result.push_str(&command[last_end..span.start]);
         }
-        // I've tried several ansi crates and none of them properly support colored and curly underline,
-        // so we have to use a manual implementation
+
+        const RED_UNDERLINE: anstyle::Style = anstyle::Style::new()
+            .effects(anstyle::Effects::CURLY_UNDERLINE)
+            .underline_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Red)));
+
         let highlighted = format!(
-            "\x1b[4:3m\x1b[58;5;1m{}\x1b[0m",
+            "{RED_UNDERLINE}{}{RED_UNDERLINE:#}",
             &command[span.start..span.end]
         );
         result.push_str(&highlighted);
@@ -111,12 +110,12 @@ pub struct CompletionSuggestion {
 pub(crate) struct ExecuteCommand(pub String);
 impl Command for ExecuteCommand {
     fn apply(self, world: &mut World) {
-        if let Some(parser) = world.remove_resource::<DefaultCommandParser>() {
+        match world.remove_resource::<DefaultCommandParser>() { Some(parser) => {
             parser.parse(&self.0, world);
             world.insert_resource(parser);
-        } else {
+        } _ => {
             error!("Default command parser doesn't exist, cannot execute command.");
-        }
+        }}
     }
 }
 

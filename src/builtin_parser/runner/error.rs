@@ -11,7 +11,7 @@ use crate::builtin_parser::{NumberKind, Spanned};
 
 use super::Value;
 
-/// An error occurring during the while executing the [`AST`](crate::builtin_parser::parser::Ast) of the command.
+/// An error occurring during the while evaluating the command.
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub enum EvalError {
@@ -212,7 +212,7 @@ impl std::fmt::Display for EvalError {
                 right,
                 operation,
                 span: _,
-            } => write!(f, "Invalid operation: Cannot {operation} {left} by {right}"),
+            } => write!(f, "cannot {operation} {left} by {right}"),
             E::IncorrectAccessOperation {
                 expected_access,
                 expected_type,

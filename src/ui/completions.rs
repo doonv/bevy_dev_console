@@ -69,38 +69,37 @@ pub fn completions(
                 ui.memory_mut(|_| popup_open = false);
             }
         }
-        if let Some(cursor_index) = cursor_index {
-            if ui.input(|i| i.key_pressed(egui::Key::Tab)) {
-                // Remove the old text
-                let before_cursor = &state.command[..=cursor_index];
-                let index_before = before_cursor
-                    .rfind(non_keyword)
-                    .map_or(0, |index| index + 1);
-                let after_cursor = &state.command[cursor_index..];
-                match after_cursor.find(non_keyword) {
-                    Some(characters_after) => state
-                        .command
-                        .drain(index_before..cursor_index + characters_after),
-                    None => state.command.drain(index_before..),
-                };
-                // Add the completed text
-                let completed_text = &completions.0[state.selected_completion].suggestion;
+        if let Some(cursor_index) = cursor_index
+            && let Some(suggestion) = &completions.0.get(state.selected_completion)
+            && ui.input(|i| i.key_pressed(egui::Key::Tab))
+        {
+            // Remove the old text
+            let before_cursor = &state.command[..=cursor_index];
+            let index_before = before_cursor
+                .rfind(non_keyword)
+                .map_or(0, |index| index + 1);
+            let after_cursor = &state.command[cursor_index..];
+            match after_cursor.find(non_keyword) {
+                Some(characters_after) => state
+                    .command
+                    .drain(index_before..cursor_index + characters_after),
+                None => state.command.drain(index_before..),
+            };
+            // Add the completed text
+            let completed_text = &suggestion.suggestion;
+            state.command.insert_str(index_before, completed_text);
 
-                state.command.insert_str(index_before, completed_text);
+            // Set the cursor position
+            let mut text_edit_state = text_edit.state;
 
-                // Set the cursor position
-                let mut text_edit_state = text_edit.state;
+            let mut cursor_range = egui::text::CCursorRange::two(primary, secondary);
 
-                let mut cursor_range = egui::text::CCursorRange::two(primary, secondary);
+            cursor_range.primary.index += completed_text.len() - (cursor_index - index_before) - 1;
+            cursor_range.secondary.index +=
+                completed_text.len() - (cursor_index - index_before) - 1;
 
-                cursor_range.primary.index +=
-                    completed_text.len() - (cursor_index - index_before) - 1;
-                cursor_range.secondary.index +=
-                    completed_text.len() - (cursor_index - index_before) - 1;
-
-                text_edit_state.cursor.set_char_range(Some(cursor_range));
-                egui::TextEdit::store_state(ui.ctx(), text_edit_id, text_edit_state);
-            }
+            text_edit_state.cursor.set_char_range(Some(cursor_range));
+            egui::TextEdit::store_state(ui.ctx(), text_edit_id, text_edit_state);
         }
     }
     Popup::new(

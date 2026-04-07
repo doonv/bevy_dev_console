@@ -1,4 +1,5 @@
 use ansitok::{AnsiColor, ElementKind, Output, VisualAttribute};
+use bevy::color::Color;
 use bevy::log::error_once;
 use bevy_egui::egui::text::LayoutJob;
 use bevy_egui::egui::{Color32, Stroke};
@@ -16,6 +17,9 @@ pub fn ansi_to_layout_job(input: &str, config: &ConsoleConfig, job: &mut LayoutJ
             33 => theme.warning,
             34 => theme.debug,
             35 => theme.trace,
+
+            90 => theme.dark,
+            93 => Color::srgb(0.9, 0.75, 0.48),
 
             _ => todo!(),
         }
@@ -36,7 +40,7 @@ pub fn ansi_to_layout_job(input: &str, config: &ConsoleConfig, job: &mut LayoutJ
             ElementKind::Sgr => match ansitok::parse_ansi_sgr(text).next().unwrap() {
                 Output::Escape(esc) => match esc {
                     VisualAttribute::Bold => todo!(),
-                    VisualAttribute::Faint => todo!(),
+                    VisualAttribute::Faint => current_format.color = theme.text_color.to_color32(),
                     VisualAttribute::Italic => current_format.italics = true,
                     VisualAttribute::FgColor(ansi_color) => {
                         current_format.color = ansi_to_color32(ansi_color);

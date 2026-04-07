@@ -2,7 +2,7 @@
 [package]
 name = "bevy_dev_console"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 exclude = ["assets/", "docs/", ".github/"]
 keywords = ["bevy", "console", "development", "source"]
 license = "MIT OR Apache-2.0"
@@ -33,6 +33,7 @@ web-time = "1.1.0"
 winit = "0.30.13"
 nu-ansi-term = "0.50.3"
 ansitok = "0.3.0"
+anstyle = "1.0.14"
 
 # builtin-parser features
 logos = { version = "0.16.0", optional = true }

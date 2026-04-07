@@ -9,9 +9,14 @@ use logos::Span;
 
 use crate::builtin_parser::runner::ExecutionError;
 use crate::command::{
-    COMMAND_MESSAGE_NAME, COMMAND_MESSAGE_PREFIX, CommandParser, DefaultCommandParser,
+    COMMAND_MESSAGE_NAME, COMMAND_RESULT_NAME, CommandParser, DefaultCommandParser,
     format_command_with_hints,
 };
+
+/// Prefix for log messages that show a previous command.
+const COMMAND_MESSAGE_PREFIX: &str = "$ ";
+/// Prefix for log messages that show the result of a command.
+const COMMAND_RESULT_PREFIX: &str = "> ";
 
 #[cfg(feature = "builtin-parser-completions")]
 use crate::command::CompletionSuggestion;
@@ -29,7 +34,17 @@ pub use runner::environment::Environment;
 pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
 
-/// Additional traits for span.
+const fn color(color: anstyle::AnsiColor) -> anstyle::Style {
+    anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(color)))
+}
+
+const GRAY: anstyle::Style = color(anstyle::AnsiColor::BrightBlack);
+const RED: anstyle::Style = color(anstyle::AnsiColor::Red);
+const YELLOW: anstyle::Style = color(anstyle::AnsiColor::Yellow);
+const BRIGHT_YELLOW: anstyle::Style = color(anstyle::AnsiColor::BrightYellow);
+const GREEN: anstyle::Style = color(anstyle::AnsiColor::Green);
+
+/// Additional methods for [`Span`].
 pub trait SpanExtension {
     /// Wrap this value with a [`Spanned`].
     #[must_use]
@@ -37,6 +52,9 @@ pub trait SpanExtension {
     /// Combine two [`Span`]s into one.
     #[must_use]
     fn join(self, span: Self) -> Self;
+
+    #[must_use]
+    fn add(self, range: Span) -> Self;
 }
 impl SpanExtension for Span {
     #[inline]
@@ -46,6 +64,12 @@ impl SpanExtension for Span {
     #[inline]
     fn join(self, span: Self) -> Self {
         self.start..span.end
+    }
+    fn add(self, range: Span) -> Self {
+        Span {
+            start: self.start + range.start,
+            end: self.end + range.end,
+        }
     }
 }
 
@@ -89,8 +113,11 @@ impl CommandParser for BuiltinCommandParser {
 
         match ast {
             Ok(ast) => match runner::run(ast, world) {
-                Ok(()) => {
-                    info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{command}");
+                Ok(value) => {
+                    info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{command}");
+                    if let Some(value) = value {
+                        info!(name: COMMAND_RESULT_NAME, "{GRAY}{COMMAND_RESULT_PREFIX}{GRAY:#}{value}");
+                    }
                 }
                 Err(error) => {
                     let spans = if let ExecutionError::Eval(eval_error) = &error {
@@ -99,13 +126,13 @@ impl CommandParser for BuiltinCommandParser {
                         vec![]
                     };
                     let highlighted = format_command_with_hints(command, &spans);
-                    info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{highlighted}");
+                    info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
                     error!("{error}");
                 }
             },
             Err(err) => {
                 let highlighted = format_command_with_hints(command, &[err.span()]);
-                info!(name: COMMAND_MESSAGE_NAME, "{COMMAND_MESSAGE_PREFIX}{highlighted}");
+                info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
                 error!("{err}");
             }
         }

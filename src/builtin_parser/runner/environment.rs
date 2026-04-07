@@ -16,25 +16,35 @@ use super::error::EvalError;
 use super::unique_rc::UniqueRc;
 use super::{EvalParams, Value, eval_expression, stdlib};
 
-/// Macro for mass registering functions.
+/// Macro for mass registering functions to an [`Environment`].
+///
+/// ## Usage
+/// ```
+/// fn my_func() {}
+///
+/// # use bevy_dev_console::register;
+/// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
+/// register!(environment => fn my_func);
+/// ```
 ///
 /// ```
-/// fn a() {}
-/// fn b() {}
-/// fn c() {}
+/// # use bevy::prelude::World;
+/// fn pow2(n: i32) -> i32 { n * n }
+/// fn add(a: f32, b: f32) -> f32 { a + b }
+/// fn toggle_debug(world: &mut World) { /* ... */ }
 ///
 /// # use bevy_dev_console::register;
 /// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
 /// register!(environment => {
-///     fn a;
-///     fn b;
-///     fn c;
+///     fn pow2;
+///     fn add;
+///     fn toggle_debug as "d";
 /// });
 /// ```
 #[macro_export]
 macro_rules! register {
     {
-        $environment:expr => fn $fn_name:ident;
+        $environment:expr => fn $fn_name:ident
     } => {
         $environment
             .register_fn(stringify!($fn_name), $fn_name)
