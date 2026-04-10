@@ -4,12 +4,33 @@ use bevy::reflect::ApplyError;
 use kinded::Kinded;
 use logos::Span;
 
-use crate::builtin_parser::number::Number;
-use crate::builtin_parser::parser::{Access, ExpressionKind};
+use crate::builtin_parser::Spanned;
+use crate::builtin_parser::number::{Number, NumberKind};
+use crate::builtin_parser::parser::{Access, AccessKind, ExpressionKind};
 use crate::builtin_parser::runner::value::ValueKind;
-use crate::builtin_parser::{NumberKind, Spanned};
 
 use super::Value;
+
+#[derive(Debug, Clone, Copy)]
+pub enum Operation {
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
+    Mod,
+}
+
+impl std::fmt::Display for Operation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Operation::Add => write!(f, "add"),
+            Operation::Subtract => write!(f, "subtract"),
+            Operation::Multiply => write!(f, "multiply"),
+            Operation::Divide => write!(f, "divide"),
+            Operation::Mod => write!(f, "mod"),
+        }
+    }
+}
 
 /// An error occurring during the while evaluating the command.
 #[derive(Debug)]
@@ -24,7 +45,7 @@ pub enum EvalError {
     InvalidOperation {
         left: Number,
         right: Number,
-        operation: &'static str,
+        operation: Operation,
         span: Span,
     },
     VariableNotFound(Spanned<String>),
@@ -68,7 +89,7 @@ pub enum EvalError {
     },
     IncorrectAccessOperation {
         span: Span,
-        expected_access: &'static [&'static str],
+        expected_access: &'static [AccessKind],
         expected_type: &'static str,
         got: Access,
     },
@@ -218,12 +239,18 @@ impl std::fmt::Display for EvalError {
                 expected_type,
                 got,
                 span: _,
-            } => write!(
-                f,
-                "Expected {} access to access {expected_type} but got {:#}",
-                expected_access.join(" and "),
-                got.kind()
-            ),
+            } => {
+                let expected_access = expected_access
+                    .iter()
+                    .map(|kind| kind.as_natural())
+                    .collect::<Vec<_>>()
+                    .join(" and ");
+                write!(
+                    f,
+                    "Expected {expected_access} access to access {expected_type} but got {:#}",
+                    got.kind()
+                )
+            }
             E::FieldNotFoundInStruct(Spanned { span: _, value }) => {
                 write!(f, "Field {value} not found in struct")
             }

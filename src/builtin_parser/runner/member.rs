@@ -6,7 +6,8 @@ use crate::builtin_parser::parser::{Access, Expression, access_unwrap};
 use crate::builtin_parser::{EvalError, SpanExtension, Spanned, WeakRef};
 
 use super::reflection::IntoResource;
-use super::{EvalParams, Value, eval_expression, todo_error};
+use super::{EvalParams, Value, eval_expression};
+use crate::todo_error;
 
 /// Evaluate a member expression.
 ///
@@ -160,17 +161,18 @@ pub fn eval_path(
                     span: expr.span,
                     value: Path::Resource(IntoResource::new(registration.type_id())),
                 })
-            } else { match environment.get(&variable, expr.span.clone()) { Ok(variable) => {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::Variable(variable.borrow()),
-                })
-            } _ => {
-                Ok(Spanned {
-                    span: expr.span,
-                    value: Path::NewVariable(variable),
-                })
-            }}}
+            } else {
+                match environment.get(&variable, expr.span.clone()) {
+                    Ok(variable) => Ok(Spanned {
+                        span: expr.span,
+                        value: Path::Variable(variable.borrow()),
+                    }),
+                    _ => Ok(Spanned {
+                        span: expr.span,
+                        value: Path::NewVariable(variable),
+                    }),
+                }
+            }
         }
         Expression::Member { left, right } => {
             let left = eval_path(

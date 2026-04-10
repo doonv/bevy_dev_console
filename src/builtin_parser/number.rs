@@ -9,7 +9,8 @@ use logos::Span;
 
 use crate::builtin_parser::YELLOW;
 
-use super::{EvalError, SpanExtension, Spanned};
+use super::runner::error::{EvalError, Operation};
+use super::{SpanExtension, Spanned};
 
 /// An enum that contains any type of number.
 ///
@@ -160,19 +161,17 @@ impl Display for NumberKind {
 }
 
 macro_rules! impl_op {
-    ($fn:ident, $op:tt, $checked:ident) => {
-        impl_op!($fn, $op, $checked, stringify!($fn));
-    };
-    ($fn:ident, $op:tt, $checked:ident, $name:expr) => {
+    ($fn:ident, $op:tt, $checked:ident, $operation:ident) => {
         impl Number {
             #[doc = concat!("Performs the `", stringify!($op), "` calculation.")]
             pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, EvalError> {
                 let op_err = || EvalError::InvalidOperation {
                     left,
                     right,
-                    operation: stringify!($fn),
+                    operation: Operation::$operation,
                     span: span.clone(),
                 };
+
                 match (left, right) {
                     (Number::u8(left), Number::u8(right)) => Ok(Number::u8(left.$checked(right).ok_or_else(op_err)?)),
                     (Number::u16(left), Number::u16(right)) => Ok(Number::u16(left.$checked(right).ok_or_else(op_err)?)),
@@ -225,11 +224,11 @@ macro_rules! impl_op {
     };
 }
 
-impl_op!(add, +, checked_add);
-impl_op!(sub, -, checked_sub, "subtract");
-impl_op!(mul, *, checked_mul, "multiply");
-impl_op!(div, /, checked_div, "divide");
-impl_op!(rem, %, checked_rem, "mod");
+impl_op!(add, +, checked_add, Add);
+impl_op!(sub, -, checked_sub, Subtract);
+impl_op!(mul, *, checked_mul, Multiply);
+impl_op!(div, /, checked_div, Divide);
+impl_op!(rem, %, checked_rem, Mod);
 
 macro_rules! impl_op_spanned {
     ($trait:ident, $method:ident) => {

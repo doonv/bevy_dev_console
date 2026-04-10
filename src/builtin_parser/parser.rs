@@ -144,7 +144,7 @@ macro_rules! access_unwrap {
 
             // We have to put this in a `const` first to avoid a
             // `temporary value dropped while borrowed` error.
-            const EXPECTED_ACCESS: &[&str] = &[$(AccessKind::$variant.as_natural()),+];
+            const EXPECTED_ACCESS: &[AccessKind] = &[$(AccessKind::$variant),+];
             Err(EvalError::IncorrectAccessOperation {
                 span: val.span,
                 expected_access: EXPECTED_ACCESS,
@@ -165,6 +165,29 @@ pub enum Operator {
     Mod,
 }
 
+#[derive(Debug, Clone, Copy, Kinded)]
+pub enum UnsupportedFeature {
+    InfiniteLoops,
+    WhileLoops,
+    ForLoops,
+    IfStatements,
+    ListsAndVectors,
+    Closures,
+}
+
+impl UnsupportedFeature {
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::InfiniteLoops => "infinite loops",
+            Self::WhileLoops => "while loops",
+            Self::ForLoops => "for loops",
+            Self::IfStatements => "if statements",
+            Self::ListsAndVectors => "lists/vectors",
+            Self::Closures => "closures",
+        }
+    }
+}
+
 #[derive(Debug)]
 pub enum ParseError {
     FailedToLexCharacters(Spanned<String>),
@@ -181,12 +204,12 @@ pub enum ParseError {
     NegativeIntOverflow {
         span: Span,
         number: String,
-        number_kind: &'static str,
+        number_kind: crate::builtin_parser::number::NumberKind,
     },
     PositiveIntOverflow {
         span: Span,
         number: String,
-        number_kind: &'static str,
+        number_kind: crate::builtin_parser::number::NumberKind,
     },
     ExpectedObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
     ExpectedIndexer {
@@ -194,7 +217,7 @@ pub enum ParseError {
         span: Span,
     },
     UnsupportedFeature {
-        ty: &'static str,
+        ty: UnsupportedFeature,
         span: Span,
         issue: u8,
     },
@@ -274,7 +297,7 @@ impl std::fmt::Display for ParseError {
                 number_kind,
             } => write!(
                 f,
-                "{number} cannot be represented as a {number_kind} as it is too small."
+                "{number} cannot be represented as {number_kind:#} as it is too small."
             ),
             E::PositiveIntOverflow {
                 span: _,
@@ -282,7 +305,7 @@ impl std::fmt::Display for ParseError {
                 number_kind,
             } => write!(
                 f,
-                "{number} cannot be represented as a {number_kind} as it is too large."
+                "{number} cannot be represented as {number_kind:#} as it is too large."
             ),
             E::ExpectedObjectContinuation(Spanned {
                 span: _,
@@ -296,7 +319,7 @@ impl std::fmt::Display for ParseError {
                 "expected an identifier or integer when accessing member of variable, got {got:?} instead."
             ),
             &E::UnsupportedFeature { ty, span: _, issue } => {
-                write!(f, "{ty} are not yet supported. ")?;
+                write!(f, "{} are not yet supported. ", ty.as_str())?;
                 if issue != 0 {
                     write!(f, "see bevy_dev_console issue #{issue}")?;
                 }
@@ -340,22 +363,22 @@ fn parse_expression(
 ) -> Result<Spanned<Expression>, ParseError> {
     match tokens.peek() {
         Some(Ok(Token::Loop)) => Err(ParseError::UnsupportedFeature {
-            ty: "infinite loops",
+            ty: UnsupportedFeature::InfiniteLoops,
             span: tokens.peek_span(),
             issue: 8,
         }),
         Some(Ok(Token::While)) => Err(ParseError::UnsupportedFeature {
-            ty: "while loops",
+            ty: UnsupportedFeature::WhileLoops,
             span: tokens.peek_span(),
             issue: 8,
         }),
         Some(Ok(Token::For)) => Err(ParseError::UnsupportedFeature {
-            ty: "for loops",
+            ty: UnsupportedFeature::ForLoops,
             span: tokens.peek_span(),
             issue: 8,
         }),
         Some(Ok(Token::If)) => Err(ParseError::UnsupportedFeature {
-            ty: "if statements",
+            ty: UnsupportedFeature::IfStatements,
             span: tokens.discard().span_until(Token::RightBracket),
             issue: 0,
         }),
@@ -594,12 +617,12 @@ fn parse_value(
             Some(Ok(Token::True)) => Ok(tokens.span().wrap(Expression::Boolean(true))),
             Some(Ok(Token::False)) => Ok(tokens.span().wrap(Expression::Boolean(false))),
             Some(Ok(Token::LeftBrace)) => Err(ParseError::UnsupportedFeature {
-                ty: "lists/vectors",
+                ty: UnsupportedFeature::ListsAndVectors,
                 span: tokens.span_until(Token::RightBrace),
                 issue: 10,
             }),
             Some(Ok(Token::Pipe)) => Err(ParseError::UnsupportedFeature {
-                ty: "closures",
+                ty: UnsupportedFeature::Closures,
                 span: tokens.span_until(Token::Pipe),
                 issue: 12,
             }),
@@ -636,7 +659,7 @@ fn parse_value(
                 let right = tokens.slice().parse().map_err(map_parseint_error(
                     tokens.span(),
                     tokens.slice(),
-                    "usize",
+                    crate::builtin_parser::number::NumberKind::usize,
                 ))?;
 
                 expr = Spanned {
@@ -667,7 +690,7 @@ fn parse_value(
 fn map_parseint_error<'s>(
     span: Span,
     slice: &'s str,
-    number_kind: &'static str,
+    number_kind: crate::builtin_parser::number::NumberKind,
 ) -> impl FnOnce(std::num::ParseIntError) -> ParseError + 's {
     move |error| match error.kind() {
         IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow {
@@ -690,16 +713,17 @@ fn map_parseint_error<'s>(
 fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
     let (number, suffix) = split_number(tokens);
     let map = |s| map_parseint_error(tokens.span(), tokens.slice(), s);
+    use crate::builtin_parser::number::NumberKind;
     let number = match suffix {
-        "u8" => Number::u8(number.parse().map_err(map("u8"))?),
-        "u16" => Number::u16(number.parse().map_err(map("u16"))?),
-        "u32" => Number::u32(number.parse().map_err(map("u32"))?),
-        "u64" => Number::u64(number.parse().map_err(map("u64"))?),
-        "usize" => Number::usize(number.parse().map_err(map("usize"))?),
-        "i8" => Number::i8(number.parse().map_err(map("i8"))?),
-        "i16" => Number::i16(number.parse().map_err(map("i16"))?),
-        "i32" => Number::i32(number.parse().map_err(map("i32"))?),
-        "isize" => Number::isize(number.parse().map_err(map("isize"))?),
+        "u8" => Number::u8(number.parse().map_err(map(NumberKind::u8))?),
+        "u16" => Number::u16(number.parse().map_err(map(NumberKind::u16))?),
+        "u32" => Number::u32(number.parse().map_err(map(NumberKind::u32))?),
+        "u64" => Number::u64(number.parse().map_err(map(NumberKind::u64))?),
+        "usize" => Number::usize(number.parse().map_err(map(NumberKind::usize))?),
+        "i8" => Number::i8(number.parse().map_err(map(NumberKind::i8))?),
+        "i16" => Number::i16(number.parse().map_err(map(NumberKind::i16))?),
+        "i32" => Number::i32(number.parse().map_err(map(NumberKind::i32))?),
+        "isize" => Number::isize(number.parse().map_err(map(NumberKind::isize))?),
         "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
         "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
         "" => Number::Integer(number.parse().unwrap()),

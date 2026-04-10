@@ -110,12 +110,15 @@ pub struct CompletionSuggestion {
 pub(crate) struct ExecuteCommand(pub String);
 impl Command for ExecuteCommand {
     fn apply(self, world: &mut World) {
-        match world.remove_resource::<DefaultCommandParser>() { Some(parser) => {
-            parser.parse(&self.0, world);
-            world.insert_resource(parser);
-        } _ => {
-            error!("Default command parser doesn't exist, cannot execute command.");
-        }}
+        match world.remove_resource::<DefaultCommandParser>() {
+            Some(parser) => {
+                parser.parse(&self.0, world);
+                world.insert_resource(parser);
+            }
+            _ => {
+                error!("Default command parser doesn't exist, cannot execute command.");
+            }
+        }
     }
 }
 
