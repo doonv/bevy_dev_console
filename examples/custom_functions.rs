@@ -1,7 +1,9 @@
 //! An example showing how to create custom functions
 
 use bevy::prelude::*;
-use bevy_dev_console::builtin_parser::{Environment, EvalError, Number, Spanned, StrongRef, Value};
+use bevy_dev_console::builtin_parser::{
+    Environment, EvalError, Number, SpanExtension, Spanned, Value,
+};
 use bevy_dev_console::prelude::*;
 use bevy_dev_console::register;
 use web_time as time;
@@ -23,6 +25,11 @@ fn add(num1: f64, num2: f64) -> f64 {
     num1 + num2
 }
 
+/// A "Generic" function that works with any [`Number`] type.
+fn add_generic(num1: Spanned<Number>, num2: Spanned<Number>) -> Result<Number, EvalError> {
+    Number::add(num1.value, num2.value, num1.span.join(num2.span))
+}
+
 /// Function with any value + span
 fn print_debug_info(value: Spanned<Value>) {
     info!(
@@ -35,27 +42,17 @@ fn print_debug_info(value: Spanned<Value>) {
 struct MyCounter(u32);
 
 /// Function with [`World`]
-fn increment_global_counter(world: &mut World) -> u32 {
-    world.resource_scope(|_, mut counter: Mut<MyCounter>| {
-        counter.0 += 1;
+fn add_to_global_counter(num: u32, world: &mut World) -> u32 {
+    let mut counter = world.resource_mut::<MyCounter>();
 
-        counter.0
-    })
+    counter.0 += num;
+
+    counter.0
 }
 
-// Function with reference (Syntax subject to change soon)
-fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), EvalError> {
-    let span = number.span;
-    let mut reference = number.value.borrow_mut();
-    if let Value::Number(number) = &mut *reference {
-        *number = Number::add(*number, Number::Integer(1), span).unwrap();
-        Ok(())
-    } else {
-        Err(EvalError::Custom {
-            text: "Oh nooo".into(),
-            span,
-        })
-    }
+// Function with reference
+fn toggle_bool(value: &mut bool) {
+    *value = !*value;
 }
 
 // For more examples take a look at the standard library.
@@ -68,9 +65,10 @@ fn custom_environment() -> Environment {
     register!(&mut environment => {
         fn time_since_epoch;
         fn add;
+        fn add_generic;
         fn print_debug_info;
-        fn increment_global_counter;
-        fn increment_number;
+        fn add_to_global_counter;
+        fn toggle_bool;
     });
 
     environment

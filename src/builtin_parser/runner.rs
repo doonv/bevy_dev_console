@@ -69,6 +69,7 @@ impl std::fmt::Display for ExecutionError {
         }
     }
 }
+
 impl std::error::Error for ExecutionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
@@ -77,6 +78,7 @@ impl std::error::Error for ExecutionError {
         }
     }
 }
+
 impl From<EvalError> for ExecutionError {
     fn from(value: EvalError) -> Self {
         Self::Eval(value)

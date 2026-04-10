@@ -9,7 +9,7 @@ use logos::Span;
 
 use crate::builtin_parser::YELLOW;
 
-use super::runner::error::{EvalError, Operation};
+use super::runner::error::EvalError;
 use super::{SpanExtension, Spanned};
 
 /// An enum that contains any type of number.
@@ -110,6 +110,7 @@ impl NumberKind {
     /// Converts this [`NumberKind`] into a [`&'static str`](str)
     /// You may want to use [`as_natural`](Self::as_natural)
     /// instead for more natural sounding error messages
+    #[must_use]
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Float => "float",
@@ -123,7 +124,7 @@ impl NumberKind {
             Self::i16 => "i16",
             Self::i32 => "i32",
             Self::i64 => "i64",
-            Self::isize => "usize",
+            Self::isize => "isize",
             Self::f32 => "f32",
             Self::f64 => "f64",
         }
@@ -131,6 +132,7 @@ impl NumberKind {
 
     /// Returns the kind of [`Number`] as a [string slice](str) with an `a` or `an` prepended to it.
     /// Used for more natural sounding error messages.
+    #[must_use]
     pub const fn as_natural(&self) -> &'static str {
         match self {
             Self::Float => "a float",
@@ -144,7 +146,7 @@ impl NumberKind {
             Self::i16 => "a i16",
             Self::i32 => "a i32",
             Self::i64 => "a i64",
-            Self::isize => "a usize",
+            Self::isize => "a isize",
             Self::f32 => "a f32",
             Self::f64 => "a f64",
         }
@@ -161,15 +163,22 @@ impl Display for NumberKind {
 }
 
 macro_rules! impl_op {
-    ($fn:ident, $op:tt, $checked:ident, $operation:ident) => {
+    ($fn:ident, $op:tt, $checked:ident, $operation:literal) => {
         impl Number {
-            #[doc = concat!("Performs the `", stringify!($op), "` calculation.")]
+            #[doc = concat!("Performs `", stringify!($op), "` on two [`Number`]s.")]
+            ///
+            /// The `span` argument is used for errors.
             pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, EvalError> {
                 let op_err = || EvalError::InvalidOperation {
                     left,
                     right,
-                    operation: Operation::$operation,
+                    operation: $operation,
                     span: span.clone(),
+                };
+                let from_map = |value, ty| EvalError::ValueOutOfRange {
+                    span: span.clone(),
+                    value,
+                    ty
                 };
 
                 match (left, right) {
@@ -186,27 +195,27 @@ macro_rules! impl_op {
                     (Number::f32(left), Number::f32(right)) => Ok(Number::f32(left $op right)),
                     (Number::f64(left), Number::f64(right)) => Ok(Number::f64(left $op right)),
 
-                    (Number::Integer(left), Number::u8(right)) => Ok(Number::u8((left as u8).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::u16(right)) => Ok(Number::u16((left as u16).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::u32(right)) => Ok(Number::u32((left as u32).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::u64(right)) => Ok(Number::u64((left as u64).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::usize(right)) => Ok(Number::usize((left as usize).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::i8(right)) => Ok(Number::i8((left as i8).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::i16(right)) => Ok(Number::i16((left as i16).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::i32(right)) => Ok(Number::i32((left as i32).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::i64(right)) => Ok(Number::i64((left as i64).$checked(right).ok_or_else(op_err)?)),
-                    (Number::Integer(left), Number::isize(right)) => Ok(Number::isize((left as isize).$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::u8(right)) => Ok(Number::u8(u8::try_from(left).map_err(|_| from_map(left, NumberKind::u8))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::u16(right)) => Ok(Number::u16(u16::try_from(left).map_err(|_| from_map(left, NumberKind::u16))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::u32(right)) => Ok(Number::u32(u32::try_from(left).map_err(|_| from_map(left, NumberKind::u32))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::u64(right)) => Ok(Number::u64(u64::try_from(left).map_err(|_| from_map(left, NumberKind::u64))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::usize(right)) => Ok(Number::usize(usize::try_from(left).map_err(|_| from_map(left, NumberKind::usize))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::i8(right)) => Ok(Number::i8(i8::try_from(left).map_err(|_| from_map(left, NumberKind::i8))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::i16(right)) => Ok(Number::i16(i16::try_from(left).map_err(|_| from_map(left, NumberKind::i16))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::i32(right)) => Ok(Number::i32(i32::try_from(left).map_err(|_| from_map(left, NumberKind::i32))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::i64(right)) => Ok(Number::i64(i64::try_from(left).map_err(|_| from_map(left, NumberKind::i64))?.$checked(right).ok_or_else(op_err)?)),
+                    (Number::Integer(left), Number::isize(right)) => Ok(Number::isize(isize::try_from(left).map_err(|_| from_map(left, NumberKind::isize))?.$checked(right).ok_or_else(op_err)?)),
                     (Number::Integer(left), Number::Integer(right)) => Ok(Number::Integer(left.$checked(right).ok_or_else(op_err)?)),
-                    (Number::u8(left), Number::Integer(right)) => Ok(Number::u8(left.$checked(right as u8).ok_or_else(op_err)?)),
-                    (Number::u16(left), Number::Integer(right)) => Ok(Number::u16(left.$checked(right as u16).ok_or_else(op_err)?)),
-                    (Number::u32(left), Number::Integer(right)) => Ok(Number::u32(left.$checked(right as u32).ok_or_else(op_err)?)),
-                    (Number::u64(left), Number::Integer(right)) => Ok(Number::u64(left.$checked(right as u64).ok_or_else(op_err)?)),
-                    (Number::usize(left), Number::Integer(right)) => Ok(Number::usize(left.$checked(right as usize).ok_or_else(op_err)?)),
-                    (Number::i8(left), Number::Integer(right)) => Ok(Number::i8(left.$checked(right as i8).ok_or_else(op_err)?)),
-                    (Number::i16(left), Number::Integer(right)) => Ok(Number::i16(left.$checked(right as i16).ok_or_else(op_err)?)),
-                    (Number::i32(left), Number::Integer(right)) => Ok(Number::i32(left.$checked(right as i32).ok_or_else(op_err)?)),
-                    (Number::i64(left), Number::Integer(right)) => Ok(Number::i64(left.$checked(right as i64).ok_or_else(op_err)?)),
-                    (Number::isize(left), Number::Integer(right)) => Ok(Number::isize(left.$checked(right as isize).ok_or_else(op_err)?)),
+                    (Number::u8(left), Number::Integer(right)) => Ok(Number::u8(left.$checked(u8::try_from(right).map_err(|_| from_map(right, NumberKind::u8))?).ok_or_else(op_err)?)),
+                    (Number::u16(left), Number::Integer(right)) => Ok(Number::u16(left.$checked(u16::try_from(right).map_err(|_| from_map(right, NumberKind::u16))?).ok_or_else(op_err)?)),
+                    (Number::u32(left), Number::Integer(right)) => Ok(Number::u32(left.$checked(u32::try_from(right).map_err(|_| from_map(right, NumberKind::u32))?).ok_or_else(op_err)?)),
+                    (Number::u64(left), Number::Integer(right)) => Ok(Number::u64(left.$checked(u64::try_from(right).map_err(|_| from_map(right, NumberKind::u64))?).ok_or_else(op_err)?)),
+                    (Number::usize(left), Number::Integer(right)) => Ok(Number::usize(left.$checked(usize::try_from(right).map_err(|_| from_map(right, NumberKind::usize))?).ok_or_else(op_err)?)),
+                    (Number::i8(left), Number::Integer(right)) => Ok(Number::i8(left.$checked(i8::try_from(right).map_err(|_| from_map(right, NumberKind::i8))?).ok_or_else(op_err)?)),
+                    (Number::i16(left), Number::Integer(right)) => Ok(Number::i16(left.$checked(i16::try_from(right).map_err(|_| from_map(right, NumberKind::i16))?).ok_or_else(op_err)?)),
+                    (Number::i32(left), Number::Integer(right)) => Ok(Number::i32(left.$checked(i32::try_from(right).map_err(|_| from_map(right, NumberKind::i32))?).ok_or_else(op_err)?)),
+                    (Number::i64(left), Number::Integer(right)) => Ok(Number::i64(left.$checked(i64::try_from(right).map_err(|_| from_map(right, NumberKind::i64))?).ok_or_else(op_err)?)),
+                    (Number::isize(left), Number::Integer(right)) => Ok(Number::isize(left.$checked(isize::try_from(right).map_err(|_| from_map(right, NumberKind::isize))?).ok_or_else(op_err)?)),
 
                     (Number::Float(left), Number::f32(right)) => Ok(Number::f32(left as f32 $op right)),
                     (Number::Float(left), Number::f64(right)) => Ok(Number::f64(left as f64 $op right)),
@@ -224,11 +233,11 @@ macro_rules! impl_op {
     };
 }
 
-impl_op!(add, +, checked_add, Add);
-impl_op!(sub, -, checked_sub, Subtract);
-impl_op!(mul, *, checked_mul, Multiply);
-impl_op!(div, /, checked_div, Divide);
-impl_op!(rem, %, checked_rem, Mod);
+impl_op!(add, +, checked_add, "add");
+impl_op!(sub, -, checked_sub, "subtract");
+impl_op!(mul, *, checked_mul, "multiply");
+impl_op!(div, /, checked_div, "divide");
+impl_op!(rem, %, checked_rem, "mod");
 
 macro_rules! impl_op_spanned {
     ($trait:ident, $method:ident) => {

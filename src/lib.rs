@@ -1,5 +1,3 @@
-//! # bevy_dev_console
-//!
 //! `bevy_dev_console` is a Source-inspired developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
 //!
 //! ![Image of the developer console](https://raw.githubusercontent.com/doonv/bevy_dev_console/master/doc/console.png)
@@ -69,8 +67,11 @@
 //! | 0.18.* | git (master)     |
 
 // #![warn(clippy::pedantic)]
-// #![allow(clippy::needless_pass_by_value)]
 // #![warn(clippy::nursery)]
+// #![allow(clippy::needless_pass_by_value)]
+// #![allow(clippy::too_many_lines)]
+// #![allow(clippy::use_self)]
+// #![allow(clippy::items_after_statements)]
 
 use bevy::prelude::*;
 use bevy_egui::prelude::*;
@@ -104,13 +105,11 @@ pub mod ui;
 pub struct DevConsolePlugin;
 impl Plugin for DevConsolePlugin {
     fn build(&self, app: &mut App) {
-        #[cfg(debug_assertions)]
-        if !app.world().contains_resource::<Messages<LogMessage>>() {
-            panic!(
-                "`LogMessage` message not initialized. `DevConsolePlugin` requires `bevy::log::LogPlugin::custom_layer` be \
-                set to `bevy_dev_console::logging::console_log_layer`. See `bevy_dev_consoles`'s examples for more info."
-            );
-        }
+        debug_assert!(
+            app.world().contains_resource::<Messages<LogMessage>>(),
+            "`LogMessage` message not initialized. `DevConsolePlugin` requires `bevy::log::LogPlugin::custom_layer` be \
+            set to `bevy_dev_console::logging::console_log_layer`. See `bevy_dev_consoles`'s examples for more info."
+        );
 
         if !app.is_plugin_added::<EguiPlugin>() {
             app.add_plugins(EguiPlugin::default());

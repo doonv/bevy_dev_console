@@ -49,10 +49,10 @@ pub fn ansi_to_layout_job(input: &str, config: &ConsoleConfig, job: &mut LayoutJ
                         }
                     }
                     VisualAttribute::BgColor(ansi_color) => {
-                        current_format.background = ansi_to_color32(ansi_color)
+                        current_format.background = ansi_to_color32(ansi_color);
                     }
                     VisualAttribute::UndrColor(ansi_color) => {
-                        current_format.underline = Stroke::new(1.0, ansi_to_color32(ansi_color))
+                        current_format.underline = Stroke::new(1.0, ansi_to_color32(ansi_color));
                     }
                     VisualAttribute::Underline => {
                         current_format.underline = Stroke::new(1.0, current_format.color);

@@ -11,28 +11,9 @@ use crate::builtin_parser::runner::value::ValueKind;
 
 use super::Value;
 
-#[derive(Debug, Clone, Copy)]
-pub enum Operation {
-    Add,
-    Subtract,
-    Multiply,
-    Divide,
-    Mod,
-}
-
-impl std::fmt::Display for Operation {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Operation::Add => write!(f, "add"),
-            Operation::Subtract => write!(f, "subtract"),
-            Operation::Multiply => write!(f, "multiply"),
-            Operation::Divide => write!(f, "divide"),
-            Operation::Mod => write!(f, "mod"),
-        }
-    }
-}
-
 /// An error occurring during the while evaluating the command.
+///
+/// TODO: This enormous enum should probably be split into smaller error types like `NumberError`, `EnvironmentError`, etc.
 #[derive(Debug)]
 #[allow(missing_docs)]
 pub enum EvalError {
@@ -45,7 +26,7 @@ pub enum EvalError {
     InvalidOperation {
         left: Number,
         right: Number,
-        operation: Operation,
+        operation: &'static str,
         span: Span,
     },
     VariableNotFound(Spanned<String>),
@@ -103,39 +84,46 @@ pub enum EvalError {
         apply_error: ApplyError,
         span: Span,
     },
+    ValueOutOfRange {
+        span: Span,
+        value: i128,
+        ty: NumberKind,
+    },
 }
 
 impl EvalError {
     /// Get all the locations of the error in the source.
+    #[must_use]
     pub fn spans(&self) -> Vec<Span> {
         use EvalError as E;
 
         match self {
-            E::Custom { span, .. } => vec![span.clone()],
-            E::VariableNotFound(Spanned { span, .. }) => vec![span.clone()],
-            E::ExpectedNumberAfterUnaryOperator(Spanned { span, .. }) => vec![span.clone()],
-            E::CannotIndexValue(Spanned { span, .. }) => vec![span.clone()],
-            E::FieldNotFoundInStruct(Spanned { span, value: _ }) => vec![span.clone()],
-            E::CannotDereferenceValue(Spanned { span, .. }) => vec![span.clone()],
-            E::CannotDereferenceValueExpr(Spanned { span, .. }) => vec![span.clone()],
-            E::ReferenceToMovedData(span) => vec![span.clone()],
-            E::VariableMoved(Spanned { span, .. }) => vec![span.clone()],
-            E::CannotBorrowValue(Spanned { span, .. }) => vec![span.clone()],
-            E::IncompatibleReflectTypes { span, .. } => vec![span.clone()],
-            E::EnumVariantNotFound(Spanned { span, .. }) => vec![span.clone()],
-            E::EnumVariantStructFieldNotFound { span, .. } => vec![span.clone()],
-            E::EnumVariantTupleFieldNotFound { span, .. } => vec![span.clone()],
-            E::CannotMoveOutOfResource(Spanned { span, .. }) => vec![span.clone()],
-            E::CannotNegateUnsignedInteger(Spanned { span, .. }) => vec![span.clone()],
-            E::IncompatibleNumberTypes { span, .. } => vec![span.clone()],
-            E::IncorrectFunctionParameterType { span, .. } => vec![span.clone()],
-            E::ExpectedVariableGotFunction(Spanned { span, .. }) => vec![span.clone()],
-            E::CannotReflectReference(span) => vec![span.clone()],
-            E::CannotReflectResource(span) => vec![span.clone()],
-            E::InvalidOperation { span, .. } => vec![span.clone()],
-            E::IncorrectAccessOperation { span, .. } => vec![span.clone()],
-            E::FieldNotFoundInTuple { span, .. } => vec![span.clone()],
-            E::ApplyError { span, .. } => vec![span.clone()],
+            E::Custom { span, .. }
+            | E::VariableNotFound(Spanned { span, .. })
+            | E::ExpectedNumberAfterUnaryOperator(Spanned { span, .. })
+            | E::CannotIndexValue(Spanned { span, .. })
+            | E::FieldNotFoundInStruct(Spanned { span, value: _ })
+            | E::CannotDereferenceValue(Spanned { span, .. })
+            | E::CannotDereferenceValueExpr(Spanned { span, .. })
+            | E::ReferenceToMovedData(span)
+            | E::VariableMoved(Spanned { span, .. })
+            | E::CannotBorrowValue(Spanned { span, .. })
+            | E::IncompatibleReflectTypes { span, .. }
+            | E::EnumVariantNotFound(Spanned { span, .. })
+            | E::EnumVariantStructFieldNotFound { span, .. }
+            | E::EnumVariantTupleFieldNotFound { span, .. }
+            | E::CannotMoveOutOfResource(Spanned { span, .. })
+            | E::CannotNegateUnsignedInteger(Spanned { span, .. })
+            | E::IncompatibleNumberTypes { span, .. }
+            | E::IncorrectFunctionParameterType { span, .. }
+            | E::ExpectedVariableGotFunction(Spanned { span, .. })
+            | E::CannotReflectReference(span)
+            | E::CannotReflectResource(span)
+            | E::InvalidOperation { span, .. }
+            | E::IncorrectAccessOperation { span, .. }
+            | E::FieldNotFoundInTuple { span, .. }
+            | E::ApplyError { span, .. }
+            | E::ValueOutOfRange { span, .. } => vec![span.clone()],
         }
     }
 }
@@ -270,6 +258,9 @@ impl std::fmt::Display for EvalError {
                     f,
                     "Error while applying value (todo make this error better): {apply_error}"
                 )
+            }
+            E::ValueOutOfRange { span: _, value, ty } => {
+                write!(f, "integer value `{value}` out of range for type `{ty}`")
             }
         }
     }

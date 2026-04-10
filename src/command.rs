@@ -9,6 +9,7 @@ pub const COMMAND_MESSAGE_NAME: &str = "console_command";
 pub const COMMAND_RESULT_NAME: &str = "console_result";
 
 /// Formats a command with ANSI highlights for errors.
+#[must_use]
 pub fn format_command_with_hints(command: &str, spans: &[Range<usize>]) -> String {
     let mut result = String::new();
     let mut last_end = 0;
@@ -25,10 +26,7 @@ pub fn format_command_with_hints(command: &str, spans: &[Range<usize>]) -> Strin
             .effects(anstyle::Effects::CURLY_UNDERLINE)
             .underline_color(Some(anstyle::Color::Ansi(anstyle::AnsiColor::Red)));
 
-        let highlighted = format!(
-            "{RED_UNDERLINE}{}{RED_UNDERLINE:#}",
-            &command[span.start..span.end]
-        );
+        let highlighted = format!("{RED_UNDERLINE}{}{RED_UNDERLINE:#}", &command[span.clone()]);
         result.push_str(&highlighted);
         last_end = span.end;
     }

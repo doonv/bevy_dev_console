@@ -16,16 +16,15 @@ use super::error::EvalError;
 use super::{Environment, Spanned, Value};
 
 fn print(
-    value: Spanned<Value>,
+    Spanned { span, value }: Spanned<Value>,
     world: &mut World,
     registrations: &[&TypeRegistration],
 ) -> Result<(), EvalError> {
-    match value.value {
-        Value::String(string) => info!("{string}"),
-        _ => {
-            let string = value.value.try_format(value.span, world, registrations)?;
-            info!("{string}");
-        }
+    if let Value::String(string) = value {
+        info!("{string}");
+    } else {
+        let string = value.try_format(span, world, registrations)?;
+        info!("{string}");
     }
     Ok(())
 }

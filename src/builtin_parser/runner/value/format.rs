@@ -1,11 +1,13 @@
 //! Formatting logic for values
 
+use std::fmt::Write;
+
 use bevy::ecs::world::World;
 use bevy::reflect::{
     GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType,
 };
 
-use crate::builtin_parser::{BRIGHT_YELLOW, GREEN, RED, YELLOW};
+use crate::builtin_parser::{BRIGHT_YELLOW, EvalError, GREEN, RED, YELLOW};
 
 use super::super::reflection::CreateRegistration;
 use super::Value;
@@ -13,13 +15,15 @@ use super::Value;
 impl Value {
     /// Attempts to format this [`Value`].
     ///
+    /// # Errors
+    ///
     /// Returns an error if the [`Value`] is a reference to moved data.
     pub fn try_format(
         &self,
         span: logos::Span,
         world: &World,
         registrations: &[&TypeRegistration],
-    ) -> Result<String, crate::builtin_parser::EvalError> {
+    ) -> Result<String, EvalError> {
         const TAB: &str = "    ";
         match self {
             Value::None => Ok(format!("()")),
@@ -28,13 +32,14 @@ impl Value {
             Value::String(string) => Ok(format!("{GREEN}\"{string}\"{GREEN:#}")),
             Value::Reference(reference) => match reference.upgrade() {
                 Some(rc) => Ok(rc.borrow().try_format(span, world, registrations)?),
-                _ => Err(crate::builtin_parser::EvalError::ReferenceToMovedData(span)),
+                _ => Err(EvalError::ReferenceToMovedData(span)),
             },
             Value::Object(map) => {
                 let mut string = String::new();
                 string.push('{');
                 for (key, value) in map {
-                    string += &format!(
+                    let _ = write!(
+                        string,
                         "\n{TAB}{key}: {},",
                         value.borrow_inner().borrow().try_format(
                             span.clone(),
@@ -51,9 +56,10 @@ impl Value {
             }
             Value::StructObject { name, map } => {
                 let mut string = String::new();
-                string += &format!("{name} {{");
+                let _ = write!(string, "{name} {{");
                 for (key, value) in map {
-                    string += &format!(
+                    let _ = write!(
+                        string,
                         "\n{TAB}{key}: {},",
                         value.borrow_inner().borrow().try_format(
                             span.clone(),
@@ -71,8 +77,9 @@ impl Value {
             Value::Tuple(tuple) => {
                 let mut string = String::new();
                 string.push('(');
-                for element in tuple.iter() {
-                    string += &format!(
+                for element in tuple {
+                    let _ = write!(
+                        string,
                         "\n{TAB}{},",
                         element.value.borrow_inner().borrow().try_format(
                             span.clone(),
@@ -91,8 +98,9 @@ impl Value {
                 let mut string = String::new();
                 string.push_str(name);
                 string.push('(');
-                for element in tuple.iter() {
-                    string += &format!(
+                for element in tuple {
+                    let _ = write!(
+                        string,
                         "\n{TAB}{},",
                         element.value.borrow_inner().borrow().try_format(
                             span.clone(),
@@ -137,9 +145,10 @@ fn fancy_debug_print(
                     let field_name = struct_info.name_at(i).unwrap();
 
                     let field_value = debug_subprint(field, indentation + 1);
-                    f += &format!(
-                        "{indentation_string}{TAB}{field_name}: {} = {field_value},\n",
-                        field.reflect_short_type_path(),
+                    let _ = writeln!(
+                        f,
+                        "{indentation_string}{TAB}{field_name}: {} = {field_value},",
+                        field.reflect_short_type_path()
                     );
                 }
                 f += &indentation_string;
@@ -174,8 +183,9 @@ fn fancy_debug_print(
                     VariantType::Struct => {
                         f += " {\n";
                         for field in variant.iter_fields() {
-                            f += &format!(
-                                "{indentation_string}{TAB}{}: {} = {},\n",
+                            let _ = writeln!(
+                                f,
+                                "{indentation_string}{TAB}{}: {} = {},",
                                 field.name().unwrap(),
                                 field.value().reflect_short_type_path(),
                                 debug_subprint(field.value(), indentation + 1)
@@ -187,8 +197,9 @@ fn fancy_debug_print(
                     VariantType::Tuple => {
                         f += "(\n";
                         for field in variant.iter_fields() {
-                            f += &format!(
-                                "{indentation_string}{TAB}{} = {},\n",
+                            let _ = writeln!(
+                                f,
+                                "{indentation_string}{TAB}{} = {},",
                                 field.value().reflect_short_type_path(),
                                 debug_subprint(field.value(), indentation + 1)
                             );
@@ -205,9 +216,8 @@ fn fancy_debug_print(
                 };
                 if opaque.is::<String>() {
                     return format!("{GREEN}{reflect:?}{GREEN:#}");
-                } else {
-                    return format!("{YELLOW}{reflect:?}{YELLOW:#}");
                 }
+                return format!("{YELLOW}{reflect:?}{YELLOW:#}");
             }
             ReflectRef::Set(_) => todo!(),
         }
@@ -219,14 +229,15 @@ fn fancy_debug_print(
     let reflect_ref = reflect.reflect_ref();
     match reflect_ref {
         ReflectRef::Struct(struct_info) => {
-            f += &format!("struct {} {{\n", struct_info.reflect_short_type_path());
+            let _ = writeln!(f, "struct {} {{", struct_info.reflect_short_type_path());
             for i in 0..struct_info.field_len() {
                 let field = struct_info.field_at(i).unwrap();
                 let field_name = struct_info.name_at(i).unwrap();
 
                 let field_value = debug_subprint(field, 1);
-                f += &format!(
-                    "{TAB}{RED}{}{RED:#}: {BRIGHT_YELLOW}{}{BRIGHT_YELLOW:#} = {},\n",
+                let _ = writeln!(
+                    f,
+                    "{TAB}{RED}{}{RED:#}: {BRIGHT_YELLOW}{}{BRIGHT_YELLOW:#} = {},",
                     field_name,
                     field.reflect_short_type_path(),
                     field_value
@@ -236,7 +247,7 @@ fn fancy_debug_print(
         }
         ReflectRef::Enum(set_variant_info) => {
             // Print out the enum types
-            f += &format!("enum {} {{\n", set_variant_info.reflect_short_type_path());
+            let _ = writeln!(f, "enum {} {{", set_variant_info.reflect_short_type_path());
             let TypeInfo::Enum(enum_info) = registration.type_info() else {
                 unreachable!("{:?}", registration.type_info())
             };
@@ -247,8 +258,9 @@ fn fancy_debug_print(
                     VariantInfo::Struct(variant) => {
                         f += " {\n";
                         for field in variant.iter() {
-                            f += &format!(
-                                "{TAB}{TAB}{}: {},\n",
+                            let _ = writeln!(
+                                f,
+                                "{TAB}{TAB}{}: {},",
                                 field.name(),
                                 field.type_path_table().short_path()
                             );
@@ -260,9 +272,9 @@ fn fancy_debug_print(
                         f += "(";
                         let mut iter = variant.iter();
                         if let Some(first) = iter.next() {
-                            f += &format!("{}", first.type_path_table().short_path());
+                            let _ = write!(f, "{}", first.type_path_table().short_path());
                             for field in iter {
-                                f += &format!(", {}", field.type_path_table().short_path());
+                                let _ = write!(f, ", {}", field.type_path_table().short_path());
                             }
                         }
                         f += ")";
@@ -278,14 +290,15 @@ fn fancy_debug_print(
                 VariantType::Struct => {
                     f += " {\n";
                     for field in set_variant_info.iter_fields() {
-                        f += &format!("{TAB}{}: {:?},\n", field.name().unwrap(), field.value());
+                        let _ =
+                            writeln!(f, "{TAB}{}: {:?},\n", field.name().unwrap(), field.value());
                     }
                     f += "}";
                 }
                 VariantType::Tuple => {
                     f += "(\n";
                     for field in set_variant_info.iter_fields() {
-                        f += &format!("{TAB}{:?},\n", field.value());
+                        let _ = writeln!(f, "{TAB}{:?},", field.value());
                     }
                     f += ")";
                 }
@@ -293,7 +306,7 @@ fn fancy_debug_print(
             }
         }
         ReflectRef::Opaque(value) => {
-            f += &format!("{value:?}");
+            let _ = write!(f, "{value:?}");
         }
         _ => f += &debug_subprint(reflect, 1),
     }

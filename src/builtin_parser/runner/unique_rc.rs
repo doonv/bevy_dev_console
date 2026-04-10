@@ -25,6 +25,7 @@ impl<T: ?Sized> UniqueRc<T> {
         &self.0
     }
     /// Create a new weak pointer to this [`UniqueRc`].
+    #[must_use]
     pub fn borrow(&self) -> WeakRef<T> {
         WeakRef::new(self)
     }
@@ -36,7 +37,10 @@ impl<T> UniqueRc<T> {
     }
     /// Get the inner value (`T`) of this [`UniqueRc<T>`].
     ///
+    /// # Panics
+    ///
     /// Panics if there is more than one strong pointer to this [`UniqueRc`].
+    #[must_use]
     pub fn into_inner(self) -> T {
         Rc::try_unwrap(self.0)
             .unwrap_or_else(|rc| {

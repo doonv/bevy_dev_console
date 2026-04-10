@@ -5,6 +5,8 @@ use logos::Span;
 use std::collections::HashMap;
 use std::num::IntErrorKind;
 
+use crate::builtin_parser::NumberKind;
+
 use super::lexer::{FailedToLexCharacter, Token, TokenStream};
 use super::number::Number;
 use super::runner::environment::Function;
@@ -124,7 +126,7 @@ pub enum Access {
 impl AccessKind {
     /// Returns the kind of [`Access`] as a [string slice](str) with an `a` or `an` prepended to it.
     /// Used for more natural sounding error messages.
-    pub const fn as_natural(&self) -> &'static str {
+    pub const fn as_natural(self) -> &'static str {
         match self {
             AccessKind::Field => "a field",
             AccessKind::TupleIndex => "a tuple",
@@ -165,29 +167,6 @@ pub enum Operator {
     Mod,
 }
 
-#[derive(Debug, Clone, Copy, Kinded)]
-pub enum UnsupportedFeature {
-    InfiniteLoops,
-    WhileLoops,
-    ForLoops,
-    IfStatements,
-    ListsAndVectors,
-    Closures,
-}
-
-impl UnsupportedFeature {
-    pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::InfiniteLoops => "infinite loops",
-            Self::WhileLoops => "while loops",
-            Self::ForLoops => "for loops",
-            Self::IfStatements => "if statements",
-            Self::ListsAndVectors => "lists/vectors",
-            Self::Closures => "closures",
-        }
-    }
-}
-
 #[derive(Debug)]
 pub enum ParseError {
     FailedToLexCharacters(Spanned<String>),
@@ -199,8 +178,9 @@ pub enum ParseError {
     },
     ExpectedEndline(Spanned<Token>),
     ExpectedLiteral(Spanned<Token>),
-    InvalidSuffixForNumber(Spanned<String>, bool),
+    InvalidSuffixForNumber(Spanned<String>),
     InvalidSuffixForFloat(Spanned<String>),
+    IntegerSuffixOnFloat(Spanned<String>),
     NegativeIntOverflow {
         span: Span,
         number: String,
@@ -217,7 +197,7 @@ pub enum ParseError {
         span: Span,
     },
     UnsupportedFeature {
-        ty: UnsupportedFeature,
+        feature: &'static str,
         span: Span,
         issue: u8,
     },
@@ -231,19 +211,20 @@ impl ParseError {
     pub fn span(&self) -> Span {
         use ParseError as E;
         match self {
-            E::FailedToLexCharacters(Spanned { span, value: _ }) => span,
-            E::ExpectedMoreTokens(span) => span,
-            E::ExpectedTokenButGot { span, .. } => span,
-            E::ExpectedEndline(Spanned { span, value: _ }) => span,
-            E::ExpectedLiteral(Spanned { span, value: _ }) => span,
-            E::InvalidSuffixForNumber(Spanned { span, .. }, ..) => span,
-            E::InvalidSuffixForFloat(Spanned { span, value: _ }) => span,
-            E::PositiveIntOverflow { span, .. } => span,
-            E::NegativeIntOverflow { span, .. } => span,
-            E::ExpectedObjectContinuation(Spanned { span, value: _ }) => span,
-            E::ExpectedIndexer { got: _, span } => span,
-            E::UnsupportedFeature { span, .. } => span,
-            E::MismatchedDelimiter { span, .. } => span,
+            E::FailedToLexCharacters(Spanned { span, value: _ })
+            | E::ExpectedMoreTokens(span)
+            | E::ExpectedTokenButGot { span, .. }
+            | E::ExpectedEndline(Spanned { span, value: _ })
+            | E::ExpectedLiteral(Spanned { span, value: _ })
+            | E::InvalidSuffixForNumber(Spanned { span, .. }, ..)
+            | E::InvalidSuffixForFloat(Spanned { span, .. }, ..)
+            | E::IntegerSuffixOnFloat(Spanned { span, value: _ })
+            | E::PositiveIntOverflow { span, .. }
+            | E::NegativeIntOverflow { span, .. }
+            | E::ExpectedObjectContinuation(Spanned { span, value: _ })
+            | E::ExpectedIndexer { got: _, span }
+            | E::UnsupportedFeature { span, .. }
+            | E::MismatchedDelimiter { span, .. } => span,
         }
         .clone()
     }
@@ -270,21 +251,19 @@ impl std::fmt::Display for ParseError {
                 f,
                 "expected a literal token, got {value:?} which is not a valid literal."
             ),
-            E::InvalidSuffixForNumber(Spanned { span: _, value }, is_float) => {
-                write!(f, "invalid suffix `{value}` for number literal. ")?;
-                if *is_float {
-                    write!(
-                        f,
-                        "the suffix must be one of the float types (`f32`, `f64`)"
-                    )
-                } else {
-                    write!(
-                        f,
-                        "the suffix must be one of the numeric types (`u32`, `isize`, `f32`, etc.)"
-                    )
-                }
+            E::InvalidSuffixForNumber(Spanned { span: _, value }) => {
+                write!(
+                    f,
+                    "invalid suffix `{value}` for number literal. the suffix must be one of the numeric types (`u32`, `isize`, `f32`, etc.)"
+                )
             }
-            E::InvalidSuffixForFloat(Spanned {
+            E::InvalidSuffixForFloat(Spanned { span: _, value }) => {
+                write!(
+                    f,
+                    "invalid suffix `{value}` for float literal. the suffix must be one of the float types (`f32`, `f64`)"
+                )
+            }
+            E::IntegerSuffixOnFloat(Spanned {
                 span: _,
                 value: suffix,
             }) => write!(
@@ -318,8 +297,12 @@ impl std::fmt::Display for ParseError {
                 f,
                 "expected an identifier or integer when accessing member of variable, got {got:?} instead."
             ),
-            &E::UnsupportedFeature { ty, span: _, issue } => {
-                write!(f, "{} are not yet supported. ", ty.as_str())?;
+            &E::UnsupportedFeature {
+                feature,
+                span: _,
+                issue,
+            } => {
+                write!(f, "{feature} are not yet supported. ")?;
                 if issue != 0 {
                     write!(f, "see bevy_dev_console issue #{issue}")?;
                 }
@@ -363,22 +346,22 @@ fn parse_expression(
 ) -> Result<Spanned<Expression>, ParseError> {
     match tokens.peek() {
         Some(Ok(Token::Loop)) => Err(ParseError::UnsupportedFeature {
-            ty: UnsupportedFeature::InfiniteLoops,
+            feature: "infinite loops",
             span: tokens.peek_span(),
             issue: 8,
         }),
         Some(Ok(Token::While)) => Err(ParseError::UnsupportedFeature {
-            ty: UnsupportedFeature::WhileLoops,
+            feature: "while loops",
             span: tokens.peek_span(),
             issue: 8,
         }),
         Some(Ok(Token::For)) => Err(ParseError::UnsupportedFeature {
-            ty: UnsupportedFeature::ForLoops,
+            feature: "for loops",
             span: tokens.peek_span(),
             issue: 8,
         }),
         Some(Ok(Token::If)) => Err(ParseError::UnsupportedFeature {
-            ty: UnsupportedFeature::IfStatements,
+            feature: "if statements",
             span: tokens.discard().span_until(Token::RightBracket),
             issue: 0,
         }),
@@ -593,21 +576,19 @@ fn parse_value(
                 let (number, suffix) = split_number(tokens);
                 let number: Number = match suffix {
                     "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
-                    | "isize" => Err(ParseError::InvalidSuffixForFloat(
+                    | "isize" => Err(ParseError::IntegerSuffixOnFloat(
                         tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
                     ))?,
                     "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
                     "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+                    "" => Number::Float(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
                     _ => {
-                        return Err(ParseError::InvalidSuffixForNumber(
+                        return Err(ParseError::InvalidSuffixForFloat(
                             tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
-                            true,
                         ));
                     }
                 };
                 let start_span = tokens.span().end;
-
-                tokens.next();
 
                 Ok(Spanned {
                     span: start_span..tokens.span().end,
@@ -617,12 +598,12 @@ fn parse_value(
             Some(Ok(Token::True)) => Ok(tokens.span().wrap(Expression::Boolean(true))),
             Some(Ok(Token::False)) => Ok(tokens.span().wrap(Expression::Boolean(false))),
             Some(Ok(Token::LeftBrace)) => Err(ParseError::UnsupportedFeature {
-                ty: UnsupportedFeature::ListsAndVectors,
+                feature: "lists and vectors",
                 span: tokens.span_until(Token::RightBrace),
                 issue: 10,
             }),
             Some(Ok(Token::Pipe)) => Err(ParseError::UnsupportedFeature {
-                ty: UnsupportedFeature::Closures,
+                feature: "closures",
                 span: tokens.span_until(Token::Pipe),
                 issue: 12,
             }),
@@ -713,7 +694,7 @@ fn map_parseint_error<'s>(
 fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
     let (number, suffix) = split_number(tokens);
     let map = |s| map_parseint_error(tokens.span(), tokens.slice(), s);
-    use crate::builtin_parser::number::NumberKind;
+
     let number = match suffix {
         "u8" => Number::u8(number.parse().map_err(map(NumberKind::u8))?),
         "u16" => Number::u16(number.parse().map_err(map(NumberKind::u16))?),
@@ -730,7 +711,6 @@ fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError>
         _ => {
             return Err(ParseError::InvalidSuffixForNumber(
                 tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
-                false,
             ));
         }
     };

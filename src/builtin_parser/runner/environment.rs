@@ -33,7 +33,7 @@ use super::{Value, stdlib};
 /// register!(environment => {
 ///     fn pow2;
 ///     fn add;
-///     fn toggle_debug as "d";
+///     fn toggle_debug as "tdbg";
 /// });
 /// ```
 #[macro_export]
@@ -76,10 +76,7 @@ pub struct Environment {
 }
 impl Default for Environment {
     fn default() -> Self {
-        let mut env = Self {
-            parent: None,
-            variables: HashMap::new(),
-        };
+        let mut env = Self::empty();
 
         stdlib::register(&mut env);
 
@@ -88,12 +85,21 @@ impl Default for Environment {
 }
 
 impl Environment {
+    /// A completely empty [`Environment`] without any functions.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            parent: None,
+            variables: HashMap::new(),
+        }
+    }
     /// Set a variable.
     pub fn set(&mut self, name: impl Into<String>, value: UniqueRc<Value>) {
         self.variables.insert(name.into(), Variable::Unmoved(value));
     }
 
     /// Returns a reference to a function if it exists.
+    #[must_use]
     pub fn get_function(&self, name: &str) -> Option<&Function> {
         let (env, _) = self.resolve(name, 0..0).ok()?;
 
@@ -228,7 +234,16 @@ impl Environment {
     /// Iterate over all the variables and functions in the current scope of the environment.
     ///
     /// Does not include variables and functions from higher scopes.
+    #[must_use]
     pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Variable> {
         self.variables.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Environment {
+    type Item = (&'a String, &'a Variable);
+    type IntoIter = std::collections::hash_map::Iter<'a, String, Variable>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }

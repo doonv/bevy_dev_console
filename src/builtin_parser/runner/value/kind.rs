@@ -48,7 +48,7 @@ impl Kind for ValueKind {
 
 impl ValueKind {
     #[must_use]
-    pub const fn as_str(&self) -> &'static str {
+    pub const fn as_str(self) -> &'static str {
         match self {
             Self::None => "none",
             Self::Number(number) => number.as_str(),
@@ -66,19 +66,19 @@ impl ValueKind {
 
     /// Returns the kind of [`Value`] as a [string slice](str) with an `a` or `an`  prepended to it.
     /// Used for more natural sounding error messages.
-    pub const fn as_natural(&self) -> &'static str {
+    pub const fn as_natural(self) -> &'static str {
         match self {
-            ValueKind::None => "nothing",
-            ValueKind::Number(number) => number.as_natural(),
-            ValueKind::AnyNumber => "any number",
-            ValueKind::Boolean => "a boolean",
-            ValueKind::String => "a string",
-            ValueKind::Reference => "a reference",
-            ValueKind::Object => "a object",
-            ValueKind::StructObject => "a struct object",
-            ValueKind::Tuple => "a tuple",
-            ValueKind::StructTuple => "a struct tuple",
-            ValueKind::Resource => "a resource",
+            Self::None => "nothing",
+            Self::Number(number) => number.as_natural(),
+            Self::AnyNumber => "any number",
+            Self::Boolean => "a boolean",
+            Self::String => "a string",
+            Self::Reference => "a reference",
+            Self::Object => "a object",
+            Self::StructObject => "a struct object",
+            Self::Tuple => "a tuple",
+            Self::StructTuple => "a struct tuple",
+            Self::Resource => "a resource",
         }
     }
 }
