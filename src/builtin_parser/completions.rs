@@ -11,7 +11,9 @@ pub struct EnvironmentCache {
 }
 impl FromWorld for EnvironmentCache {
     fn from_world(world: &mut World) -> Self {
-        world.get_non_send_resource::<Environment>().map_or_else(Self::empty, store_in_cache)
+        world
+            .get_non_send_resource::<Environment>()
+            .map_or_else(Self::empty, store_in_cache)
     }
 }
 impl EnvironmentCache {
