@@ -93,14 +93,15 @@ pub mod ui;
 ///
 /// ## Usage
 ///
-/// ```
+/// ```no_run
 /// # use bevy::prelude::*;
 /// # use bevy_dev_console::prelude::*;
 /// App::new()
 ///     .add_plugins((
 ///         DefaultPlugins.set(console_log_plugin()), // Don't forget to set the LogPlugin
 ///         DevConsolePlugin
-///     ));
+///     ))
+///     .run();
 /// ```
 pub struct DevConsolePlugin;
 impl Plugin for DevConsolePlugin {
