@@ -49,10 +49,12 @@ pub trait SpanExtension {
     /// Wrap this value with a [`Spanned`].
     #[must_use]
     fn wrap<T>(self, value: T) -> Spanned<T>;
+
     /// Combine two [`Span`]s into one.
     #[must_use]
     fn join(self, span: Self) -> Self;
-
+    
+    /// Adds the left and right values of the provided [`Span`] to this [`Span`].
     #[must_use]
     fn add(self, range: Span) -> Self;
 }
@@ -73,7 +75,7 @@ impl SpanExtension for Span {
     }
 }
 
-/// Wrapper around `T` that stores a [Span] (A location in the source code)
+/// Wrapper around `T` that stores a [Span].
 #[derive(Debug, Clone)]
 pub struct Spanned<T> {
     /// The location of `T` in the source/command.

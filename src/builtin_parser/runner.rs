@@ -24,7 +24,6 @@ pub use eval::eval_expression;
 pub use value::Value;
 
 /// Temporary macro that prevents panicking by replacing the [`todo!`] panic with an error message.
-#[macro_export]
 macro_rules! todo_error {
     () => {
         return Err($crate::builtin_parser::EvalError::Custom {
@@ -39,6 +38,7 @@ macro_rules! todo_error {
         })
     };
 }
+pub(crate) use todo_error;
 
 /// Container for every value needed by evaluation functions.
 pub struct EvalParams<'world, 'env, 'reg> {

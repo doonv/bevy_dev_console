@@ -1,9 +1,9 @@
 
 [package]
 name = "bevy_dev_console"
-version = "0.1.0"
+version = "0.1.0-dev"
 edition = "2024"
-exclude = ["assets/", "docs/", ".github/"]
+exclude = ["assets/", "doc/", ".github/"]
 keywords = ["bevy", "console", "development", "source"]
 license = "MIT OR Apache-2.0"
 
@@ -44,6 +44,27 @@ kinded = { version = "0.5.0", optional = true }
 [dev-dependencies]
 bevy = { version = "0.18.1", default-features = false, features = ["2d"] }
 
-[lints]
-clippy.useless_format = "allow"
-rust.missing_docs = "warn"
+[package.metadata.docs.rs]
+rustc-args = ["--cfg", "docsrs_dep"]
+rustdoc-args = [
+    "--cfg",
+    "docsrs",
+    "--generate-link-to-definition",
+    "--generate-macro-expansion",
+    "--html-after-content",
+    "docs-rs/trait-tags.html",
+
+]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs_dep)'] }
+missing_docs = "warn"
+
+[lints.clippy]
+useless_format = "allow"
+
+# Required to make `cargo doc` scrape examples,
+# otherwise it will skip them as they require dev depenendencies
+[[example]]
+name = "basic"
+doc-scrape-examples = true

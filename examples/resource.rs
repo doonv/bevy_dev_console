@@ -36,10 +36,10 @@ fn main() {
         .init_resource::<MyEnum>()
         .insert_resource(MyStruct {
             number: 5.6,
-            string: "hi there :)".to_string(),
+            string: "hi there :)".to_owned(),
             struct_in_struct: SubStruct {
                 boolean: false,
-                enume: MyEnum::Tupleo("nooo".to_string(), 5.),
+                enume: MyEnum::Tupleo("nooo".to_owned(), 5.),
             },
             tuple: (-5, 255),
         })

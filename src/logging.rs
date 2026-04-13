@@ -46,9 +46,9 @@ pub fn colored_fmt_layer(_: &mut App) -> Option<BoxedFmtLayer> {
     ))
 }
 
-/// A [`tracing`](bevy::utils::tracing) log message event.
+/// A [`tracing`](bevy::log::tracing) log message event.
 ///
-/// This event is helpful for creating custom log viewing systems such as consoles and terminals.
+/// This is used to transfer the log data from `tracing` to the `bevy_dev_console` UI.
 #[derive(Message, Debug, Clone)]
 pub(crate) struct LogMessage {
     /// The message contents.

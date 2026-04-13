@@ -209,7 +209,7 @@ impl Environment {
 
     /// Registers a function for use inside the language.
     ///
-    /// All parameters must implement [`FunctionParam`].
+    /// All parameters must implement [`FunctionParam`](super::function::FunctionParam).
     /// There is a limit of 15 parameters.
     ///
     /// The return value of the function must implement [`Into<Value>`]

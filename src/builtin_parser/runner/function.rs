@@ -114,11 +114,12 @@ pub trait IntoFunction<T> {
 
 macro_rules! impl_into_function {
     (
-        $($(
+        $(#[$meta:meta])* $($(
                 $params:ident
         ),+)?
     ) => {
-        #[allow(non_snake_case)]
+        $(#[$meta])*
+        #[allow(non_snake_case, reason = "param types (like T0, T1, T2...) are used as variable names")]
         impl<F: 'static $(, $($params: FunctionParam),+ )?, R> IntoFunction<( $($($params,)+)? )> for F
         where
             for<'val, 'world, 'env, 'reg> &'val mut F:
@@ -196,4 +197,10 @@ macro_rules! impl_into_function {
     }
 }
 
-all_tuples!(impl_into_function, 0, 15, T);
+all_tuples!(
+    #[doc(fake_variadic)]
+    impl_into_function,
+    0,
+    15,
+    T
+);
