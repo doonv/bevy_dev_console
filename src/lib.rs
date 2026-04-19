@@ -11,7 +11,7 @@
 //!
 //! - Log viewing
 //!   - View all the hidden data from any log message by hovering over it.
-//! - Powerful Built-in parser language built specifically for `bevy_dev_console`. ([Documentation](https://github.com/doonv/bevy_dev_console/wiki/Built%E2%80%90in-Parser))
+//! - Powerful Built-in parser language built specifically for `bevy_dev_console`. Take a look at the [docs](builtin_parser::docs) for how to use it!
 //!   - Calculations
 //!   - Variables
 //!     - Uses a simplified version of ownership and borrowing

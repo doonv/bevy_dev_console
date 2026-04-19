@@ -1,5 +1,7 @@
 //! Example of modifying resources via the console via reflection.
 //!
+//! To use, start by typing `MyStruct` into the dev console. Then try modifying it!
+//!
 //! **Warning:** This is very experimental, might not work.
 
 use bevy::prelude::*;

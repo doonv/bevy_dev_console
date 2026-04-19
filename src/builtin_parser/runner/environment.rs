@@ -2,8 +2,11 @@
 
 use std::collections::HashMap;
 
-use crate::builtin_parser::SpanExtension;
+use crate::builtin_parser::runner::EvalParams;
+use crate::builtin_parser::{SpanExtension, Spanned};
+use bevy::ecs::world::World;
 use bevy::log::warn;
+use bevy::reflect::TypeRegistration;
 use logos::Span;
 
 use super::error::EvalError;
@@ -231,6 +234,26 @@ impl Environment {
 
         self
     }
+
+    pub fn run_function(
+        &mut self,
+        name: &str,
+        arguments: Vec<Spanned<Value>>,
+        world: &mut World,
+        registrations: &[&TypeRegistration],
+    ) -> Result<Value, EvalError> {
+        self.function_scope(name, move |environment, function| {
+            (function.body)(
+                arguments,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )
+        })
+    }
+
     /// Iterate over all the variables and functions in the current scope of the environment.
     ///
     /// Does not include variables and functions from higher scopes.

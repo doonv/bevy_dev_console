@@ -1,13 +1,18 @@
 //! [`bevy_dev_console`](crate)'s built-in command parser.
 //!
-//! Currently the built-in command parser is in very early development.
+//! The built-in parser provides an experimental mini-language that can evaluate expressions, call commands, and modify resources.
+//!
 //! It's purpose is to provide a simple, yet powerful method of modifying
 //! the game world via commands.
+//!
+//! Take a look at the [docs] for how to use it.
+
+use std::fmt::Display;
 
 use bevy::prelude::*;
 use logos::Span;
 
-use crate::builtin_parser::runner::ExecutionError;
+use crate::builtin_parser::parser::ParseError;
 use crate::command::{
     COMMAND_MESSAGE_NAME, COMMAND_RESULT_NAME, CommandParser, DefaultCommandParser,
     format_command_with_hints,
@@ -23,16 +28,84 @@ use crate::command::CompletionSuggestion;
 
 #[cfg(feature = "builtin-parser-completions")]
 pub(crate) mod completions;
-pub(crate) mod lexer;
+pub mod lexer;
 pub(crate) mod number;
 pub(crate) mod parser;
 pub(crate) mod runner;
+
+#[doc = include_str!("./builtin_parser/docs.md")]
+#[cfg(doc)]
+pub mod docs {}
+
+/// A macro to test example usages of the builtin parser.
+// #[cfg(doctest)] // This doesn't work right now, see https://github.com/rust-lang/rust/issues/67295
+#[doc(hidden)]
+#[macro_export]
+macro_rules! test_builtin_parser {
+    (
+        $(  {
+            $dollar:tt $($expr:expr)+
+            $(; $($result:tt)+)?
+        }
+        )+
+    ) => {{
+        use bevy::prelude::World;
+        use bevy_dev_console::builtin_parser::*;
+        use bevy::prelude::AppTypeRegistry;
+
+        fn strip_ansi(ansi: &str) -> String {
+            ansitok::parse_ansi(ansi)
+                .filter_map(|element| {
+                    if let ansitok::ElementKind::Text = element.kind() {
+                        Some(&ansi[element.range()])
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        }
+        let mut world = World::new();
+        let mut environment = Environment::default();
+        let registry = AppTypeRegistry::default();
+
+        $(
+            let cmd = stringify!($($expr)+);
+            let result = run(
+                cmd,
+                &mut world,
+                &mut environment,
+                &registry,
+            );
+            $(
+                bevy_dev_console::test_builtin_parser!(
+                    (result, cmd);
+                    $($result)+
+                );
+            )?
+        )+
+    }};
+    (
+        ($got:ident, $cmd:ident);
+        $( > $($expected:tt)+)?
+    ) => {
+        $( assert_eq!(strip_ansi(&$got.expect($cmd).unwrap()), stringify!($($expected)+)); )?
+    };
+    (
+        ($got:ident, $cmd:ident);
+        err $expected:literal
+    ) => {
+        assert_eq!(strip_ansi(&$got.unwrap_err().to_string()), $expected.trim().trim_start_matches("ERROR "));
+    };
+}
 
 pub use number::*;
 pub use runner::Value;
 pub use runner::environment::Environment;
 pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
+
+pub use parser::parse;
+pub use runner::eval;
 
 const fn color(color: anstyle::AnsiColor) -> anstyle::Style {
     anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(color)))
@@ -52,8 +125,8 @@ pub trait SpanExtension {
 
     /// Combine two [`Span`]s into one.
     #[must_use]
-    fn join(self, span: Self) -> Self;
-    
+    fn join(&self, span: &Self) -> Self;
+
     /// Adds the left and right values of the provided [`Span`] to this [`Span`].
     #[must_use]
     fn add(self, range: Span) -> Self;
@@ -64,7 +137,9 @@ impl SpanExtension for Span {
         Spanned { span: self, value }
     }
     #[inline]
-    fn join(self, span: Self) -> Self {
+    fn join(&self, span: &Self) -> Self {
+        debug_assert!(self.start <= span.end);
+
         self.start..span.end
     }
     fn add(self, range: Span) -> Self {
@@ -95,6 +170,12 @@ impl<T> Spanned<T> {
     }
 }
 
+impl<T: Display> Display for Spanned<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.value.fmt(f)
+    }
+}
+
 impl Default for DefaultCommandParser {
     fn default() -> Self {
         Self(Box::new(BuiltinCommandParser))
@@ -110,46 +191,42 @@ impl CommandParser for BuiltinCommandParser {
     fn parse(&self, command: &str, world: &mut World) {
         let mut tokens = lexer::TokenStream::new(command);
 
-        let environment = world.non_send_resource::<Environment>();
-        let ast = parser::parse(&mut tokens, environment);
-
-        match ast {
-            Ok(ast) => match runner::run(ast, world) {
-                Ok(value) => {
-                    info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{command}");
-                    if let Some(value) = value {
-                        info!(name: COMMAND_RESULT_NAME, "{GRAY}{COMMAND_RESULT_PREFIX}{GRAY:#}{value}");
+        // Can't `resource_scope` the environment because it's a non send resource.
+        let mut environment = world.remove_non_send_resource::<Environment>().unwrap();
+        let ast = parser::parse(&mut tokens, &environment);
+        world.resource_scope(|world, registry: Mut<AppTypeRegistry>| {
+            match ast {
+                Ok(ast) => match runner::eval(ast, world, &mut environment, &registry) {
+                    Ok(value) => {
+                        info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{command}");
+                        if let Some(value) = value {
+                            info!(name: COMMAND_RESULT_NAME, "{GRAY}{COMMAND_RESULT_PREFIX}{GRAY:#}{value}");
+                        }
                     }
-                }
-                Err(error) => {
-                    let spans = if let ExecutionError::Eval(eval_error) = &error {
-                        eval_error.spans()
-                    } else {
-                        vec![]
-                    };
-                    let highlighted = format_command_with_hints(command, &spans);
+                    Err(error) => {
+                        let highlighted = format_command_with_hints(command, &error.spans());
+                        info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
+                        error!("{error}");
+                    }
+                },
+                Err(err) => {
+                    let highlighted = format_command_with_hints(command, &[err.span()]);
                     info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
-                    error!("{error}");
+                    error!("{err}");
                 }
-            },
-            Err(err) => {
-                let highlighted = format_command_with_hints(command, &[err.span()]);
-                info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
-                error!("{err}");
             }
-        }
+        });
         #[cfg(feature = "builtin-parser-completions")]
         {
-            *world.resource_mut() =
-                completions::store_in_cache(world.non_send_resource::<Environment>());
+            *world.resource_mut() = completions::store_in_cache(&environment);
         }
+        world.insert_non_send_resource(environment);
     }
 
     #[cfg(feature = "builtin-parser-completions")]
     fn completion(&self, command: &str, world: &World) -> Vec<CompletionSuggestion> {
-        use fuzzy_matcher::FuzzyMatcher;
-
         use crate::builtin_parser::completions::EnvironmentCache;
+        use fuzzy_matcher::FuzzyMatcher;
 
         let matcher = fuzzy_matcher::skim::SkimMatcherV2::default();
         let environment_cache = world.resource::<EnvironmentCache>();
@@ -182,4 +259,26 @@ impl CommandParser for BuiltinCommandParser {
             })
             .collect()
     }
+}
+
+#[derive(thiserror::Error, Debug)]
+pub enum RunError {
+    #[error(transparent)]
+    Parse(#[from] ParseError),
+    #[error(transparent)]
+    Eval(#[from] EvalError),
+}
+
+pub fn run(
+    command: &str,
+    world: &mut World,
+    environment: &mut Environment,
+    registry: &AppTypeRegistry,
+) -> Result<Option<String>, RunError> {
+    let mut tokens = lexer::TokenStream::new(command);
+
+    let ast = parser::parse(&mut tokens, environment)?;
+    let value = runner::eval(ast, world, environment, registry)?;
+
+    Ok(value)
 }

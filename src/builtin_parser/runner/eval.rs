@@ -4,9 +4,11 @@ use std::collections::HashMap;
 
 use bevy::prelude::*;
 use bevy::reflect::{DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, VariantInfo};
+use kinded::Kinded;
 
 use crate::builtin_parser::number::Number;
-use crate::builtin_parser::parser::{Expression, Operator};
+use crate::builtin_parser::parser::{BinaryOperator, Expression, UnaryOperator};
+use crate::builtin_parser::runner::value::ValueKind;
 use crate::builtin_parser::{SpanExtension, Spanned};
 
 use super::EvalParams;
@@ -355,11 +357,14 @@ pub fn eval_expression(
 
             match (left, right) {
                 (Value::Number(left), Value::Number(right)) => Ok(Value::Number(match operator {
-                    Operator::Add => Number::add(left, right, expr.span)?,
-                    Operator::Sub => Number::sub(left, right, expr.span)?,
-                    Operator::Mul => Number::mul(left, right, expr.span)?,
-                    Operator::Div => Number::div(left, right, expr.span)?,
-                    Operator::Mod => Number::rem(left, right, expr.span)?,
+                    BinaryOperator::Add => Number::add(left, right, expr.span)?,
+                    BinaryOperator::Sub => Number::sub(left, right, expr.span)?,
+                    BinaryOperator::Mul => Number::mul(left, right, expr.span)?,
+                    BinaryOperator::Div => Number::div(left, right, expr.span)?,
+                    BinaryOperator::Mod => Number::rem(left, right, expr.span)?,
+                    BinaryOperator::And => Number::and(left, right, expr.span)?,
+                    BinaryOperator::Xor => Number::xor(left, right, expr.span)?,
+                    BinaryOperator::Or => Number::or(left, right, expr.span)?,
                 })),
                 (left, right) => Err(EvalError::Custom {
                     text: format!("Unsupported binary operation between {left:?} and {right:?}")
@@ -388,24 +393,38 @@ pub fn eval_expression(
                 registrations,
             },
         ),
-        Expression::UnaryOp(sub_expr) => {
-            let span = sub_expr.span.clone();
+        Expression::UnaryOp { operator, operand } => {
             let value = eval_expression(
-                *sub_expr,
+                *operand,
                 EvalParams {
                     world,
                     environment,
                     registrations,
                 },
             )?;
-
-            if let Value::Number(number) = value {
-                Ok(Value::Number(number.neg(span)?))
-            } else {
-                Err(EvalError::ExpectedNumberAfterUnaryOperator(Spanned {
-                    span,
-                    value,
-                }))
+            match operator {
+                UnaryOperator::Minus => {
+                    if let Value::Number(number) = value {
+                        Ok(Value::Number(number.neg(expr.span)?))
+                    } else {
+                        Err(EvalError::InvalidUnaryOperation {
+                            span: expr.span,
+                            operator,
+                            operand: value.kind(),
+                            accepted: &[ValueKind::AnyNumber],
+                        })
+                    }
+                }
+                UnaryOperator::Not => match value {
+                    Value::Boolean(boolean) => Ok(Value::Boolean(!boolean)),
+                    Value::Number(number) => Ok(Value::Number(number.not(expr.span)?)),
+                    _ => Err(EvalError::InvalidUnaryOperation {
+                        span: expr.span,
+                        operator,
+                        operand: value.kind(),
+                        accepted: &[ValueKind::Boolean, ValueKind::AnyInteger],
+                    }),
+                },
             }
         }
         Expression::Dereference(inner) => {
@@ -449,16 +468,24 @@ pub fn eval_expression(
         Expression::None => Ok(Value::None),
         Expression::Boolean(bool) => Ok(Value::Boolean(bool)),
         Expression::Function { name, arguments } => {
-            environment.function_scope(&name, move |environment, function| {
-                (function.body)(
-                    arguments,
-                    EvalParams {
-                        world,
-                        environment,
-                        registrations,
-                    },
-                )
-            })
+            let args = arguments
+                .into_iter()
+                .map(|expr| {
+                    Ok(Spanned {
+                        span: expr.span.clone(),
+                        value: eval_expression(
+                            expr,
+                            EvalParams {
+                                world,
+                                environment,
+                                registrations,
+                            },
+                        )?,
+                    })
+                })
+                .collect::<Result<Vec<_>, EvalError>>()?;
+
+            environment.run_function(&name, args, world, registrations)
         }
     }
 }

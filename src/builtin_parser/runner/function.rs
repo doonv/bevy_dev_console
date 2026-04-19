@@ -4,13 +4,13 @@ use std::fmt::Debug;
 
 use bevy::ecs::world::World;
 use bevy::reflect::TypeRegistration;
+use smallvec::SmallVec;
 use variadics_please::all_tuples;
 
 use super::super::Spanned;
-use super::super::parser::Expression;
 use super::environment::Environment;
 use super::error::EvalError;
-use super::{EvalParams, Value, eval_expression};
+use super::{EvalParams, Value};
 
 /// Get around implementation of [`Result`] causing stupid errors
 pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
@@ -64,19 +64,19 @@ pub trait FunctionParam: Sized {
     /// Should always be `Self`, but [associated type defaults are unstable](https://github.com/rust-lang/rust/issues/29661).
     type Item<'val, 'world, 'env, 'reg>; // = Self
 
-    /// Determines if this parameter corresponds to a positional argument.
+    /// Decides how long [`get`]' `value` parameter is. See the documentation for [`get`] for details.
     ///
-    /// - If `true`, an argument is consumed from the function call.
-    /// - If `false`, this parameter is "injected" from the runner context
-    ///   (e.g., `&mut World`).
-    const IS_ARGUMENT: bool;
+    /// [`get`]: FunctionParam::get
+    const PARAMETER_TYPE: ParamType;
 
     /// Step 1: Initialize the parameter state.
     ///
-    /// If [`IS_ARGUMENT`](Self::IS_ARGUMENT) is true, `value` will be `Some`.
-    /// Otherwise, it will be `None`.
+    /// Depending on [`PARAMETER_TYPE`](Self::PARAMETER_TYPE) `value` will have different lengths.
+    /// - [`ParamType::Parameter`] - 0 elements. This parameter is derived from `world`, `environment`, or `registrations`.
+    /// - [`ParamType::Argument`] - 1 element. This parameter is a function parameter.
+    /// - [`ParamType::VarArg`] - N elements. Where N is the amount of arguments passed to the function.
     fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
+        value: SmallVec<[Spanned<Value>; 1]>,
         world: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         registrations: &'reg [&'reg TypeRegistration],
@@ -89,13 +89,21 @@ pub trait FunctionParam: Sized {
         state: &'val mut Self::State<'world, 'env, 'reg>,
     ) -> Self::Guard<'val, 'world, 'env, 'reg>;
 
-    /// Step 3: Produce the final argument.
+    /// Step 3: Produce `Self`.
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
     ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError>;
 }
-pub type FunctionType = dyn FnMut(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, EvalError>;
+pub type FunctionType = dyn FnMut(Vec<Spanned<Value>>, EvalParams) -> Result<Value, EvalError>;
+
+pub enum ParamType {
+    Parameter,
+    Argument,
+    VarArg,
+}
+
 pub struct Function {
+    /// The minimum amount of arguments this function requires.
     pub argument_count: usize,
     pub body: Box<FunctionType>,
 }
@@ -110,6 +118,12 @@ impl Debug for Function {
 /// Trait that represents a [`Fn`] that can be turned into a parser [`Function`].
 pub trait IntoFunction<T> {
     fn into_function(self) -> Function;
+}
+
+impl IntoFunction<()> for Function {
+    fn into_function(self) -> Function {
+        self
+    }
 }
 
 macro_rules! impl_into_function {
@@ -127,33 +141,26 @@ macro_rules! impl_into_function {
                 FnMut( $($(<$params as FunctionParam>::Item<'val, 'world, 'env, 'reg>),*)? ) -> R,
             R: FunctionReturn,
         {
+            #[track_caller]
             fn into_function(mut self) -> Function {
                 #[allow(unused_variables, unused_mut)]
-                let body = Box::new(move |args: Vec<Spanned<Expression>>, params: EvalParams| {
+                let body = Box::new(move |args: Vec<Spanned<Value>>, params: EvalParams| {
                     let EvalParams {
                         world,
                         environment,
                         registrations,
                     } = params;
-                    let mut args = args.into_iter().map(|expr| {
-                        Ok(Spanned {
-                            span: expr.span.clone(),
-                            value: eval_expression(
-                                expr,
-                                EvalParams {
-                                    world,
-                                    environment,
-                                    registrations,
-                                }
-                            )?
-                        })
-                    }).collect::<Result<Vec<_>, EvalError>>()?.into_iter();
+                    let mut args = args.into_iter();
                     let world = &mut Some(world);
                     let environment = &mut Some(environment);
 
                     $(
                         $(
-                            let arg = $params::IS_ARGUMENT.then(|| args.next().unwrap());
+                            let arg = match $params::PARAMETER_TYPE {
+                                ParamType::Parameter => SmallVec::new(),
+                                ParamType::Argument => SmallVec::from_buf([args.next().unwrap()]),
+                                ParamType::VarArg => SmallVec::from_vec(args.by_ref().collect()),
+                            };
 
                             let mut $params = $params::get(
                                 arg,
@@ -188,7 +195,11 @@ macro_rules! impl_into_function {
                 });
 
                 let argument_count = $($(
-                    $params::IS_ARGUMENT as usize +
+                    match $params::PARAMETER_TYPE {
+                        ParamType::Parameter => 0,
+                        ParamType::Argument => 1,
+                        ParamType::VarArg => 0,
+                    } +
                 )+)? 0;
 
                 Function { body, argument_count }

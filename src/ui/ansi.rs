@@ -45,17 +45,18 @@ pub fn ansi_to_layout_job(input: &str, config: &ConsoleConfig, job: &mut LayoutJ
                     VisualAttribute::FgColor(ansi_color) => {
                         current_format.color = ansi_to_color32(ansi_color);
                         if current_format.underline.width > 0.0 {
-                            current_format.underline = Stroke::new(1.0, current_format.color);
+                            current_format.underline = Stroke::new(1.0_f32, current_format.color);
                         }
                     }
                     VisualAttribute::BgColor(ansi_color) => {
                         current_format.background = ansi_to_color32(ansi_color);
                     }
                     VisualAttribute::UndrColor(ansi_color) => {
-                        current_format.underline = Stroke::new(1.0, ansi_to_color32(ansi_color));
+                        current_format.underline =
+                            Stroke::new(1.0_f32, ansi_to_color32(ansi_color));
                     }
                     VisualAttribute::Underline => {
-                        current_format.underline = Stroke::new(1.0, current_format.color);
+                        current_format.underline = Stroke::new(1.0_f32, current_format.color);
                     }
                     VisualAttribute::Reset(_) => current_format = theme.format_text(),
                     _ => error_once!("Unrecognized ansi visual attribute type: {esc:?}"),
@@ -66,7 +67,7 @@ pub fn ansi_to_layout_job(input: &str, config: &ConsoleConfig, job: &mut LayoutJ
                     // however, ansitok doesn't support parsing it.
                     "4:" => {
                         // egui doesn't support fancy underline styles
-                        current_format.underline = Stroke::new(1.0, current_format.color);
+                        current_format.underline = Stroke::new(1.0_f32, current_format.color);
                     }
                     _ => unreachable!("found text in sgr: {text}"),
                 },

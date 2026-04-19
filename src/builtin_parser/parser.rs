@@ -3,6 +3,7 @@
 use kinded::Kinded;
 use logos::Span;
 use std::collections::HashMap;
+use std::fmt::Display;
 use std::num::IntErrorKind;
 
 use crate::builtin_parser::NumberKind;
@@ -61,10 +62,13 @@ pub enum Expression {
     // Expressions
     BinaryOp {
         left: Box<Spanned<Expression>>,
-        operator: Operator,
+        operator: BinaryOperator,
         right: Box<Spanned<Expression>>,
     },
-    UnaryOp(Box<Spanned<Expression>>),
+    UnaryOp {
+        operator: UnaryOperator,
+        operand: Box<Spanned<Expression>>,
+    },
     Member {
         left: Box<Spanned<Expression>>,
         right: Spanned<Access>,
@@ -159,12 +163,46 @@ macro_rules! access_unwrap {
 pub(crate) use access_unwrap;
 
 #[derive(Debug, Clone)]
-pub enum Operator {
+pub enum BinaryOperator {
     Add,
     Sub,
     Mul,
     Div,
     Mod,
+
+    And,
+    Xor,
+    Or,
+}
+impl Display for BinaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BinaryOperator::Add => write!(f, "+"),
+            BinaryOperator::Sub => write!(f, "-"),
+            BinaryOperator::Mul => write!(f, "*"),
+            BinaryOperator::Div => write!(f, "/"),
+            BinaryOperator::Mod => write!(f, "%"),
+            BinaryOperator::And => write!(f, "&"),
+            BinaryOperator::Xor => write!(f, "^"),
+            BinaryOperator::Or => write!(f, "|"),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum UnaryOperator {
+    /// `-x`
+    Minus,
+    /// `!true`
+    Not,
+}
+impl Display for UnaryOperator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            UnaryOperator::Minus => write!(f, "-"),
+            UnaryOperator::Not => write!(f, "!"),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -362,7 +400,7 @@ fn parse_expression(
         }),
         Some(Ok(Token::If)) => Err(ParseError::UnsupportedFeature {
             feature: "if statements",
-            span: tokens.discard().span_until(Token::RightBracket),
+            span: tokens.skip_one().span_until(Token::RightBracket),
             issue: 0,
         }),
         Some(Ok(_)) => {
@@ -384,6 +422,7 @@ fn _parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<A
     expect!(tokens, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket);
+
     Ok(ast)
 }
 
@@ -395,15 +434,15 @@ fn parse_additive(
 
     while let Some(Ok(Token::Plus | Token::Minus)) = tokens.peek() {
         let operator = match tokens.next() {
-            Some(Ok(Token::Plus)) => Operator::Add,
-            Some(Ok(Token::Minus)) => Operator::Sub,
+            Some(Ok(Token::Plus)) => BinaryOperator::Add,
+            Some(Ok(Token::Minus)) => BinaryOperator::Sub,
             _ => unreachable!(),
         };
 
         let right = parse_multiplicitive(tokens, environment)?;
 
         node = Spanned {
-            span: node.span.start..right.span.end,
+            span: node.span.join(&right.span),
             value: Expression::BinaryOp {
                 left: Box::new(node),
                 operator,
@@ -418,17 +457,17 @@ fn parse_multiplicitive(
     tokens: &mut TokenStream,
     environment: &Environment,
 ) -> Result<Spanned<Expression>, ParseError> {
-    let mut node = parse_value(tokens, environment)?;
+    let mut node = parse_and(tokens, environment)?;
 
     while let Some(Ok(Token::Asterisk | Token::Slash | Token::Modulo)) = tokens.peek() {
         let operator = match tokens.next() {
-            Some(Ok(Token::Asterisk)) => Operator::Mul,
-            Some(Ok(Token::Slash)) => Operator::Div,
-            Some(Ok(Token::Modulo)) => Operator::Mod,
+            Some(Ok(Token::Asterisk)) => BinaryOperator::Mul,
+            Some(Ok(Token::Slash)) => BinaryOperator::Div,
+            Some(Ok(Token::Modulo)) => BinaryOperator::Mod,
             _ => unreachable!(),
         };
 
-        let right = parse_value(tokens, environment)?;
+        let right = parse_and(tokens, environment)?;
 
         node = Spanned {
             span: node.span.start..right.span.end,
@@ -442,6 +481,35 @@ fn parse_multiplicitive(
 
     Ok(node)
 }
+macro_rules! parse_bitwise {
+    ($op:ident, $token:ident: $name:ident => $next:ident) => {
+        fn $name(
+            tokens: &mut TokenStream,
+            environment: &Environment,
+        ) -> Result<Spanned<Expression>, ParseError> {
+            let mut node = $next(tokens, environment)?;
+
+            while let Some(Ok(Token::$token)) = tokens.peek() {
+                tokens.next();
+                let right = $next(tokens, environment)?;
+
+                node = Spanned {
+                    span: node.span.start..right.span.end,
+                    value: Expression::BinaryOp {
+                        left: Box::new(node),
+                        operator: BinaryOperator::$op,
+                        right: Box::new(right),
+                    },
+                };
+            }
+
+            Ok(node)
+        }
+    };
+}
+parse_bitwise!(And, Ampersand: parse_and => parse_xor);
+parse_bitwise!(Xor, Xor: parse_xor => parse_or);
+parse_bitwise!(Or, Pipe: parse_or => parse_value);
 
 fn parse_value(
     tokens: &mut TokenStream,
@@ -526,12 +594,20 @@ fn parse_value(
                         if let Some(Function { argument_count, .. }) =
                             environment.get_function(&name)
                         {
-                            dbg!(argument_count);
-
                             let mut arguments = Vec::new();
                             for _ in 0..(*argument_count) {
                                 let expr = parse_expression(tokens, environment)?;
                                 arguments.push(expr);
+                            }
+                            while !matches!(
+                                tokens.peek(),
+                                Some(Ok(Token::SemiColon
+                                    | Token::RightBrace
+                                    | Token::RightBracket
+                                    | Token::RightParen))
+                            ) && let Ok(additional) = parse_expression(tokens, environment)
+                            {
+                                arguments.push(additional);
                             }
                             Ok(Spanned {
                                 span: start..tokens.span().end,
@@ -556,9 +632,16 @@ fn parse_value(
                 let string = slice[1..slice.len() - 1].to_string();
                 Ok(tokens.span().wrap(Expression::String(string)))
             }
-            Some(Ok(Token::Minus)) => {
+            Some(Ok(token @ (Token::Minus | Token::Not))) => {
                 let expr = parse_literal(tokens, environment)?;
-                Ok(tokens.span().wrap(Expression::UnaryOp(Box::new(expr))))
+                Ok(tokens.span().wrap(Expression::UnaryOp {
+                    operator: match token {
+                        Token::Minus => UnaryOperator::Minus,
+                        Token::Not => UnaryOperator::Not,
+                        _ => unreachable!(),
+                    },
+                    operand: Box::new(expr),
+                }))
             }
             Some(Ok(Token::Ampersand)) => {
                 let expr = parse_literal(tokens, environment)?;

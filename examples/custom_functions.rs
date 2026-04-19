@@ -27,7 +27,7 @@ fn add(num1: f64, num2: f64) -> f64 {
 
 /// A "Generic" function that works with any [`Number`] type.
 fn add_generic(num1: Spanned<Number>, num2: Spanned<Number>) -> Result<Number, EvalError> {
-    Number::add(num1.value, num2.value, num1.span.join(num2.span))
+    Number::add(num1.value, num2.value, num1.span.join(&num2.span))
 }
 
 /// Function with any value + span
@@ -55,7 +55,12 @@ fn toggle_bool(value: &mut bool) {
     *value = !*value;
 }
 
-// For more examples take a look at the standard library.
+// Variable argument function
+fn count_args(args: Vec<Spanned<Value>>) -> usize {
+    args.len()
+}
+
+// For more examples take a look at the [standard library](https://github.com/doonv/bevy_dev_console/blob/master/src/builtin_parser/runner/stdlib.rs).
 
 // Register our functions by creating and inserting our own environment
 fn custom_environment() -> Environment {
@@ -69,6 +74,7 @@ fn custom_environment() -> Environment {
         fn print_debug_info;
         fn add_to_global_counter;
         fn toggle_bool;
+        fn count_args;
     });
 
     environment

@@ -8,6 +8,8 @@ use kinded::Kinded;
 use logos::Span;
 
 use crate::builtin_parser::YELLOW;
+use crate::builtin_parser::parser::{BinaryOperator, UnaryOperator};
+use crate::builtin_parser::runner::value::ValueKind;
 
 use super::runner::error::EvalError;
 use super::{SpanExtension, Spanned};
@@ -163,16 +165,16 @@ impl Display for NumberKind {
 }
 
 macro_rules! impl_op {
-    ($fn:ident, $op:tt, $checked:ident, $operation:literal) => {
+    ($fn:ident, $op:tt, $checked:ident, $operation:ident) => {
         impl Number {
-            #[doc = concat!("Performs `", stringify!($op), "` on two [`Number`]s.")]
+            #[doc = concat!("Perform the `", stringify!($op), "` operation on two [`Number`]s.")]
             ///
             /// The `span` argument is used for errors.
             pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, EvalError> {
-                let op_err = || EvalError::InvalidOperation {
+                let op_err = || EvalError::InvalidBinaryOperation {
                     left,
                     right,
-                    operation: $operation,
+                    operator: BinaryOperator::$operation,
                     span: span.clone(),
                 };
                 let from_map = |value, ty| EvalError::ValueOutOfRange {
@@ -233,18 +235,87 @@ macro_rules! impl_op {
     };
 }
 
-impl_op!(add, +, checked_add, "add");
-impl_op!(sub, -, checked_sub, "subtract");
-impl_op!(mul, *, checked_mul, "multiply");
-impl_op!(div, /, checked_div, "divide");
-impl_op!(rem, %, checked_rem, "mod");
+impl_op!(add, +, checked_add, Add);
+impl_op!(sub, -, checked_sub, Sub);
+impl_op!(mul, *, checked_mul, Mul);
+impl_op!(div, /, checked_div, Div);
+impl_op!(rem, %, checked_rem, Mod);
+
+macro_rules! impl_bitwise_op {
+    ($fn:ident, $op:tt, $op_enum:ident) => {
+        impl Number {
+            #[doc = concat!("Perform the `", stringify!($op), "` bitwise operation on two integer [`Number`]s.")]
+            ///
+            /// The `span` argument is used for errors.
+            pub fn $fn(left: Number, right: Number, span: Span) -> Result<Number, EvalError> {
+                let from_map = |value, ty| EvalError::ValueOutOfRange {
+                    span: span.clone(),
+                    value,
+                    ty
+                };
+
+                match (left, right) {
+                    (Number::u8(left), Number::u8(right)) => Ok(Number::u8(left $op right)),
+                    (Number::u16(left), Number::u16(right)) => Ok(Number::u16(left $op right)),
+                    (Number::u32(left), Number::u32(right)) => Ok(Number::u32(left $op right)),
+                    (Number::u64(left), Number::u64(right)) => Ok(Number::u64(left $op right)),
+                    (Number::usize(left), Number::usize(right)) => Ok(Number::usize(left $op right)),
+                    (Number::i8(left), Number::i8(right)) => Ok(Number::i8(left $op right)),
+                    (Number::i16(left), Number::i16(right)) => Ok(Number::i16(left $op right)),
+                    (Number::i32(left), Number::i32(right)) => Ok(Number::i32(left $op right)),
+                    (Number::i64(left), Number::i64(right)) => Ok(Number::i64(left $op right)),
+                    (Number::isize(left), Number::isize(right)) => Ok(Number::isize(left $op right)),
+                    // (Number::f32(left), Number::f32(right)) => Ok(Number::f32(left $op right)),
+                    // (Number::f64(left), Number::f64(right)) => Ok(Number::f64(left $op right)),
+
+                    (Number::Integer(left), Number::u8(right)) => Ok(Number::u8(u8::try_from(left).map_err(|_| from_map(left, NumberKind::u8))? $op right)),
+                    (Number::Integer(left), Number::u16(right)) => Ok(Number::u16(u16::try_from(left).map_err(|_| from_map(left, NumberKind::u16))? $op right)),
+                    (Number::Integer(left), Number::u32(right)) => Ok(Number::u32(u32::try_from(left).map_err(|_| from_map(left, NumberKind::u32))? $op right)),
+                    (Number::Integer(left), Number::u64(right)) => Ok(Number::u64(u64::try_from(left).map_err(|_| from_map(left, NumberKind::u64))? $op right)),
+                    (Number::Integer(left), Number::usize(right)) => Ok(Number::usize(usize::try_from(left).map_err(|_| from_map(left, NumberKind::usize))? $op right)),
+                    (Number::Integer(left), Number::i8(right)) => Ok(Number::i8(i8::try_from(left).map_err(|_| from_map(left, NumberKind::i8))? $op right)),
+                    (Number::Integer(left), Number::i16(right)) => Ok(Number::i16(i16::try_from(left).map_err(|_| from_map(left, NumberKind::i16))? $op right)),
+                    (Number::Integer(left), Number::i32(right)) => Ok(Number::i32(i32::try_from(left).map_err(|_| from_map(left, NumberKind::i32))? $op right)),
+                    (Number::Integer(left), Number::i64(right)) => Ok(Number::i64(i64::try_from(left).map_err(|_| from_map(left, NumberKind::i64))? $op right)),
+                    (Number::Integer(left), Number::isize(right)) => Ok(Number::isize(isize::try_from(left).map_err(|_| from_map(left, NumberKind::isize))? $op right)),
+                    (Number::Integer(left), Number::Integer(right)) => Ok(Number::Integer(left $op right)),
+                    (Number::u8(left), Number::Integer(right)) => Ok(Number::u8(left $op u8::try_from(right).map_err(|_| from_map(right, NumberKind::u8))?)),
+                    (Number::u16(left), Number::Integer(right)) => Ok(Number::u16(left $op u16::try_from(right).map_err(|_| from_map(right, NumberKind::u16))?)),
+                    (Number::u32(left), Number::Integer(right)) => Ok(Number::u32(left $op u32::try_from(right).map_err(|_| from_map(right, NumberKind::u32))?)),
+                    (Number::u64(left), Number::Integer(right)) => Ok(Number::u64(left $op u64::try_from(right).map_err(|_| from_map(right, NumberKind::u64))?)),
+                    (Number::usize(left), Number::Integer(right)) => Ok(Number::usize(left $op usize::try_from(right).map_err(|_| from_map(right, NumberKind::usize))?)),
+                    (Number::i8(left), Number::Integer(right)) => Ok(Number::i8(left $op i8::try_from(right).map_err(|_| from_map(right, NumberKind::i8))?)),
+                    (Number::i16(left), Number::Integer(right)) => Ok(Number::i16(left $op i16::try_from(right).map_err(|_| from_map(right, NumberKind::i16))?)),
+                    (Number::i32(left), Number::Integer(right)) => Ok(Number::i32(left $op i32::try_from(right).map_err(|_| from_map(right, NumberKind::i32))?)),
+                    (Number::i64(left), Number::Integer(right)) => Ok(Number::i64(left $op i64::try_from(right).map_err(|_| from_map(right, NumberKind::i64))?)),
+                    (Number::isize(left), Number::Integer(right)) => Ok(Number::isize(left $op isize::try_from(right).map_err(|_| from_map(right, NumberKind::isize))?)),
+                    // (Number::Float(left), Number::f32(right)) => Ok(Number::f32(left as f32 $op right)),
+                    // (Number::Float(left), Number::f64(right)) => Ok(Number::f64(left as f64 $op right)),
+                    // (Number::Float(left), Number::Float(right)) => Ok(Number::Float(left $op right)),
+                    // (Number::f32(left), Number::Float(right)) => Ok(Number::f32(left $op right as f32)),
+                    // (Number::f64(left), Number::Float(right)) => Ok(Number::f64(left $op right as f64)),
+                    _ => Err(EvalError::InvalidBinaryOperation {
+                        span,
+                        operator: BinaryOperator::$op_enum,
+                        left,
+                        right,
+                        // accepted: &[ValueKind::Boolean, ValueKind::AnyInteger],
+                    })
+                }
+            }
+        }
+    };
+}
+impl_bitwise_op!(and, &, Add);
+impl_bitwise_op!(xor, ^, Xor);
+impl_bitwise_op!(or, |, Or);
 
 macro_rules! impl_op_spanned {
     ($trait:ident, $method:ident) => {
         impl $trait<Self> for Spanned<Number> {
             type Output = Result<Number, EvalError>;
             fn $method(self, rhs: Self) -> Self::Output {
-                let span = self.span.join(rhs.span);
+                let span = self.span.join(&rhs.span);
 
                 Number::$method(self.value, rhs.value, span)
             }
@@ -278,25 +349,43 @@ impl Number {
             Number::Integer(number) => Ok(Number::Integer(-number)),
         }
     }
+
+    /// Performs the bitwise `!` operation
+    pub fn not(self, span: Span) -> Result<Number, EvalError> {
+        match self {
+            Number::u8(number) => Ok(Number::u8(!number)),
+            Number::u16(number) => Ok(Number::u16(!number)),
+            Number::u32(number) => Ok(Number::u32(!number)),
+            Number::u64(number) => Ok(Number::u64(!number)),
+            Number::usize(number) => Ok(Number::usize(!number)),
+            Number::i8(number) => Ok(Number::i8(!number)),
+            Number::i16(number) => Ok(Number::i16(!number)),
+            Number::i32(number) => Ok(Number::i32(!number)),
+            Number::i64(number) => Ok(Number::i64(!number)),
+            Number::isize(number) => Ok(Number::isize(!number)),
+            Number::f32(_) | Number::f64(_) | Number::Float(_) => {
+                Err(EvalError::InvalidUnaryOperation {
+                    span,
+                    operator: UnaryOperator::Not,
+                    operand: ValueKind::Number(self.kind()),
+                    accepted: &[ValueKind::Boolean, ValueKind::AnyInteger],
+                })
+            }
+            Number::Integer(number) => Ok(Number::Integer(!number)),
+        }
+    }
 }
 
 macro_rules! from_primitive {
-    ($primitive:ident) => {
-        impl From<$primitive> for Number {
-            fn from(value: $primitive) -> Self {
-                Number::$primitive(value)
+    ($($primitive:ident),+) => {
+        $(
+            impl From<$primitive> for Number {
+                fn from(value: $primitive) -> Self {
+                    Number::$primitive(value)
+                }
             }
-        }
+        )+
     };
 }
 
-from_primitive!(u8);
-from_primitive!(u16);
-from_primitive!(u32);
-from_primitive!(u64);
-from_primitive!(i8);
-from_primitive!(i16);
-from_primitive!(i32);
-from_primitive!(i64);
-from_primitive!(f32);
-from_primitive!(f64);
+from_primitive!(u8, u16, u32, u64, i8, i16, i32, i64, f32, f64);

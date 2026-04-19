@@ -36,6 +36,11 @@ pub enum Token {
     #[token("%")]
     Modulo,
 
+    #[token("!")]
+    Not,
+    #[token("^")]
+    Xor,
+
     #[token(".", priority = 10)]
     Dot,
     #[token("&")]
@@ -120,7 +125,7 @@ impl<'a> TokenStream<'a> {
     }
 
     /// Returns advances the iterator and discards the [`Token`]
-    pub fn discard(&mut self) -> &mut Self {
+    pub fn skip_one(&mut self) -> &mut Self {
         self.next();
         self
     }

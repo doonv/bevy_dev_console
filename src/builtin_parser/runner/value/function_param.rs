@@ -5,8 +5,10 @@ use std::cell::{Ref, RefMut};
 use bevy::ecs::world::World;
 use bevy::reflect::TypeRegistration;
 use logos::Span;
+use smallvec::SmallVec;
 
 use crate::builtin_parser::number::{Number, NumberKind};
+use crate::builtin_parser::runner::function::ParamType;
 use crate::builtin_parser::{Environment, Spanned, StrongRef};
 use kinded::Kinded;
 
@@ -15,87 +17,43 @@ use super::super::function::FunctionParam;
 use super::Value;
 use super::kind::ValueKind;
 
-impl FunctionParam for Spanned<Value> {
-    type State<'world, 'env, 'reg> = Option<Self>;
-    type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
-    type Item<'val, 'world, 'env, 'reg> = Self;
-    const IS_ARGUMENT: bool = true;
+macro_rules! arg {
+    (impl$({ $($generics:tt)* })? $ty:ty: $value:ident => $expr:expr ) => {
+        impl$(<$($generics)*>)? FunctionParam for $ty {
+            type State<'world, 'env, 'reg> = Option<Self>;
+            type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
+            type Item<'val, 'world, 'env, 'reg> = Self;
+            const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
-    fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
-        _: &mut Option<&'world mut World>,
-        _: &mut Option<&'env mut Environment>,
-        _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-        Ok(Some(value.unwrap()))
-    }
-    fn borrow<'val, 'world, 'env, 'reg>(
-        state: &'val mut Self::State<'world, 'env, 'reg>,
-    ) -> Self::Guard<'val, 'world, 'env, 'reg> {
-        state.take()
-    }
-    fn as_arg<'val, 'world, 'env, 'reg>(
-        guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
-        Ok(guard.take().unwrap())
-    }
+            fn get<'world, 'env, 'reg>(
+                mut value: SmallVec<[Spanned<Value>; 1]>,
+                _: &mut Option<&'world mut World>,
+                _: &mut Option<&'env mut Environment>,
+                _: &'reg [&'reg TypeRegistration],
+            ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+                let $value = value.pop().unwrap();
+                Ok(Some($expr))
+            }
+            fn borrow<'val, 'world, 'env, 'reg>(
+                state: &'val mut Self::State<'world, 'env, 'reg>,
+            ) -> Self::Guard<'val, 'world, 'env, 'reg> {
+                state.take()
+            }
+            fn as_arg<'val, 'world, 'env, 'reg>(
+                guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
+            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+                Ok(guard.take().unwrap())
+            }
+        }
+    };
 }
 
-impl<T: TryFrom<Spanned<Value>, Error = EvalError>> FunctionParam for Spanned<T> {
-    type State<'world, 'env, 'reg> = Option<Self>;
-    type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
-    type Item<'val, 'world, 'env, 'reg> = Self;
-    const IS_ARGUMENT: bool = true;
-
-    fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
-        _: &mut Option<&'world mut World>,
-        _: &mut Option<&'env mut Environment>,
-        _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-        let value = value.unwrap();
-        Ok(Some(Spanned {
-            span: value.span.clone(),
-            value: T::try_from(value)?,
-        }))
-    }
-    fn borrow<'val, 'world, 'env, 'reg>(
-        state: &'val mut Self::State<'world, 'env, 'reg>,
-    ) -> Self::Guard<'val, 'world, 'env, 'reg> {
-        state.take()
-    }
-    fn as_arg<'val, 'world, 'env, 'reg>(
-        guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
-        Ok(guard.take().unwrap())
-    }
-}
-
-impl FunctionParam for Value {
-    type State<'world, 'env, 'reg> = Option<Self>;
-    type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
-    type Item<'val, 'world, 'env, 'reg> = Self;
-    const IS_ARGUMENT: bool = true;
-
-    fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
-        _: &mut Option<&'world mut World>,
-        _: &mut Option<&'env mut Environment>,
-        _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-        Ok(Some(value.unwrap().value))
-    }
-    fn borrow<'val, 'world, 'env, 'reg>(
-        state: &'val mut Self::State<'world, 'env, 'reg>,
-    ) -> Self::Guard<'val, 'world, 'env, 'reg> {
-        state.take()
-    }
-    fn as_arg<'val, 'world, 'env, 'reg>(
-        guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
-        Ok(guard.take().unwrap())
-    }
-}
+arg!(impl Spanned<Value>: value => value);
+arg!(impl{T: TryFrom<Spanned<Value>, Error = EvalError>} Spanned<T>: value => Spanned {
+    span: value.span.clone(),
+    value: T::try_from(value)?,
+});
+arg!(impl Value: value => value.value);
 
 macro_rules! impl_function_param_for_value {
     (impl $type:ty: $value_kind:ident($value_name:ident) => $return:expr) => {
@@ -109,15 +67,15 @@ macro_rules! impl_function_param_for_value {
             type State<'world, 'env, 'reg> = Option<Self>;
             type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
             type Item<'val, 'world, 'env, 'reg> = Self;
-            const IS_ARGUMENT: bool = true;
+            const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
             fn get<'world, 'env, 'reg>(
-                value: Option<Spanned<Value>>,
+                mut value: SmallVec<[Spanned<Value>; 1]>,
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
             ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-                let Spanned { span, value } = value.unwrap();
+                let Spanned { span, value } = value.pop().unwrap();
                 if let Value::$value_kind($value_name) = value {
                     Ok(Some($return))
                 } else {
@@ -153,15 +111,15 @@ macro_rules! impl_function_param_for_value {
             type State<'world, 'env, 'reg> = (StrongRef<Value>, Span);
             type Guard<'val, 'world, 'env, 'reg> = (RefMut<'val, Value>, &'val Span);
             type Item<'val, 'world, 'env, 'reg> = &'val mut $type;
-            const IS_ARGUMENT: bool = true;
+            const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
             fn get<'world, 'env, 'reg>(
-                value: Option<Spanned<Value>>,
+                mut value: SmallVec<[Spanned<Value>; 1]>,
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
             ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-                let Spanned { span, value } = value.unwrap();
+                let Spanned { span, value } = value.pop().unwrap();
 
                 if let Value::Reference(reference) = value {
                     reference
@@ -202,15 +160,15 @@ macro_rules! impl_function_param_for_value {
             type State<'world, 'env, 'reg> = (StrongRef<Value>, Span);
             type Guard<'val, 'world, 'env, 'reg> = (Ref<'val, Value>, &'val Span);
             type Item<'val, 'world, 'env, 'reg> = &'val $type;
-            const IS_ARGUMENT: bool = true;
+            const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
             fn get<'world, 'env, 'reg>(
-                value: Option<Spanned<Value>>,
+                mut value: SmallVec<[Spanned<Value>; 1]>,
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
             ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-                let Spanned { span, value } = value.unwrap();
+                let Spanned { span, value } = value.pop().unwrap();
 
                 if let Value::Reference(reference) = value {
                     reference
@@ -266,15 +224,15 @@ macro_rules! impl_function_param_for_numbers {
                 type State<'world, 'env, 'reg> = Option<Self>;
                 type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
                 type Item<'val, 'world, 'env, 'reg> = Self;
-                const IS_ARGUMENT: bool = true;
+                const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
                 fn get<'world, 'env, 'reg>(
-                    value: Option<Spanned<Value>>,
+                    mut value: SmallVec<[Spanned<Value>; 1]>,
                     _: &mut Option<&'world mut World>,
                     _: &mut Option<&'env mut Environment>,
                     _: &'reg [&'reg TypeRegistration],
                 ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-                    let Spanned { span, value } = value.unwrap();
+                    let Spanned { span, value } = value.pop().unwrap();
                     match value {
                         Value::Number(Number::$number(value)) => Ok(Some(value)),
                         Value::Number(Number::$generic(value)) => Ok(Some(value as $number)),
@@ -313,15 +271,15 @@ impl FunctionParam for &Value {
     type State<'world, 'env, 'reg> = StrongRef<Value>;
     type Guard<'val, 'world, 'env, 'reg> = Ref<'val, Value>;
     type Item<'val, 'world, 'env, 'reg> = &'val Value;
-    const IS_ARGUMENT: bool = true;
+    const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
     fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
+        mut value: SmallVec<[Spanned<Value>; 1]>,
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
     ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-        let Spanned { span, value } = value.unwrap();
+        let Spanned { span, value } = value.pop().unwrap();
 
         if let Value::Reference(reference) = value {
             reference
@@ -353,15 +311,15 @@ impl FunctionParam for &mut Value {
     type State<'world, 'env, 'reg> = StrongRef<Value>;
     type Guard<'val, 'world, 'env, 'reg> = RefMut<'val, Value>;
     type Item<'val, 'world, 'env, 'reg> = &'val mut Value;
-    const IS_ARGUMENT: bool = true;
+    const PARAMETER_TYPE: ParamType = ParamType::Argument;
 
     fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
+        mut value: SmallVec<[Spanned<Value>; 1]>,
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
     ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
-        let Spanned { span, value } = value.unwrap();
+        let Spanned { span, value } = value.pop().unwrap();
 
         if let Value::Reference(reference) = value {
             reference
@@ -393,10 +351,10 @@ impl FunctionParam for &mut World {
     type State<'world, 'env, 'reg> = Option<&'world mut World>;
     type Guard<'val, 'world, 'env, 'reg> = Option<&'val mut World>;
     type Item<'val, 'world, 'env, 'reg> = &'val mut World;
-    const IS_ARGUMENT: bool = false;
+    const PARAMETER_TYPE: ParamType = ParamType::Parameter;
 
     fn get<'world, 'env, 'reg>(
-        _: Option<Spanned<Value>>,
+        _: SmallVec<[Spanned<Value>; 1]>,
         world: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
@@ -422,15 +380,48 @@ impl FunctionParam for &mut World {
         Ok(guard.as_mut().map(|w| &mut **w).unwrap())
     }
 }
+impl FunctionParam for &World {
+    type State<'world, 'env, 'reg> = Option<&'world World>;
+    type Guard<'val, 'world, 'env, 'reg> = Option<&'val World>;
+    type Item<'val, 'world, 'env, 'reg> = &'val World;
+    const PARAMETER_TYPE: ParamType = ParamType::Parameter;
+
+    fn get<'world, 'env, 'reg>(
+        _: SmallVec<[Spanned<Value>; 1]>,
+        world: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+        let Some(world) = world.take() else {
+            return Err(EvalError::Custom {
+                text: "world borrowed twice".into(),
+                span: 0..0,
+            });
+        };
+        Ok(Some(world))
+    }
+
+    fn borrow<'val, 'world, 'env, 'reg>(
+        state: &'val mut Self::State<'world, 'env, 'reg>,
+    ) -> Self::Guard<'val, 'world, 'env, 'reg> {
+        state.take()
+    }
+
+    fn as_arg<'val, 'world, 'env, 'reg>(
+        guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+        Ok(guard.as_mut().map(|w| &**w).unwrap())
+    }
+}
 
 impl FunctionParam for &mut Environment {
     type State<'world, 'env, 'reg> = Option<&'env mut Environment>;
     type Guard<'val, 'world, 'env, 'reg> = Option<&'val mut Environment>;
     type Item<'val, 'world, 'env, 'reg> = &'val mut Environment;
-    const IS_ARGUMENT: bool = false;
+    const PARAMETER_TYPE: ParamType = ParamType::Parameter;
 
     fn get<'world, 'env, 'reg>(
-        _: Option<Spanned<Value>>,
+        _: SmallVec<[Spanned<Value>; 1]>,
         _: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
@@ -449,15 +440,41 @@ impl FunctionParam for &mut Environment {
         Ok(guard.as_mut().map(|e| &mut **e).unwrap())
     }
 }
+impl FunctionParam for &Environment {
+    type State<'world, 'env, 'reg> = Option<&'env Environment>;
+    type Guard<'val, 'world, 'env, 'reg> = Option<&'val Environment>;
+    type Item<'val, 'world, 'env, 'reg> = &'val Environment;
+    const PARAMETER_TYPE: ParamType = ParamType::Parameter;
+
+    fn get<'world, 'env, 'reg>(
+        _: SmallVec<[Spanned<Value>; 1]>,
+        _: &mut Option<&'world mut World>,
+        environment: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+        Ok(Some(environment.take().unwrap()))
+    }
+
+    fn borrow<'val, 'world, 'env, 'reg>(
+        state: &'val mut Self::State<'world, 'env, 'reg>,
+    ) -> Self::Guard<'val, 'world, 'env, 'reg> {
+        state.take()
+    }
+    fn as_arg<'val, 'world, 'env, 'reg>(
+        guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+        Ok(guard.as_mut().map(|e| &**e).unwrap())
+    }
+}
 
 impl FunctionParam for &[&TypeRegistration] {
     type State<'world, 'env, 'reg> = Option<&'reg [&'reg TypeRegistration]>;
     type Guard<'val, 'world, 'env, 'reg> = Option<&'reg [&'reg TypeRegistration]>;
     type Item<'val, 'world, 'env, 'reg> = &'reg [&'reg TypeRegistration];
-    const IS_ARGUMENT: bool = false;
+    const PARAMETER_TYPE: ParamType = ParamType::Parameter;
 
     fn get<'world, 'env, 'reg>(
-        _: Option<Spanned<Value>>,
+        _: SmallVec<[Spanned<Value>; 1]>,
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         registrations: &'reg [&'reg TypeRegistration],
@@ -473,5 +490,31 @@ impl FunctionParam for &[&TypeRegistration] {
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
     ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
         Ok(guard.unwrap())
+    }
+}
+
+impl FunctionParam for Vec<Spanned<Value>> {
+    type State<'world, 'env, 'reg> = Option<Self>;
+    type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
+    type Item<'val, 'world, 'env, 'reg> = Self;
+    const PARAMETER_TYPE: ParamType = ParamType::VarArg;
+
+    fn get<'world, 'env, 'reg>(
+        values: SmallVec<[Spanned<Value>; 1]>,
+        _: &mut Option<&'world mut World>,
+        _: &mut Option<&'env mut Environment>,
+        _: &'reg [&'reg TypeRegistration],
+    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+        Ok(Some(values.into_vec()))
+    }
+    fn borrow<'val, 'world, 'env, 'reg>(
+        state: &'val mut Self::State<'world, 'env, 'reg>,
+    ) -> Self::Guard<'val, 'world, 'env, 'reg> {
+        state.take()
+    }
+    fn as_arg<'val, 'world, 'env, 'reg>(
+        guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+        Ok(guard.take().unwrap())
     }
 }

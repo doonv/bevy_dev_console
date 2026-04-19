@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt;
 
 use bevy::reflect::ApplyError;
 use kinded::Kinded;
@@ -6,7 +7,9 @@ use logos::Span;
 
 use crate::builtin_parser::Spanned;
 use crate::builtin_parser::number::{Number, NumberKind};
-use crate::builtin_parser::parser::{Access, AccessKind, ExpressionKind};
+use crate::builtin_parser::parser::{
+    Access, AccessKind, BinaryOperator, ExpressionKind, UnaryOperator,
+};
 use crate::builtin_parser::runner::value::ValueKind;
 
 use super::Value;
@@ -23,14 +26,19 @@ pub enum EvalError {
         text: Cow<'static, str>,
         span: Span,
     },
-    InvalidOperation {
+    InvalidBinaryOperation {
         left: Number,
         right: Number,
-        operation: &'static str,
+        operator: BinaryOperator,
         span: Span,
     },
     VariableNotFound(Spanned<String>),
-    ExpectedNumberAfterUnaryOperator(Spanned<Value>),
+    InvalidUnaryOperation {
+        span: Span,
+        operator: UnaryOperator,
+        operand: ValueKind,
+        accepted: &'static [ValueKind],
+    },
     CannotIndexValue(Spanned<Value>),
     ReferenceToMovedData(Span),
     VariableMoved(Spanned<String>),
@@ -96,11 +104,10 @@ impl EvalError {
     #[must_use]
     pub fn spans(&self) -> Vec<Span> {
         use EvalError as E;
-
         match self {
             E::Custom { span, .. }
             | E::VariableNotFound(Spanned { span, .. })
-            | E::ExpectedNumberAfterUnaryOperator(Spanned { span, .. })
+            | E::InvalidUnaryOperation { span, .. }
             | E::CannotIndexValue(Spanned { span, .. })
             | E::FieldNotFoundInStruct(Spanned { span, value: _ })
             | E::CannotDereferenceValue(Spanned { span, .. })
@@ -119,7 +126,7 @@ impl EvalError {
             | E::ExpectedVariableGotFunction(Spanned { span, .. })
             | E::CannotReflectReference(span)
             | E::CannotReflectResource(span)
-            | E::InvalidOperation { span, .. }
+            | E::InvalidBinaryOperation { span, .. }
             | E::IncorrectAccessOperation { span, .. }
             | E::FieldNotFoundInTuple { span, .. }
             | E::ApplyError { span, .. }
@@ -137,17 +144,22 @@ impl std::fmt::Display for EvalError {
             E::VariableNotFound(Spanned { value, .. }) => {
                 write!(f, "Variable `{value}` not found.")
             }
-            E::ExpectedNumberAfterUnaryOperator(Spanned { value, .. }) => write!(
+            E::InvalidUnaryOperation {
+                span: _,
+                operator,
+                operand,
+                accepted,
+            } => write!(
                 f,
-                "Expected a number after unary operator (-) but got {} instead.",
-                value.kind()
+                "cannot apply unary operator `{operator}` to type `{operand}`. the supported types are: {}",
+                FancyJoin(accepted)
             ),
             E::CannotIndexValue(Spanned { span: _, value }) => {
                 write!(f, "Cannot index {} with a member expression.", value.kind())
             }
             E::ReferenceToMovedData(_) => write!(f, "Cannot access reference to moved data."),
             E::VariableMoved(Spanned { value, .. }) => {
-                write!(f, "Variable `{value}` was moved.")
+                write!(f, "variable `{value}` was moved")
             }
             E::CannotDereferenceValue(Spanned { value: kind, .. }) => {
                 write!(f, "Cannot dereference {kind}.")
@@ -216,12 +228,12 @@ impl std::fmt::Display for EvalError {
                     "Cannot reflecting resources is not possible at the moment."
                 )
             }
-            E::InvalidOperation {
+            E::InvalidBinaryOperation {
                 left,
                 right,
-                operation,
+                operator,
                 span: _,
-            } => write!(f, "cannot {operation} {left} by {right}"),
+            } => write!(f, "cannot {operator} {left} by {right}"),
             E::IncorrectAccessOperation {
                 expected_access,
                 expected_type,
@@ -267,3 +279,24 @@ impl std::fmt::Display for EvalError {
 }
 
 impl std::error::Error for EvalError {}
+
+struct FancyJoin<'a, T: fmt::Display>(&'a [T]);
+
+impl<'a, T: fmt::Display> fmt::Display for FancyJoin<'a, T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, item) in self.0.iter().enumerate() {
+            if i > 0 {
+                f.write_str(", ")?;
+            }
+            if i == self.0.len() - 1 {
+                f.write_str("and ")?;
+            }
+            if f.alternate() {
+                write!(f, "{:#}", item)?;
+            } else {
+                write!(f, "{}", item)?;
+            }
+        }
+        Ok(())
+    }
+}
