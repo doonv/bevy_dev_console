@@ -11,7 +11,7 @@ use crate::builtin_parser::NumberKind;
 use super::lexer::{FailedToLexCharacter, Token, TokenStream};
 use super::number::Number;
 use super::runner::environment::Function;
-use super::{Environment, SpanExtension, Spanned};
+use super::{Diagnostic, Environment, SpanExtension, Spanned};
 
 /// An [Abstract Syntax Tree](https://en.wikipedia.org/wiki/Abstract_syntax_tree).
 ///
@@ -23,16 +23,15 @@ macro_rules! expect {
         match $tokens.next() {
             Some(Ok($($token)+)) => ($($token)+) ,
             Some(Ok(token)) => {
-                return Err(ParseError::ExpectedTokenButGot {
+                return Err($tokens.span().wrap(ParseError::ExpectedTokenButGot {
                     expected: $($token)+,
                     got: token,
-                    span: $tokens.span(),
-                })
+                }).into())
             }
             Some(Err(FailedToLexCharacter)) => {
-                return Err(ParseError::FailedToLexCharacters($tokens.span().wrap($tokens.slice().to_string())))
+                return Err($tokens.span().diagnose(ParseError::FailedToLexCharacters($tokens.slice().to_owned())))
             }
-            None => return Err(ParseError::ExpectedMoreTokens($tokens.span())),
+            None => return Err($tokens.span().diagnose(ParseError::ExpectedMoreTokens)),
         }
     };
 }
@@ -143,20 +142,18 @@ impl AccessKind {
 /// For examples, take a look at existing uses in the code.
 macro_rules! access_unwrap {
     ($expected:literal, $($variant:ident($variant_inner:ident))|+ = $val:expr => $block:block) => {{
-        let val = $val;
-        if let $(Access::$variant($variant_inner))|+ = val.value $block else {
+        let Spanned { span, value } = $val;
+        if let $(Access::$variant($variant_inner))|+ = value $block else {
             use $crate::builtin_parser::parser::AccessKind;
             use $crate::builtin_parser::runner::error::EvalError;
 
-            // We have to put this in a `const` first to avoid a
-            // `temporary value dropped while borrowed` error.
-            const EXPECTED_ACCESS: &[AccessKind] = &[$(AccessKind::$variant),+];
-            Err(EvalError::IncorrectAccessOperation {
-                span: val.span,
-                expected_access: EXPECTED_ACCESS,
-                expected_type: $expected,
-                got: val.value,
-            })?
+            Err(span.diagnose(
+                EvalError::IncorrectAccessOperation {
+                    expected_access: &[$(AccessKind::$variant),+],
+                    expected_type: $expected,
+                    got: value.kind(),
+                },
+            ))?
         }
     }};
 }
@@ -205,159 +202,82 @@ impl Display for UnaryOperator {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ParseError {
-    FailedToLexCharacters(Spanned<String>),
-    ExpectedMoreTokens(Span),
-    ExpectedTokenButGot {
-        expected: Token,
-        got: Token,
-        span: Span,
-    },
-    ExpectedEndline(Spanned<Token>),
-    ExpectedLiteral(Spanned<Token>),
-    InvalidSuffixForNumber(Spanned<String>),
-    InvalidSuffixForFloat(Spanned<String>),
-    IntegerSuffixOnFloat(Spanned<String>),
+    #[error("unknown token character: {0}")]
+    FailedToLexCharacters(String),
+
+    #[error("expected more tokens, got nothing.")]
+    ExpectedMoreTokens,
+
+    #[error("expected token {expected:?}, got token {got:?} instead.")]
+    ExpectedTokenButGot { expected: Token, got: Token },
+
+    #[error(
+        "expected a semicolon or endline after a complete statement, but got more tokens than expected."
+    )]
+    ExpectedEndline(Token),
+
+    #[error("expected a literal token, got {0:?} which is not a valid literal.")]
+    ExpectedLiteral(Token),
+
+    #[error(
+        "invalid suffix `{0}` for number literal. the suffix must be one of the numeric types (`u32`, `isize`, `f32`, etc.)"
+    )]
+    InvalidSuffixForNumber(String),
+
+    #[error(
+        "invalid suffix `{0}` for float literal. the suffix must be one of the float types (`f32`, `f64`)"
+    )]
+    InvalidSuffixForFloat(String),
+
+    #[error(r#""{0}" is an invalid suffix for a float. the valid suffixes are "f32" and "f64"."#)]
+    IntegerSuffixOnFloat(String),
+
+    #[error("{number} cannot be represented as {number_kind:#} as it is too small.")]
     NegativeIntOverflow {
-        span: Span,
         number: String,
         number_kind: crate::builtin_parser::number::NumberKind,
     },
+
+    #[error("{number} cannot be represented as {number_kind:#} as it is too large.")]
     PositiveIntOverflow {
-        span: Span,
         number: String,
         number_kind: crate::builtin_parser::number::NumberKind,
     },
-    ExpectedObjectContinuation(Spanned<Option<Result<Token, FailedToLexCharacter>>>),
-    ExpectedIndexer {
-        got: Token,
-        span: Span,
-    },
-    UnsupportedFeature {
-        feature: &'static str,
-        span: Span,
-        issue: u8,
-    },
-    MismatchedDelimiter {
-        delimiter: char,
-        span: Span,
-    },
+
+    #[error(
+        "expected a continuation to the object declaration (such as a comma or a closing bracket), but got {0:?} instead."
+    )]
+    ExpectedObjectContinuation(Option<Result<Token, FailedToLexCharacter>>),
+
+    #[error(
+        "expected an identifier or integer when accessing member of variable, got {got:?} instead."
+    )]
+    ExpectedIndexer { got: Token },
+
+    #[error("{feature} are not yet supported. {}", format_issue(*issue))]
+    UnsupportedFeature { feature: &'static str, issue: u8 },
+
+    #[error("unexpected closing delimiter: `{delimiter}`")]
+    MismatchedDelimiter { delimiter: char },
 }
 
-impl ParseError {
-    pub fn span(&self) -> Span {
-        use ParseError as E;
-        match self {
-            E::FailedToLexCharacters(Spanned { span, value: _ })
-            | E::ExpectedMoreTokens(span)
-            | E::ExpectedTokenButGot { span, .. }
-            | E::ExpectedEndline(Spanned { span, value: _ })
-            | E::ExpectedLiteral(Spanned { span, value: _ })
-            | E::InvalidSuffixForNumber(Spanned { span, .. }, ..)
-            | E::InvalidSuffixForFloat(Spanned { span, .. }, ..)
-            | E::IntegerSuffixOnFloat(Spanned { span, value: _ })
-            | E::PositiveIntOverflow { span, .. }
-            | E::NegativeIntOverflow { span, .. }
-            | E::ExpectedObjectContinuation(Spanned { span, value: _ })
-            | E::ExpectedIndexer { got: _, span }
-            | E::UnsupportedFeature { span, .. }
-            | E::MismatchedDelimiter { span, .. } => span,
-        }
-        .clone()
+fn format_issue(issue: u8) -> String {
+    if issue != 0 {
+        format!("see bevy_dev_console issue #{issue}")
+    } else {
+        String::new()
     }
 }
-
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use ParseError as E;
-        match self {
-            E::FailedToLexCharacters(Spanned { span: _, value }) => {
-                write!(f, "unknown token character: {value}")
-            }
-            E::ExpectedMoreTokens(_) => write!(f, "expected more tokens, got nothing."),
-            E::ExpectedTokenButGot {
-                expected,
-                got,
-                span: _,
-            } => write!(f, "expected token {expected:?}, got token {got:?} instead."),
-            E::ExpectedEndline(_) => write!(
-                f,
-                "expected a semicolon or endline after a complete statement, but got more tokens than expected."
-            ),
-            E::ExpectedLiteral(Spanned { span: _, value }) => write!(
-                f,
-                "expected a literal token, got {value:?} which is not a valid literal."
-            ),
-            E::InvalidSuffixForNumber(Spanned { span: _, value }) => {
-                write!(
-                    f,
-                    "invalid suffix `{value}` for number literal. the suffix must be one of the numeric types (`u32`, `isize`, `f32`, etc.)"
-                )
-            }
-            E::InvalidSuffixForFloat(Spanned { span: _, value }) => {
-                write!(
-                    f,
-                    "invalid suffix `{value}` for float literal. the suffix must be one of the float types (`f32`, `f64`)"
-                )
-            }
-            E::IntegerSuffixOnFloat(Spanned {
-                span: _,
-                value: suffix,
-            }) => write!(
-                f,
-                r#""{suffix}" is an invalid suffix for a float. the valid suffixes are "f32" and "f64"."#
-            ),
-            E::NegativeIntOverflow {
-                span: _,
-                number,
-                number_kind,
-            } => write!(
-                f,
-                "{number} cannot be represented as {number_kind:#} as it is too small."
-            ),
-            E::PositiveIntOverflow {
-                span: _,
-                number,
-                number_kind,
-            } => write!(
-                f,
-                "{number} cannot be represented as {number_kind:#} as it is too large."
-            ),
-            E::ExpectedObjectContinuation(Spanned {
-                span: _,
-                value: got,
-            }) => write!(
-                f,
-                "expected a continuation to the object declaration (such as a comma or a closing bracket), but got {got:?} instead."
-            ),
-            E::ExpectedIndexer { got, span: _ } => write!(
-                f,
-                "expected an identifier or integer when accessing member of variable, got {got:?} instead."
-            ),
-            &E::UnsupportedFeature {
-                feature,
-                span: _,
-                issue,
-            } => {
-                write!(f, "{feature} are not yet supported. ")?;
-                if issue != 0 {
-                    write!(f, "see bevy_dev_console issue #{issue}")?;
-                }
-                Ok(())
-            }
-            E::MismatchedDelimiter { delimiter, span: _ } => {
-                write!(f, "unexpected closing delimiter: `{delimiter}`")
-            }
-        }
-    }
-}
-impl std::error::Error for ParseError {}
 
 const FLOAT_PARSE_EXPECT_REASON: &str =
     "Float parsing errors are handled by the lexer, and floats cannot overflow.";
 
-pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
+pub fn parse(
+    tokens: &mut TokenStream,
+    environment: &Environment,
+) -> Result<Ast, Diagnostic<ParseError>> {
     let mut ast = Vec::new();
 
     while tokens.peek().is_some() {
@@ -365,11 +285,17 @@ pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast,
 
         match tokens.next() {
             Some(Ok(Token::SemiColon)) => continue,
-            Some(Ok(token)) => return Err(ParseError::ExpectedEndline(tokens.span().wrap(token))),
+            Some(Ok(token)) => {
+                return Err(tokens
+                    .span()
+                    .wrap(ParseError::ExpectedEndline(token))
+                    .into());
+            }
             Some(Err(FailedToLexCharacter)) => {
-                return Err(ParseError::FailedToLexCharacters(
-                    tokens.span().wrap(tokens.slice().to_string()),
-                ));
+                return Err(tokens
+                    .span()
+                    .wrap(ParseError::FailedToLexCharacters(tokens.slice().to_owned()))
+                    .into());
             }
             None => break,
         }
@@ -381,28 +307,37 @@ pub fn parse(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast,
 fn parse_expression(
     tokens: &mut TokenStream,
     environment: &Environment,
-) -> Result<Spanned<Expression>, ParseError> {
+) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
     match tokens.peek() {
-        Some(Ok(Token::Loop)) => Err(ParseError::UnsupportedFeature {
-            feature: "infinite loops",
-            span: tokens.peek_span(),
-            issue: 8,
-        }),
-        Some(Ok(Token::While)) => Err(ParseError::UnsupportedFeature {
-            feature: "while loops",
-            span: tokens.peek_span(),
-            issue: 8,
-        }),
-        Some(Ok(Token::For)) => Err(ParseError::UnsupportedFeature {
-            feature: "for loops",
-            span: tokens.peek_span(),
-            issue: 8,
-        }),
-        Some(Ok(Token::If)) => Err(ParseError::UnsupportedFeature {
-            feature: "if statements",
-            span: tokens.skip_one().span_until(Token::RightBracket),
-            issue: 0,
-        }),
+        Some(Ok(Token::Loop)) => Err(tokens
+            .peek_span()
+            .wrap(ParseError::UnsupportedFeature {
+                feature: "infinite loops",
+                issue: 8,
+            })
+            .into()),
+        Some(Ok(Token::While)) => Err(tokens
+            .peek_span()
+            .wrap(ParseError::UnsupportedFeature {
+                feature: "while loops",
+                issue: 8,
+            })
+            .into()),
+        Some(Ok(Token::For)) => Err(tokens
+            .peek_span()
+            .wrap(ParseError::UnsupportedFeature {
+                feature: "for loops",
+                issue: 8,
+            })
+            .into()),
+        Some(Ok(Token::If)) => Err(tokens
+            .skip_one()
+            .span_until(Token::RightBracket)
+            .wrap(ParseError::UnsupportedFeature {
+                feature: "if statements",
+                issue: 0,
+            })
+            .into()),
         Some(Ok(_)) => {
             let expr = parse_additive(tokens, environment)?;
 
@@ -411,14 +346,21 @@ fn parse_expression(
                 _ => Ok(expr),
             }
         }
-        Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacters(
-            tokens.peek_span().wrap(tokens.slice().to_string()),
-        )),
-        None => Err(ParseError::ExpectedMoreTokens(tokens.peek_span())),
+        Some(Err(FailedToLexCharacter)) => Err(tokens
+            .peek_span()
+            .wrap(ParseError::FailedToLexCharacters(tokens.slice().to_owned()))
+            .into()),
+        None => Err(tokens
+            .peek_span()
+            .wrap(ParseError::ExpectedMoreTokens)
+            .into()),
     }
 }
 
-fn _parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<Ast, ParseError> {
+fn _parse_block(
+    tokens: &mut TokenStream,
+    environment: &Environment,
+) -> Result<Ast, Diagnostic<ParseError>> {
     expect!(tokens, Token::LeftBracket);
     let ast = parse(tokens, environment)?;
     expect!(tokens, Token::RightBracket);
@@ -429,7 +371,7 @@ fn _parse_block(tokens: &mut TokenStream, environment: &Environment) -> Result<A
 fn parse_additive(
     tokens: &mut TokenStream,
     environment: &Environment,
-) -> Result<Spanned<Expression>, ParseError> {
+) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
     let mut node = parse_multiplicitive(tokens, environment)?;
 
     while let Some(Ok(Token::Plus | Token::Minus)) = tokens.peek() {
@@ -456,7 +398,7 @@ fn parse_additive(
 fn parse_multiplicitive(
     tokens: &mut TokenStream,
     environment: &Environment,
-) -> Result<Spanned<Expression>, ParseError> {
+) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
     let mut node = parse_and(tokens, environment)?;
 
     while let Some(Ok(Token::Asterisk | Token::Slash | Token::Modulo)) = tokens.peek() {
@@ -486,7 +428,7 @@ macro_rules! parse_bitwise {
         fn $name(
             tokens: &mut TokenStream,
             environment: &Environment,
-        ) -> Result<Spanned<Expression>, ParseError> {
+        ) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
             let mut node = $next(tokens, environment)?;
 
             while let Some(Ok(Token::$token)) = tokens.peek() {
@@ -514,12 +456,12 @@ parse_bitwise!(Or, Pipe: parse_or => parse_value);
 fn parse_value(
     tokens: &mut TokenStream,
     environment: &Environment,
-) -> Result<Spanned<Expression>, ParseError> {
+) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
     /// Parses a literal (value without member expressions)
     fn parse_literal(
         tokens: &mut TokenStream,
         environment: &Environment,
-    ) -> Result<Spanned<Expression>, ParseError> {
+    ) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
         match tokens.next() {
             Some(Ok(Token::LeftParen)) => {
                 let start = tokens.span().start;
@@ -556,7 +498,7 @@ fn parse_value(
             }
             Some(Ok(Token::Identifier)) => {
                 let start = tokens.span().start;
-                let name = tokens.slice().to_string();
+                let name = tokens.slice().to_owned();
 
                 match tokens.peek() {
                     Some(Ok(Token::LeftParen)) => {
@@ -629,7 +571,7 @@ fn parse_value(
             }
             Some(Ok(Token::String)) => {
                 let slice = tokens.slice();
-                let string = slice[1..slice.len() - 1].to_string();
+                let string = slice[1..slice.len() - 1].to_owned();
                 Ok(tokens.span().wrap(Expression::String(string)))
             }
             Some(Ok(token @ (Token::Minus | Token::Not))) => {
@@ -659,16 +601,19 @@ fn parse_value(
                 let (number, suffix) = split_number(tokens);
                 let number: Number = match suffix {
                     "u8" | "u16" | "u32" | "u64" | "usize" | "i8" | "i16" | "i32" | "i64"
-                    | "isize" => Err(ParseError::IntegerSuffixOnFloat(
-                        tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
+                    | "isize" => Err(Diagnostic::single(
+                        tokens.span().add(number.len()..0),
+                        ParseError::IntegerSuffixOnFloat(suffix.to_owned()),
                     ))?,
                     "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
                     "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
                     "" => Number::Float(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
                     _ => {
-                        return Err(ParseError::InvalidSuffixForFloat(
-                            tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
-                        ));
+                        return Err(tokens
+                            .span()
+                            .add(number.len()..0)
+                            .wrap(ParseError::InvalidSuffixForFloat(suffix.to_owned()))
+                            .into());
                     }
                 };
                 let start_span = tokens.span().end;
@@ -680,27 +625,35 @@ fn parse_value(
             }
             Some(Ok(Token::True)) => Ok(tokens.span().wrap(Expression::Boolean(true))),
             Some(Ok(Token::False)) => Ok(tokens.span().wrap(Expression::Boolean(false))),
-            Some(Ok(Token::LeftBrace)) => Err(ParseError::UnsupportedFeature {
-                feature: "lists and vectors",
-                span: tokens.span_until(Token::RightBrace),
-                issue: 10,
-            }),
-            Some(Ok(Token::Pipe)) => Err(ParseError::UnsupportedFeature {
-                feature: "closures",
-                span: tokens.span_until(Token::Pipe),
-                issue: 12,
-            }),
-            Some(Ok(Token::RightBrace | Token::RightBracket | Token::RightParen)) => {
-                Err(ParseError::MismatchedDelimiter {
-                    delimiter: tokens.slice().chars().next().unwrap(),
-                    span: tokens.span(),
+            Some(Ok(Token::LeftBrace)) => Err(tokens
+                .span_until(Token::RightBrace)
+                .wrap(ParseError::UnsupportedFeature {
+                    feature: "lists and vectors",
+                    issue: 10,
                 })
-            }
-            Some(Ok(token)) => Err(ParseError::ExpectedLiteral(tokens.span().wrap(token))),
-            Some(Err(FailedToLexCharacter)) => Err(ParseError::FailedToLexCharacters(
-                tokens.span().wrap(tokens.slice().to_string()),
-            )),
-            None => Err(ParseError::ExpectedMoreTokens(tokens.span())),
+                .into()),
+            Some(Ok(Token::Pipe)) => Err(tokens
+                .span_until(Token::Pipe)
+                .wrap(ParseError::UnsupportedFeature {
+                    feature: "closures",
+                    issue: 12,
+                })
+                .into()),
+            Some(Ok(Token::RightBrace | Token::RightBracket | Token::RightParen)) => Err(tokens
+                .span()
+                .wrap(ParseError::MismatchedDelimiter {
+                    delimiter: tokens.slice().chars().next().unwrap(),
+                })
+                .into()),
+            Some(Ok(token)) => Err(tokens
+                .span()
+                .wrap(ParseError::ExpectedLiteral(token))
+                .into()),
+            Some(Err(FailedToLexCharacter)) => Err(tokens
+                .span()
+                .wrap(ParseError::FailedToLexCharacters(tokens.slice().to_owned()))
+                .into()),
+            None => Err(tokens.span().diagnose(ParseError::ExpectedMoreTokens)),
         }
     }
 
@@ -710,7 +663,7 @@ fn parse_value(
         tokens.next(); // Skip the dot
         match tokens.next() {
             Some(Ok(Token::Identifier)) => {
-                let right = tokens.slice().to_string();
+                let right = tokens.slice().to_owned();
                 expr = Spanned {
                     span: expr.span.start..tokens.span().end,
                     value: Expression::Member {
@@ -735,17 +688,18 @@ fn parse_value(
                 };
             }
             Some(Ok(token)) => {
-                return Err(ParseError::ExpectedIndexer {
-                    got: token,
-                    span: tokens.span(),
-                });
+                return Err(tokens
+                    .span()
+                    .wrap(ParseError::ExpectedIndexer { got: token })
+                    .into());
             }
             Some(Err(FailedToLexCharacter)) => {
-                return Err(ParseError::FailedToLexCharacters(
-                    tokens.span().wrap(tokens.slice().to_string()),
-                ));
+                return Err(tokens
+                    .span()
+                    .wrap(ParseError::FailedToLexCharacters(tokens.slice().to_owned()))
+                    .into());
             }
-            None => return Err(ParseError::ExpectedMoreTokens(tokens.span())),
+            None => return Err(tokens.span().diagnose(ParseError::ExpectedMoreTokens)),
         }
     }
     Ok(expr)
@@ -755,26 +709,27 @@ fn map_parseint_error<'s>(
     span: Span,
     slice: &'s str,
     number_kind: crate::builtin_parser::number::NumberKind,
-) -> impl FnOnce(std::num::ParseIntError) -> ParseError + 's {
-    move |error| match error.kind() {
-        IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow {
-            span,
-            number: slice.to_string(),
-            number_kind,
-        },
-        IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow {
-            span,
-            number: slice.to_string(),
-            number_kind,
-        },
-        IntErrorKind::Empty | IntErrorKind::InvalidDigit | IntErrorKind::Zero => unreachable!(
-            "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
-        ),
-        _ => unimplemented!(), // Required due to IntErrorKind being #[non_exhaustive]
+) -> impl FnOnce(std::num::ParseIntError) -> Diagnostic<ParseError> + 's {
+    move |error| {
+        let error = match error.kind() {
+            IntErrorKind::PosOverflow => ParseError::PositiveIntOverflow {
+                number: slice.to_owned(),
+                number_kind,
+            },
+            IntErrorKind::NegOverflow => ParseError::NegativeIntOverflow {
+                number: slice.to_owned(),
+                number_kind,
+            },
+            IntErrorKind::Empty | IntErrorKind::InvalidDigit | IntErrorKind::Zero => unreachable!(
+                "Lexer makes sure other errors aren't possible. Create an bevy_dev_console issue!"
+            ),
+            _ => unimplemented!(), // Required due to IntErrorKind being #[non_exhaustive]
+        };
+        span.diagnose(error)
     }
 }
 
-fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError> {
+fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, Diagnostic<ParseError>> {
     let (number, suffix) = split_number(tokens);
     let map = |s| map_parseint_error(tokens.span(), tokens.slice(), s);
 
@@ -792,9 +747,11 @@ fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, ParseError>
         "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
         "" => Number::Integer(number.parse().unwrap()),
         _ => {
-            return Err(ParseError::InvalidSuffixForNumber(
-                tokens.span().add(number.len()..0).wrap(suffix.to_owned()),
-            ));
+            return Err(tokens
+                .span()
+                .add(number.len()..0)
+                .wrap(ParseError::InvalidSuffixForNumber(suffix.to_owned()))
+                .into());
         }
     };
     Ok(Spanned {
@@ -819,7 +776,7 @@ fn parse_var_assign(
     name: Spanned<Expression>,
     tokens: &mut TokenStream<'_>,
     environment: &Environment,
-) -> Result<Spanned<Expression>, ParseError> {
+) -> Result<Spanned<Expression>, Diagnostic<ParseError>> {
     tokens.next(); // We already know that the next token is an equals
 
     let value = parse_expression(tokens, environment)?;
@@ -841,11 +798,11 @@ fn parse_var_assign(
 fn parse_object(
     tokens: &mut TokenStream,
     environment: &Environment,
-) -> Result<HashMap<String, Spanned<Expression>>, ParseError> {
+) -> Result<HashMap<String, Spanned<Expression>>, Diagnostic<ParseError>> {
     let mut map = HashMap::new();
     while let Some(Ok(Token::Identifier)) = tokens.peek() {
         tokens.next();
-        let ident = tokens.slice().to_string();
+        let ident = tokens.slice().to_owned();
         expect!(tokens, Token::Colon);
         let expr = parse_expression(tokens, environment)?;
         map.insert(ident, expr);
@@ -854,9 +811,9 @@ fn parse_object(
             Some(Ok(Token::Comma)) => {
                 tokens.next();
             }
-            token => Err(ParseError::ExpectedObjectContinuation(
-                tokens.span().wrap(token.clone()),
-            ))?,
+            token => Err(tokens
+                .span()
+                .diagnose(ParseError::ExpectedObjectContinuation(token.clone())))?,
         }
     }
     expect!(tokens, Token::RightBracket);

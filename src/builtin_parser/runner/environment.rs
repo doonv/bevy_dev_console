@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::builtin_parser::runner::EvalParams;
-use crate::builtin_parser::{SpanExtension, Spanned};
+use crate::builtin_parser::{Diagnostic, SpanExtension, Spanned};
 use bevy::ecs::world::World;
 use bevy::log::warn;
 use bevy::reflect::TypeRegistration;
@@ -88,7 +88,7 @@ impl Default for Environment {
 }
 
 impl Environment {
-    /// A completely empty [`Environment`] without any functions.
+    /// A completely empty [`Environment`] without any standard library.
     #[must_use]
     pub fn empty() -> Self {
         Self {
@@ -104,7 +104,7 @@ impl Environment {
     /// Returns a reference to a function if it exists.
     #[must_use]
     pub fn get_function(&self, name: &str) -> Option<&Function> {
-        let (env, _) = self.resolve(name, 0..0).ok()?;
+        let env = self.resolve(name)?;
 
         match env.variables.get(name) {
             Some(Variable::Function(function)) => Some(function),
@@ -116,16 +116,13 @@ impl Environment {
         &mut self,
         name: &str,
         function: impl FnOnce(&mut Self, &mut Function) -> T,
-    ) -> T {
-        let (env, _) = self.resolve_mut(name, 0..0).unwrap();
-
-        let return_result;
+    ) -> Option<T> {
+        let env = self.resolve_mut(name)?;
         let var = env.variables.get_mut(name);
+        let return_result;
         let fn_obj = match var {
-            Some(Variable::Function(_)) => {
-                let Variable::Function(mut fn_obj) =
-                    std::mem::replace(var.unwrap(), Variable::Moved)
-                else {
+            Some(var @ Variable::Function(_)) => {
+                let Variable::Function(mut fn_obj) = std::mem::replace(var, Variable::Moved) else {
                     unreachable!()
                 };
 
@@ -133,25 +130,30 @@ impl Environment {
 
                 fn_obj
             }
-            _ => unreachable!(),
+            _ => return None?,
         };
 
         let var = env.variables.get_mut(name);
         let _ = std::mem::replace(var.unwrap(), Variable::Function(fn_obj));
 
-        return_result
+        Some(return_result)
     }
     /// Returns a reference to a variable.
-    pub fn get(&self, name: &str, span: Span) -> Result<&UniqueRc<Value>, EvalError> {
-        let (env, span) = self.resolve(name, span)?;
+    pub fn get_variable(
+        &self,
+        name: &str,
+        span: Span,
+    ) -> Result<&UniqueRc<Value>, Diagnostic<EvalError>> {
+        let Some(var) = self.get(name) else {
+            return Err(span.diagnose(EvalError::VariableNotFound(name.to_owned())));
+        };
 
-        match env.variables.get(name) {
-            Some(Variable::Unmoved(value)) => Ok(value),
-            Some(Variable::Moved) => Err(EvalError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
-                span.wrap(name.to_owned()),
-            )),
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
+        match var {
+            Variable::Unmoved(value) => Ok(value),
+            Variable::Moved => Err(span.diagnose(EvalError::VariableMoved(name.to_owned()))),
+            Variable::Function(_) => {
+                Err(span.diagnose(EvalError::ExpectedVariableGotFunction(name.to_owned())))
+            }
         }
     }
 
@@ -159,15 +161,17 @@ impl Environment {
     ///
     /// However it will no longer be able to be used unless it's a [`Value::None`],
     /// [`Value::Boolean`], or [`Value::Number`] in which case it will be copied.  
-    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, EvalError> {
-        let (env, span) = self.resolve_mut(name, span)?;
+    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, Diagnostic<EvalError>> {
+        let Some(var) = self.get_mut(name) else {
+            return Err(span.diagnose(EvalError::VariableNotFound(name.to_owned())));
+        };
 
-        match env.variables.get_mut(name) {
-            Some(Variable::Moved) => Err(EvalError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
-                span.wrap(name.to_owned()),
-            )),
-            Some(variable_reference @ Variable::Unmoved(_)) => {
+        match var {
+            Variable::Moved => Err(span.diagnose(EvalError::VariableMoved(name.to_owned()))),
+            Variable::Function(_) => Err(span
+                .wrap(EvalError::ExpectedVariableGotFunction(name.to_owned()))
+                .into()),
+            variable_reference @ Variable::Unmoved(_) => {
                 let Variable::Unmoved(reference) = variable_reference else {
                     unreachable!()
                 };
@@ -185,29 +189,36 @@ impl Environment {
                 };
                 Ok(value.into_inner())
             }
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 
-    fn resolve(&self, name: &str, span: Span) -> Result<(&Self, Span), EvalError> {
-        if self.variables.contains_key(name) {
-            return Ok((self, span));
+    fn get(&self, name: &str) -> Option<&Variable> {
+        if let Some(var) = self.variables.get(name) {
+            return Some(var);
         }
 
-        match &self.parent {
-            Some(parent) => parent.resolve(name, span),
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
-        }
+        self.parent.as_ref()?.get(name)
     }
-    fn resolve_mut(&mut self, name: &str, span: Span) -> Result<(&mut Self, Span), EvalError> {
-        if self.variables.contains_key(name) {
-            return Ok((self, span));
+    fn get_mut(&mut self, name: &str) -> Option<&mut Variable> {
+        if let Some(var) = self.variables.get_mut(name) {
+            return Some(var);
         }
 
-        match &mut self.parent {
-            Some(parent) => parent.resolve_mut(name, span),
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
+        self.parent.as_mut()?.get_mut(name)
+    }
+    fn resolve(&self, name: &str) -> Option<&Self> {
+        if self.variables.contains_key(name) {
+            return Some(self);
         }
+
+        self.parent.as_ref()?.resolve(name)
+    }
+    fn resolve_mut(&mut self, name: &str) -> Option<&mut Self> {
+        if self.variables.contains_key(name) {
+            return Some(self);
+        }
+
+        self.parent.as_mut()?.resolve_mut(name)
     }
 
     /// Registers a function for use inside the language.
@@ -241,7 +252,7 @@ impl Environment {
         arguments: Vec<Spanned<Value>>,
         world: &mut World,
         registrations: &[&TypeRegistration],
-    ) -> Result<Value, EvalError> {
+    ) -> Result<Value, Diagnostic<EvalError>> {
         self.function_scope(name, move |environment, function| {
             (function.body)(
                 arguments,
@@ -252,6 +263,8 @@ impl Environment {
                 },
             )
         })
+        .ok_or_else(|| Diagnostic::empty(EvalError::VariableNotFound(name.to_owned())))
+        .flatten()
     }
 
     /// Iterate over all the variables and functions in the current scope of the environment.

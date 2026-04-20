@@ -1,8 +1,8 @@
 <!-- markdownlint-disable-next-line MD041 -->
 The built-in parser provides a mini-language that can evaluate expressions, call commands, and modify resources.
 
-<div class="warning" style="--warning-border-color: #8957e5">
-<b>Important</b>
+<div class="warning" style="--warning-border-color: #1F6FEB">
+<b>Note</b>
 
 This guide assumes you already have used Rust before and that you know how it works.
 </div>
@@ -14,7 +14,7 @@ For simplicity, the `let` keyword is not required for creating variables.
 You can do most basic operations:
 
 - Arithmetic: Addition/Subtraction/Multiplication/Division/Modulus
-- Bitwise operations: AND/XOR/OR
+- Bitwise operations: AND/XOR/OR/NOT
 - ~~Comparisons~~ (Coming soon-ish)
 
 ```rust
@@ -113,7 +113,10 @@ $ z = x
 
 ### Copy types
 
-TODO
+Certain types are `Copy`, which, like in Rust, means they are automatically copied instead of moved.
+This means they never can be moved.
+
+The copy types in the builtin parser are: `()`, all number types, and `bool`.
 
 ```rust
 # bevy_dev_console::test_builtin_parser!({

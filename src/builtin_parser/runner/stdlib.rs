@@ -3,6 +3,7 @@
 
 use crate::builtin_parser::runner::environment::Variable;
 use crate::builtin_parser::runner::function::Function;
+use crate::builtin_parser::{Diagnostic, SpanExtension};
 use crate::register;
 use bevy::ecs::world::World;
 use bevy::log::info;
@@ -21,7 +22,7 @@ fn print(
     values: Vec<Spanned<Value>>,
     world: &mut World,
     registrations: &[&TypeRegistration],
-) -> Result<(), EvalError> {
+) -> Result<(), Diagnostic<EvalError>> {
     let mut output = String::new();
     for Spanned { span, value } in values {
         let string = match value {
@@ -38,14 +39,17 @@ fn dbg(any: Value) {
     info!("Value::{any:?}");
 }
 
-fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, EvalError> {
-    fn ref_depth_reference(value: Ref<Value>, span: Range<usize>) -> Result<usize, EvalError> {
+fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, Diagnostic<EvalError>> {
+    fn ref_depth_reference(
+        value: Ref<Value>,
+        span: Range<usize>,
+    ) -> Result<usize, Diagnostic<EvalError>> {
         Ok(match &*value {
             Value::Reference(reference) => {
                 ref_depth_reference(
                     reference
                         .upgrade()
-                        .ok_or(EvalError::ReferenceToMovedData(span.clone()))?
+                        .ok_or_else(|| span.clone().diagnose(EvalError::ReferenceToMovedData))?
                         .borrow(),
                     span,
                 )? + 1
@@ -59,7 +63,7 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, EvalError
             ref_depth_reference(
                 reference
                     .upgrade()
-                    .ok_or(EvalError::ReferenceToMovedData(span.clone()))?
+                    .ok_or_else(|| span.clone().diagnose(EvalError::ReferenceToMovedData))?
                     .borrow(),
                 span,
             )? + 1
@@ -85,7 +89,10 @@ fn typeof_value(value: Value) -> String {
 /// Disposes of a [`Value`].
 fn drop(_: Value) {}
 
-fn alias(from: String, to: String, environment: &mut Environment) {
+fn alias(from: String, to: String, environment: &mut Environment) -> Result<(), &'static str> {
+    if environment.get_function(&from).is_none() {
+        Err("Function doesn't exist")?;
+    }
     environment.register_fn(
         to,
         move |arguments: Vec<Spanned<Value>>,
@@ -95,6 +102,7 @@ fn alias(from: String, to: String, environment: &mut Environment) {
             environment.run_function(&from, arguments, world, registrations)
         },
     );
+    Ok(())
 }
 
 fn help(environment: &Environment) {

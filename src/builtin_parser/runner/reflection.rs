@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use bevy::reflect::{DynamicStruct, ReflectFromPtr, TypeRegistration};
 use logos::Span;
 
-use crate::builtin_parser::EvalError;
+use crate::builtin_parser::{Diagnostic, EvalError};
 
 use super::Value;
 
@@ -45,7 +45,7 @@ impl IntoResource {
 
 pub fn object_to_dynamic_struct(
     hashmap: HashMap<String, (Value, Span, &'static str)>,
-) -> Result<DynamicStruct, EvalError> {
+) -> Result<DynamicStruct, Diagnostic<EvalError>> {
     let mut dynamic_struct = DynamicStruct::default();
 
     for (key, (value, span, reflect)) in hashmap {

@@ -4,7 +4,7 @@ use kinded::Kinded;
 
 use crate::builtin_parser::parser::{Access, Expression, access_unwrap};
 use crate::builtin_parser::runner::todo_error;
-use crate::builtin_parser::{EvalError, SpanExtension, Spanned, WeakRef};
+use crate::builtin_parser::{Diagnostic, EvalError, SpanExtension, Spanned, WeakRef};
 
 use super::reflection::IntoResource;
 use super::{EvalParams, Value, eval_expression};
@@ -36,7 +36,7 @@ pub fn eval_member_expression(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Value, EvalError> {
+) -> Result<Value, Diagnostic<EvalError>> {
     let left_span = left.span.clone();
     let span = left.span.start..right.span.end;
     let left = eval_expression(
@@ -51,13 +51,15 @@ pub fn eval_member_expression(
     match left {
         Value::Reference(reference) => {
             let Some(strong) = reference.upgrade() else {
-                return Err(EvalError::ReferenceToMovedData(left_span));
+                return Err(left_span.diagnose(EvalError::ReferenceToMovedData));
             };
             let reference = strong.borrow();
             match &&*reference {
                 Value::Object(map) | Value::StructObject { map, .. } => {
                     access_unwrap!("an object reference", Field(field) = right => {
-                        let value = map.get(&field).ok_or(EvalError::FieldNotFoundInStruct(span.wrap(field)))?;
+                        let value = map.get(&field).ok_or_else(|| {
+                            span.diagnose(EvalError::FieldNotFoundInStruct(field))
+                        })?;
 
                         Ok(Value::Reference(value.borrow()))
                     })
@@ -65,10 +67,11 @@ pub fn eval_member_expression(
                 Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
                     access_unwrap!("a tuple reference", TupleIndex(index) = right => {
                         let Spanned { span: _, value } =
-                            tuple.get(index).ok_or(EvalError::FieldNotFoundInTuple {
-                                span,
-                                field_index: index,
-                                tuple_size: tuple.len(),
+                            tuple.get(index).ok_or_else(|| {
+                                span.diagnose(EvalError::FieldNotFoundInTuple {
+                                    field_index: index,
+                                    tuple_size: tuple.len(),
+                                })
                             })?;
 
                         Ok(Value::Reference(value.borrow()))
@@ -84,30 +87,31 @@ pub fn eval_member_expression(
                         Ok(Value::Resource(resource))
                     })
                 }
-                var => Err(EvalError::CannotIndexValue(left_span.wrap((*var).clone()))),
+                var => Err(left_span.diagnose(EvalError::CannotIndexValue(var.kind()))),
             }
         }
         Value::Object(mut map) | Value::StructObject { mut map, .. } => {
             access_unwrap!("an object", Field(field) = right => {
-                let value = map
-                    .remove(&field)
-                    .ok_or(EvalError::FieldNotFoundInStruct(span.wrap(field)))?;
+                let value = map.remove(&field).ok_or_else(|| {
+                    span.diagnose(EvalError::FieldNotFoundInStruct(field))
+                })?;
 
                 Ok(value.into_inner())
             })
         }
         Value::Tuple(tuple) | Value::StructTuple { tuple, .. } => {
-            access_unwrap!("a tuple reference", TupleIndex(field_index) = right => {
+            access_unwrap!("a tuple", TupleIndex(field_index) = right => {
                 let tuple_size = tuple.len();
                 let Spanned { span: _, value } =
                     tuple
                         .into_vec()
                         .into_iter()
                         .nth(field_index)
-                        .ok_or(EvalError::FieldNotFoundInTuple {
-                            span,
-                            field_index,
-                            tuple_size,
+                        .ok_or_else(|| {
+                            span.diagnose(EvalError::FieldNotFoundInTuple {
+                                field_index,
+                                tuple_size,
+                            })
                         })?;
 
                 Ok(value.into_inner())
@@ -121,7 +125,7 @@ pub fn eval_member_expression(
                 Ok(Value::Resource(resource))
             })
         }
-        _ => Err(EvalError::CannotIndexValue(left_span.wrap(left))),
+        _ => Err(left_span.diagnose(EvalError::CannotIndexValue(left.kind()))),
     }
 }
 
@@ -150,7 +154,7 @@ pub fn eval_path(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Spanned<Path>, EvalError> {
+) -> Result<Spanned<Path>, Diagnostic<EvalError>> {
     match expr.value {
         Expression::Variable(variable) => {
             if let Some(registration) = registrations
@@ -162,7 +166,7 @@ pub fn eval_path(
                     value: Path::Resource(IntoResource::new(registration.type_id())),
                 })
             } else {
-                match environment.get(&variable, expr.span.clone()) {
+                match environment.get_variable(&variable, expr.span.clone()) {
                     Ok(variable) => Ok(Spanned {
                         span: expr.span,
                         value: Path::Variable(variable.borrow()),
@@ -201,7 +205,7 @@ pub fn eval_path(
                             let weak = match object.get(&field) {
                                 Some(rc) => rc.borrow(),
                                 None => {
-                                    return Err(EvalError::FieldNotFoundInStruct(span.wrap(field)))
+                                    return Err(span.diagnose(EvalError::FieldNotFoundInStruct(field)))
                                 }
                             };
 
@@ -214,11 +218,10 @@ pub fn eval_path(
                             let weak = match tuple.get(index) {
                                 Some(Spanned { value: rc, span: _ }) => rc.borrow(),
                                 None => {
-                                    return Err(EvalError::FieldNotFoundInTuple {
-                                        span,
+                                    return Err(span.wrap(EvalError::FieldNotFoundInTuple {
                                         field_index: index,
                                         tuple_size: tuple.len(),
-                                    })
+                                    }).into())
                                 }
                             };
 
@@ -235,7 +238,9 @@ pub fn eval_path(
                         Ok(left.span.wrap(Path::Resource(resource)))
                     })
                 }
-                Path::NewVariable(name) => Err(EvalError::VariableNotFound(left.span.wrap(name))),
+                Path::NewVariable(name) => {
+                    Err(left.span.diagnose(EvalError::VariableNotFound(name)))
+                }
             }
         }
         Expression::Dereference(inner) => {
@@ -251,15 +256,15 @@ pub fn eval_path(
                 Path::Variable(value) => {
                     let strong = value
                         .upgrade()
-                        .ok_or(EvalError::ReferenceToMovedData(path.span))?;
+                        .ok_or_else(|| path.span.wrap(EvalError::ReferenceToMovedData))?;
                     let borrow = strong.borrow();
 
                     if let Value::Reference(reference) = &*borrow {
                         Ok(expr.span.wrap(Path::Variable(reference.clone())))
                     } else {
-                        Err(EvalError::CannotDereferenceValue(
-                            expr.span.wrap(borrow.kind()),
-                        ))
+                        Err(expr
+                            .span
+                            .diagnose(EvalError::CannotDereferenceValue(borrow.kind())))
                     }
                 }
                 Path::NewVariable(_) => todo_error!(),

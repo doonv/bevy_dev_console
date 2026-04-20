@@ -2,7 +2,7 @@
 
 use bevy::prelude::*;
 use bevy_dev_console::builtin_parser::{
-    Environment, EvalError, Number, SpanExtension, Spanned, Value,
+    Diagnostic, Environment, EvalError, Number, Spanned, Value,
 };
 use bevy_dev_console::prelude::*;
 use bevy_dev_console::register;
@@ -26,16 +26,16 @@ fn add(num1: f64, num2: f64) -> f64 {
 }
 
 /// A "Generic" function that works with any [`Number`] type.
-fn add_generic(num1: Spanned<Number>, num2: Spanned<Number>) -> Result<Number, EvalError> {
-    Number::add(num1.value, num2.value, num1.span.join(&num2.span))
+fn add_generic(
+    num1: Spanned<Number>,
+    num2: Spanned<Number>,
+) -> Result<Number, Diagnostic<EvalError>> {
+    num1 + num2
 }
 
 /// Function with any value + span
-fn print_debug_info(value: Spanned<Value>) {
-    info!(
-        "Location in command: {:?}, Value: {:?}",
-        value.span, value.value
-    )
+fn print_debug_info(Spanned { span, value }: Spanned<Value>) {
+    info!("Location of command: {span:?}, Value: {value:?}");
 }
 
 #[derive(Resource)]

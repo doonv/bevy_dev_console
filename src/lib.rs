@@ -3,7 +3,9 @@
 //! ![Image of the developer console](https://raw.githubusercontent.com/doonv/bevy_dev_console/master/doc/console.png)
 //!
 //! <div class="warning">
-//!     <b>Warning:</b> <code>bevy_dev_console</code> is currently in its early development stages. Expect breaking changes in the near future
+//!     <b>Warning</b>
+//!
+//!     <code>bevy_dev_console</code> is currently in its early development stages. Expect breaking changes in the near future
 //!     (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
 //! </div>
 //!
@@ -16,7 +18,7 @@
 //!   - Variables
 //!     - Uses a simplified version of ownership and borrowing
 //!   - Standard library (Doesn't have much at the moment)
-//!   - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) ([`World`] access included!)
+//!   - - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) that work exactly like regular Rust functions ([`World`] access included!)
 //!   - [Many types](https://github.com/doonv/bevy_dev_console/wiki/Built%E2%80%90in-Parser#types)
 //!   - Resource viewing and modification
 //!     - Enums
@@ -95,7 +97,8 @@ pub mod ui;
 ///
 /// ```rust,no_run
 /// # use bevy::prelude::*;
-/// # use bevy_dev_console::prelude::*;
+/// use bevy_dev_console::prelude::*;
+///
 /// App::new()
 ///     .add_plugins((
 ///         DefaultPlugins.set(console_log_plugin()), // Don't forget to set the LogPlugin

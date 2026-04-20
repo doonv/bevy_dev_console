@@ -7,7 +7,7 @@ use bevy::reflect::TypeRegistration;
 use smallvec::SmallVec;
 use variadics_please::all_tuples;
 
-use super::super::Spanned;
+use super::super::{Diagnostic, Spanned};
 use super::environment::Environment;
 use super::error::EvalError;
 use super::{EvalParams, Value};
@@ -17,17 +17,17 @@ pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
 
 /// Trait for types that can be returned from a registered [`Function`].
 pub(super) trait FunctionReturn {
-    fn into_result_container(self) -> ResultContainer<Value, EvalError>;
+    fn into_result_container(self) -> ResultContainer<Value, Diagnostic<EvalError>>;
 }
 
 impl<T: Into<Value>> FunctionReturn for T {
-    fn into_result_container(self) -> ResultContainer<Value, EvalError> {
+    fn into_result_container(self) -> ResultContainer<Value, Diagnostic<EvalError>> {
         ResultContainer(Ok(self.into()))
     }
 }
 
-impl<T: Into<Value>, E: Into<EvalError>> FunctionReturn for Result<T, E> {
-    fn into_result_container(self) -> ResultContainer<Value, EvalError> {
+impl<T: Into<Value>, E: Into<Diagnostic<EvalError>>> FunctionReturn for Result<T, E> {
+    fn into_result_container(self) -> ResultContainer<Value, Diagnostic<EvalError>> {
         ResultContainer(self.map(Into::into).map_err(Into::into))
     }
 }
@@ -80,7 +80,7 @@ pub trait FunctionParam: Sized {
         world: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         registrations: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError>;
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>>;
 
     /// Step 2: Create a [`Guard`](Self::Guard) from the [`State`] if needed, otherwise just transfer over the [`State`].
     ///
@@ -92,9 +92,10 @@ pub trait FunctionParam: Sized {
     /// Step 3: Produce `Self`.
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError>;
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>>;
 }
-pub type FunctionType = dyn FnMut(Vec<Spanned<Value>>, EvalParams) -> Result<Value, EvalError>;
+pub type FunctionType =
+    dyn FnMut(Vec<Spanned<Value>>, EvalParams) -> Result<Value, Diagnostic<EvalError>>;
 
 pub enum ParamType {
     Parameter,

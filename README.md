@@ -16,7 +16,7 @@
   - Variables
     - Uses a simplified version of ownership and borrowing
   - Standard library (Doesn't have much at the moment)
-  - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) (`World` access included!)
+  - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) that work exactly like regular Rust functions (`World` access included!)
   - [Many types](https://github.com/doonv/bevy_dev_console/wiki/Built%E2%80%90in-Parser#types)
   - Resource viewing and modification with Reflection
     - Enums

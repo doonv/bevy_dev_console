@@ -1,284 +1,135 @@
 use std::borrow::Cow;
 use std::fmt;
 
-use bevy::reflect::ApplyError;
-use kinded::Kinded;
-use logos::Span;
-
-use crate::builtin_parser::Spanned;
+use crate::builtin_parser::CannotNegateUnsignedInteger;
 use crate::builtin_parser::number::{Number, NumberKind};
-use crate::builtin_parser::parser::{
-    Access, AccessKind, BinaryOperator, ExpressionKind, UnaryOperator,
-};
+use crate::builtin_parser::parser::{AccessKind, BinaryOperator, ExpressionKind, UnaryOperator};
 use crate::builtin_parser::runner::value::ValueKind;
-
-use super::Value;
+use bevy::reflect::ApplyError;
 
 /// An error occurring during the while evaluating the command.
 ///
 /// TODO: This enormous enum should probably be split into smaller error types like `NumberError`, `EnvironmentError`, etc.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 #[allow(missing_docs)]
 pub enum EvalError {
     /// A custom text message. Contains very little contextual information, try to find an existing error instead.
-    Custom {
-        /// The text of the message
-        text: Cow<'static, str>,
-        span: Span,
-    },
+    #[error("{0}")]
+    Custom(Cow<'static, str>),
+
+    #[error("cannot {operator} {left} by {right}")]
     InvalidBinaryOperation {
         left: Number,
         right: Number,
         operator: BinaryOperator,
-        span: Span,
     },
-    VariableNotFound(Spanned<String>),
+
+    #[error("Variable `{0}` not found.")]
+    VariableNotFound(String),
+
+    #[error(
+        "cannot apply unary operator `{operator}` to type `{operand}`. the supported types are: {}",
+        FancyJoin(accepted)
+    )]
     InvalidUnaryOperation {
-        span: Span,
         operator: UnaryOperator,
         operand: ValueKind,
         accepted: &'static [ValueKind],
     },
-    CannotIndexValue(Spanned<Value>),
-    ReferenceToMovedData(Span),
-    VariableMoved(Spanned<String>),
-    CannotDereferenceValue(Spanned<ValueKind>),
-    CannotDereferenceValueExpr(Spanned<ExpressionKind>),
-    CannotBorrowValue(Spanned<ExpressionKind>),
-    IncompatibleReflectTypes {
-        expected: String,
-        actual: String,
-        span: Span,
-    },
-    EnumVariantNotFound(Spanned<String>),
-    CannotMoveOutOfResource(Spanned<String>),
-    CannotNegateUnsignedInteger(Spanned<NumberKind>),
-    IncompatibleNumberTypes {
-        left: NumberKind,
-        right: NumberKind,
-        span: Span,
-    },
+
+    #[error("Cannot index `{0}` with a member expression.")]
+    CannotIndexValue(ValueKind),
+
+    #[error("Cannot access reference to moved data.")]
+    ReferenceToMovedData,
+
+    #[error("variable `{0}` was moved")]
+    VariableMoved(String),
+
+    #[error("Cannot dereference {0}.")]
+    CannotDereferenceValue(ValueKind),
+
+    #[error("Cannot dereference {0}.")]
+    CannotDereferenceValueExpr(ExpressionKind),
+
+    #[error("Cannot borrow {0}. Only variables can be borrowed.")]
+    CannotBorrowValue(ExpressionKind),
+
+    #[error("Cannot set incompatible reflect types. Expected `{expected}`, got `{actual}`")]
+    IncompatibleReflectTypes { expected: String, actual: String },
+
+    #[error("Enum variant `{0}` was not found.")]
+    EnumVariantNotFound(String),
+
+    #[error("cannot move out of resource `{0}`, try borrowing it instead.")]
+    CannotMoveOutOfResource(String),
+
+    #[error(transparent)]
+    CannotNegateUnsignedInteger(#[from] CannotNegateUnsignedInteger),
+
+    #[error("Incompatible number types; `{left}` and `{right}` are incompatible.")]
+    IncompatibleNumberTypes { left: NumberKind, right: NumberKind },
+
+    #[error("Mismatched function parameter type. Expected {expected:#} but got {actual:#}")]
     IncorrectFunctionParameterType {
         expected: ValueKind,
         actual: ValueKind,
-        span: Span,
     },
+
+    #[error("Field `{field_name}` doesn't exist on struct variant `{variant_name}`.")]
     EnumVariantStructFieldNotFound {
         field_name: String,
         variant_name: String,
-        span: Span,
     },
-    ExpectedVariableGotFunction(Spanned<String>),
-    CannotReflectReference(Span),
-    CannotReflectResource(Span),
+
+    #[error("Expected `{0}` to be a variable, but got a function instead.")]
+    ExpectedVariableGotFunction(String),
+
+    #[error("Cannot reflect a reference. Try dereferencing it instead.")]
+    CannotReflectReference,
+
+    #[error("Cannot reflecting resources is not possible at the moment.")]
+    CannotReflectResource,
+
+    #[error("Field `{field_index}` doesn't exist on tuple variant `{variant_name}`.")]
     EnumVariantTupleFieldNotFound {
-        span: Span,
         field_index: usize,
         variant_name: String,
     },
+
+    #[error(
+        "Expected {got} access to access {expected_type} but got {:#}",
+        format_expected_access(expected_access)
+    )]
     IncorrectAccessOperation {
-        span: Span,
         expected_access: &'static [AccessKind],
         expected_type: &'static str,
-        got: Access,
+        got: AccessKind,
     },
-    FieldNotFoundInStruct(Spanned<String>),
+
+    #[error("Field {0} not found in struct")]
+    FieldNotFoundInStruct(String),
+
+    #[error("Field {field_index} is out of bounds for tuple of size {tuple_size}")]
     FieldNotFoundInTuple {
-        span: Span,
         field_index: usize,
         tuple_size: usize,
     },
-    ApplyError {
-        apply_error: ApplyError,
-        span: Span,
-    },
-    ValueOutOfRange {
-        span: Span,
-        value: i128,
-        ty: NumberKind,
-    },
+
+    #[error("Error while applying value (todo make this error better): {0}")]
+    ApplyError(ApplyError),
+
+    #[error("integer value `{value}` out of range for type `{ty}`")]
+    ValueOutOfRange { value: i128, ty: NumberKind },
 }
 
-impl EvalError {
-    /// Get all the locations of the error in the source.
-    #[must_use]
-    pub fn spans(&self) -> Vec<Span> {
-        use EvalError as E;
-        match self {
-            E::Custom { span, .. }
-            | E::VariableNotFound(Spanned { span, .. })
-            | E::InvalidUnaryOperation { span, .. }
-            | E::CannotIndexValue(Spanned { span, .. })
-            | E::FieldNotFoundInStruct(Spanned { span, value: _ })
-            | E::CannotDereferenceValue(Spanned { span, .. })
-            | E::CannotDereferenceValueExpr(Spanned { span, .. })
-            | E::ReferenceToMovedData(span)
-            | E::VariableMoved(Spanned { span, .. })
-            | E::CannotBorrowValue(Spanned { span, .. })
-            | E::IncompatibleReflectTypes { span, .. }
-            | E::EnumVariantNotFound(Spanned { span, .. })
-            | E::EnumVariantStructFieldNotFound { span, .. }
-            | E::EnumVariantTupleFieldNotFound { span, .. }
-            | E::CannotMoveOutOfResource(Spanned { span, .. })
-            | E::CannotNegateUnsignedInteger(Spanned { span, .. })
-            | E::IncompatibleNumberTypes { span, .. }
-            | E::IncorrectFunctionParameterType { span, .. }
-            | E::ExpectedVariableGotFunction(Spanned { span, .. })
-            | E::CannotReflectReference(span)
-            | E::CannotReflectResource(span)
-            | E::InvalidBinaryOperation { span, .. }
-            | E::IncorrectAccessOperation { span, .. }
-            | E::FieldNotFoundInTuple { span, .. }
-            | E::ApplyError { span, .. }
-            | E::ValueOutOfRange { span, .. } => vec![span.clone()],
-        }
-    }
+fn format_expected_access(expected_access: &[AccessKind]) -> String {
+    expected_access
+        .iter()
+        .map(|kind| kind.as_natural())
+        .collect::<Vec<_>>()
+        .join(" and ")
 }
-
-impl std::fmt::Display for EvalError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use EvalError as E;
-
-        match self {
-            E::Custom { text, .. } => f.write_str(text),
-            E::VariableNotFound(Spanned { value, .. }) => {
-                write!(f, "Variable `{value}` not found.")
-            }
-            E::InvalidUnaryOperation {
-                span: _,
-                operator,
-                operand,
-                accepted,
-            } => write!(
-                f,
-                "cannot apply unary operator `{operator}` to type `{operand}`. the supported types are: {}",
-                FancyJoin(accepted)
-            ),
-            E::CannotIndexValue(Spanned { span: _, value }) => {
-                write!(f, "Cannot index {} with a member expression.", value.kind())
-            }
-            E::ReferenceToMovedData(_) => write!(f, "Cannot access reference to moved data."),
-            E::VariableMoved(Spanned { value, .. }) => {
-                write!(f, "variable `{value}` was moved")
-            }
-            E::CannotDereferenceValue(Spanned { value: kind, .. }) => {
-                write!(f, "Cannot dereference {kind}.")
-            }
-            E::CannotDereferenceValueExpr(Spanned { value: kind, .. }) => {
-                write!(f, "Cannot dereference {kind}.")
-            }
-            E::CannotBorrowValue(Spanned { value: kind, .. }) => {
-                write!(f, "Cannot borrow {kind}. Only variables can be borrowed.")
-            }
-            E::IncompatibleReflectTypes {
-                expected, actual, ..
-            } => write!(
-                f,
-                "Cannot set incompatible reflect types. Expected `{expected}`, got `{actual}`"
-            ),
-            E::EnumVariantNotFound(Spanned { value: name, .. }) => {
-                write!(f, "Enum variant `{name}` was not found.")
-            }
-            E::EnumVariantStructFieldNotFound {
-                field_name,
-                variant_name,
-                ..
-            } => write!(
-                f,
-                "Field `{field_name}` doesn't exist on struct variant `{variant_name}`."
-            ),
-            E::EnumVariantTupleFieldNotFound {
-                field_index,
-                variant_name,
-                ..
-            } => write!(
-                f,
-                "Field `{field_index}` doesn't exist on tuple variant `{variant_name}`."
-            ),
-            E::CannotMoveOutOfResource(Spanned { value, .. }) => write!(
-                f,
-                "cannot move out of resource `{value}`, try borrowing it instead."
-            ),
-            E::CannotNegateUnsignedInteger(Spanned { value, .. }) => {
-                write!(f, "cannot apply unary operator `-` to type `{value}`",)
-            }
-            E::IncompatibleNumberTypes { left, right, .. } => write!(
-                f,
-                "Incompatible number types; `{left}` and `{right}` are incompatible."
-            ),
-            E::IncorrectFunctionParameterType {
-                expected, actual, ..
-            } => write!(
-                f,
-                "Mismatched function parameter type. Expected {expected:#} but got {actual:#}"
-            ),
-            E::ExpectedVariableGotFunction(Spanned { value, .. }) => write!(
-                f,
-                "Expected `{value}` to be a variable, but got a function instead."
-            ),
-            E::CannotReflectReference(_) => {
-                write!(
-                    f,
-                    "Cannot reflect a reference. Try dereferencing it instead."
-                )
-            }
-            E::CannotReflectResource(_) => {
-                write!(
-                    f,
-                    "Cannot reflecting resources is not possible at the moment."
-                )
-            }
-            E::InvalidBinaryOperation {
-                left,
-                right,
-                operator,
-                span: _,
-            } => write!(f, "cannot {operator} {left} by {right}"),
-            E::IncorrectAccessOperation {
-                expected_access,
-                expected_type,
-                got,
-                span: _,
-            } => {
-                let expected_access = expected_access
-                    .iter()
-                    .map(|kind| kind.as_natural())
-                    .collect::<Vec<_>>()
-                    .join(" and ");
-                write!(
-                    f,
-                    "Expected {expected_access} access to access {expected_type} but got {:#}",
-                    got.kind()
-                )
-            }
-            E::FieldNotFoundInStruct(Spanned { span: _, value }) => {
-                write!(f, "Field {value} not found in struct")
-            }
-            E::FieldNotFoundInTuple {
-                field_index,
-                tuple_size,
-                span: _,
-            } => write!(
-                f,
-                "Field {field_index} is out of bounds for tuple of size {tuple_size}"
-            ),
-            E::ApplyError {
-                apply_error,
-                span: _,
-            } => {
-                write!(
-                    f,
-                    "Error while applying value (todo make this error better): {apply_error}"
-                )
-            }
-            E::ValueOutOfRange { span: _, value, ty } => {
-                write!(f, "integer value `{value}` out of range for type `{ty}`")
-            }
-        }
-    }
-}
-
-impl std::error::Error for EvalError {}
 
 struct FancyJoin<'a, T: fmt::Display>(&'a [T]);
 
@@ -298,5 +149,11 @@ impl<'a, T: fmt::Display> fmt::Display for FancyJoin<'a, T> {
             }
         }
         Ok(())
+    }
+}
+
+impl From<&'static str> for EvalError {
+    fn from(value: &'static str) -> Self {
+        Self::Custom(value.into())
     }
 }

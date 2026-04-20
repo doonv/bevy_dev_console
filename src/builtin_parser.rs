@@ -11,6 +11,7 @@ use std::fmt::Display;
 
 use bevy::prelude::*;
 use logos::Span;
+use smallvec::SmallVec;
 
 use crate::builtin_parser::parser::ParseError;
 use crate::command::{
@@ -28,7 +29,7 @@ use crate::command::CompletionSuggestion;
 
 #[cfg(feature = "builtin-parser-completions")]
 pub(crate) mod completions;
-pub mod lexer;
+pub(crate) mod lexer;
 pub(crate) mod number;
 pub(crate) mod parser;
 pub(crate) mod runner;
@@ -104,9 +105,6 @@ pub use runner::environment::Environment;
 pub use runner::error::EvalError;
 pub use runner::unique_rc::*;
 
-pub use parser::parse;
-pub use runner::eval;
-
 const fn color(color: anstyle::AnsiColor) -> anstyle::Style {
     anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(color)))
 }
@@ -127,6 +125,9 @@ pub trait SpanExtension {
     #[must_use]
     fn join(&self, span: &Self) -> Self;
 
+    /// Wrap an error in a [`Diagnostic`] with this [`Span`].
+    fn diagnose<E: std::error::Error>(self, error: E) -> Diagnostic<E>;
+
     /// Adds the left and right values of the provided [`Span`] to this [`Span`].
     #[must_use]
     fn add(self, range: Span) -> Self;
@@ -136,17 +137,38 @@ impl SpanExtension for Span {
     fn wrap<T>(self, value: T) -> Spanned<T> {
         Spanned { span: self, value }
     }
+
     #[inline]
     fn join(&self, span: &Self) -> Self {
         debug_assert!(self.start <= span.end);
 
         self.start..span.end
     }
+
+    #[inline]
+    fn diagnose<E: std::error::Error>(self, error: E) -> Diagnostic<E> {
+        Diagnostic::single(self, error)
+    }
+
     fn add(self, range: Span) -> Self {
         Span {
             start: self.start + range.start,
             end: self.end + range.end,
         }
+    }
+}
+
+pub trait ErrorExtension<T, E: std::error::Error> {
+    fn diagnosed(self, span: Span) -> Result<T, Diagnostic<E>>;
+}
+impl<T, E: Into<EvalError>> ErrorExtension<T, EvalError> for Result<T, E> {
+    fn diagnosed(self, span: Span) -> Result<T, Diagnostic<EvalError>> {
+        self.map_err(|e| span.diagnose(e.into()))
+    }
+}
+impl<T, E: Into<ParseError>> ErrorExtension<T, ParseError> for Result<T, E> {
+    fn diagnosed(self, span: Span) -> Result<T, Diagnostic<ParseError>> {
+        self.map_err(|e| span.diagnose(e.into()))
     }
 }
 
@@ -204,13 +226,13 @@ impl CommandParser for BuiltinCommandParser {
                         }
                     }
                     Err(error) => {
-                        let highlighted = format_command_with_hints(command, &error.spans());
+                        let highlighted = format_command_with_hints(command, &error.spans);
                         info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
                         error!("{error}");
                     }
                 },
                 Err(err) => {
-                    let highlighted = format_command_with_hints(command, &[err.span()]);
+                    let highlighted = format_command_with_hints(command, &err.spans);
                     info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
                     error!("{err}");
                 }
@@ -261,12 +283,50 @@ impl CommandParser for BuiltinCommandParser {
     }
 }
 
+#[must_use]
+#[derive(thiserror::Error, Debug)]
+pub struct Diagnostic<E: std::error::Error> {
+    pub spans: SmallVec<[Span; 1]>,
+    #[source]
+    pub error: Box<E>,
+}
+impl<E: std::error::Error> Diagnostic<E> {
+    pub fn empty(error: E) -> Self {
+        Self {
+            spans: SmallVec::new(),
+            error: Box::new(error),
+        }
+    }
+    pub fn single(span: Span, error: E) -> Self {
+        Self {
+            spans: SmallVec::from_buf([span]),
+            error: Box::new(error),
+        }
+    }
+}
+
+impl<E: std::error::Error> Display for Diagnostic<E> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self.error, f)
+    }
+}
+impl<E: std::error::Error> From<Spanned<E>> for Diagnostic<E> {
+    fn from(Spanned { span, value }: Spanned<E>) -> Self {
+        Self::single(span, value)
+    }
+}
+impl<T: Into<EvalError>> From<T> for Diagnostic<EvalError> {
+    fn from(value: T) -> Self {
+        Diagnostic::empty(value.into())
+    }
+}
+
 #[derive(thiserror::Error, Debug)]
 pub enum RunError {
     #[error(transparent)]
-    Parse(#[from] ParseError),
+    Parse(Diagnostic<ParseError>),
     #[error(transparent)]
-    Eval(#[from] EvalError),
+    Eval(Diagnostic<EvalError>),
 }
 
 pub fn run(
@@ -277,8 +337,8 @@ pub fn run(
 ) -> Result<Option<String>, RunError> {
     let mut tokens = lexer::TokenStream::new(command);
 
-    let ast = parser::parse(&mut tokens, environment)?;
-    let value = runner::eval(ast, world, environment, registry)?;
+    let ast = parser::parse(&mut tokens, environment).map_err(RunError::Parse)?;
+    let value = runner::eval(ast, world, environment, registry).map_err(RunError::Eval)?;
 
     Ok(value)
 }

@@ -9,7 +9,7 @@ use smallvec::SmallVec;
 
 use crate::builtin_parser::number::{Number, NumberKind};
 use crate::builtin_parser::runner::function::ParamType;
-use crate::builtin_parser::{Environment, Spanned, StrongRef};
+use crate::builtin_parser::{Diagnostic, Environment, SpanExtension, Spanned, StrongRef};
 use kinded::Kinded;
 
 use super::super::error::EvalError;
@@ -30,7 +30,7 @@ macro_rules! arg {
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
-            ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 let $value = value.pop().unwrap();
                 Ok(Some($expr))
             }
@@ -41,15 +41,14 @@ macro_rules! arg {
             }
             fn as_arg<'val, 'world, 'env, 'reg>(
                 guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 Ok(guard.take().unwrap())
             }
         }
     };
 }
-
 arg!(impl Spanned<Value>: value => value);
-arg!(impl{T: TryFrom<Spanned<Value>, Error = EvalError>} Spanned<T>: value => Spanned {
+arg!(impl{T: TryFrom<Spanned<Value>, Error = Diagnostic<EvalError>>} Spanned<T>: value => Spanned {
     span: value.span.clone(),
     value: T::try_from(value)?,
 });
@@ -74,32 +73,30 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
-            ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 let Spanned { span, value } = value.pop().unwrap();
                 if let Value::$value_kind($value_name) = value {
                     Ok(Some($return))
                 } else {
-                    Err(EvalError::IncorrectFunctionParameterType {
+                    Err(span.wrap(EvalError::IncorrectFunctionParameterType {
                         expected: ValueKind::$kind,
                         actual: value.kind(),
-                        span,
-                    })
+                    }).into())
                 }
             }
             fn borrow<'val, 'world, 'env, 'reg>(state: &'val mut Self::State<'world, 'env, 'reg>) -> Self::Guard<'val, 'world, 'env, 'reg> { state.take() }
-            fn as_arg<'val, 'world, 'env, 'reg>(guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> { Ok(guard.take().unwrap()) }
+            fn as_arg<'val, 'world, 'env, 'reg>(guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> { Ok(guard.take().unwrap()) }
         }
         impl TryFrom<Spanned<Value>> for $type {
-            type Error = EvalError;
+            type Error = Diagnostic<EvalError>;
             fn try_from(Spanned { span, value }: Spanned<Value>) -> Result<Self, Self::Error> {
                 if let Value::$value_kind($value_name) = value {
                     Ok($return)
                 } else {
-                    Err(EvalError::IncorrectFunctionParameterType {
+                    Err(span.wrap(EvalError::IncorrectFunctionParameterType {
                         expected: ValueKind::$kind,
                         actual: value.kind(),
-                        span,
-                    })
+                    }).into())
                 }
             }
         }
@@ -118,20 +115,19 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
-            ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 let Spanned { span, value } = value.pop().unwrap();
 
                 if let Value::Reference(reference) = value {
                     reference
                         .upgrade()
-                        .ok_or(EvalError::ReferenceToMovedData(span.clone()))
+                        .ok_or_else(|| span.clone().diagnose(EvalError::ReferenceToMovedData))
                         .map(|r| (r, span))
                 } else {
-                    Err(EvalError::IncorrectFunctionParameterType {
+                    Err(span.wrap(EvalError::IncorrectFunctionParameterType {
                         expected: ValueKind::Reference,
                         actual: value.kind(),
-                        span,
-                    })
+                    }).into())
                 }
             }
 
@@ -143,16 +139,15 @@ macro_rules! impl_function_param_for_value {
 
             fn as_arg<'val, 'world, 'env, 'reg>(
                 (guard, span): &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 let reference = &mut **guard;
                 if let Value::$value_kind(value_ref) = reference {
                     Ok(value_ref)
                 } else {
-                    Err(EvalError::IncorrectFunctionParameterType {
+                    Err(span.clone().wrap(EvalError::IncorrectFunctionParameterType {
                         expected: ValueKind::$kind,
                         actual: reference.kind(),
-                        span: span.clone(),
-                    })
+                    }).into())
                 }
             }
         }
@@ -167,20 +162,19 @@ macro_rules! impl_function_param_for_value {
                 _: &mut Option<&'world mut World>,
                 _: &mut Option<&'env mut Environment>,
                 _: &'reg [&'reg TypeRegistration],
-            ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 let Spanned { span, value } = value.pop().unwrap();
 
                 if let Value::Reference(reference) = value {
                     reference
                         .upgrade()
-                        .ok_or(EvalError::ReferenceToMovedData(span.clone()))
+                        .ok_or_else(|| span.clone().diagnose(EvalError::ReferenceToMovedData))
                         .map(|r| (r, span))
                 } else {
-                    Err(EvalError::IncorrectFunctionParameterType {
+                    Err(span.wrap(EvalError::IncorrectFunctionParameterType {
                         expected: ValueKind::Reference,
                         actual: value.kind(),
-                        span,
-                    })
+                    }).into())
                 }
             }
 
@@ -192,20 +186,19 @@ macro_rules! impl_function_param_for_value {
 
             fn as_arg<'val, 'world, 'env, 'reg>(
                 (guard, span): &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
                 let reference = &**guard;
                 if let Value::$value_kind(value_ref) = reference {
                     Ok(value_ref)
                 } else {
-                    Err(EvalError::IncorrectFunctionParameterType {
+                    Err(span.clone().wrap(EvalError::IncorrectFunctionParameterType {
                         expected: ValueKind::$kind,
                         actual: reference.kind(),
-                        span: span.clone(),
-                    })
+                    }).into())
                 }
             }
         }
-    }
+    };
 }
 
 impl_function_param_for_value!(impl ref bool: Boolean(boolean) => boolean);
@@ -231,32 +224,30 @@ macro_rules! impl_function_param_for_numbers {
                     _: &mut Option<&'world mut World>,
                     _: &mut Option<&'env mut Environment>,
                     _: &'reg [&'reg TypeRegistration],
-                ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+                ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
                     let Spanned { span, value } = value.pop().unwrap();
                     match value {
                         Value::Number(Number::$number(value)) => Ok(Some(value)),
                         Value::Number(Number::$generic(value)) => Ok(Some(value as $number)),
-                        _ => Err(EvalError::IncorrectFunctionParameterType {
+                        _ => Err(span.wrap(EvalError::IncorrectFunctionParameterType {
                             expected: ValueKind::Number(NumberKind::$number),
                             actual: value.kind(),
-                            span,
-                        })
+                        }).into())
                     }
                 }
                 fn borrow<'val, 'world, 'env, 'reg>(state: &'val mut Self::State<'world, 'env, 'reg>) -> Self::Guard<'val, 'world, 'env, 'reg> { state.take() }
-                fn as_arg<'val, 'world, 'env, 'reg>(guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> { Ok(guard.take().unwrap()) }
+                fn as_arg<'val, 'world, 'env, 'reg>(guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> { Ok(guard.take().unwrap()) }
             }
             impl TryFrom<Spanned<Value>> for $number {
-                type Error = EvalError;
+                type Error = Diagnostic<EvalError>;
                 fn try_from(Spanned {span, value}: Spanned<Value>) -> Result<Self, Self::Error> {
                     match value {
                         Value::Number(Number::$number(value)) => Ok(value),
                         Value::Number(Number::$generic(value)) => Ok(value as $number),
-                        _ => Err(EvalError::IncorrectFunctionParameterType {
+                        _ => Err(span.wrap(EvalError::IncorrectFunctionParameterType {
                             expected: ValueKind::Number(NumberKind::$number),
                             actual: value.kind(),
-                            span
-                        })
+                        }).into())
                     }
                 }
             }
@@ -278,19 +269,20 @@ impl FunctionParam for &Value {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         let Spanned { span, value } = value.pop().unwrap();
 
         if let Value::Reference(reference) = value {
             reference
                 .upgrade()
-                .ok_or(EvalError::ReferenceToMovedData(span))
+                .ok_or_else(|| span.diagnose(EvalError::ReferenceToMovedData))
         } else {
-            Err(EvalError::IncorrectFunctionParameterType {
-                expected: ValueKind::Reference,
-                actual: value.kind(),
-                span,
-            })
+            Err(span
+                .wrap(EvalError::IncorrectFunctionParameterType {
+                    expected: ValueKind::Reference,
+                    actual: value.kind(),
+                })
+                .into())
         }
     }
 
@@ -302,7 +294,7 @@ impl FunctionParam for &Value {
 
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(&**guard)
     }
 }
@@ -318,19 +310,20 @@ impl FunctionParam for &mut Value {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         let Spanned { span, value } = value.pop().unwrap();
 
         if let Value::Reference(reference) = value {
             reference
                 .upgrade()
-                .ok_or(EvalError::ReferenceToMovedData(span))
+                .ok_or_else(|| span.diagnose(EvalError::ReferenceToMovedData))
         } else {
-            Err(EvalError::IncorrectFunctionParameterType {
-                expected: ValueKind::Reference,
-                actual: value.kind(),
-                span,
-            })
+            Err(span
+                .wrap(EvalError::IncorrectFunctionParameterType {
+                    expected: ValueKind::Reference,
+                    actual: value.kind(),
+                })
+                .into())
         }
     }
 
@@ -342,7 +335,7 @@ impl FunctionParam for &mut Value {
 
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(&mut **guard)
     }
 }
@@ -358,12 +351,11 @@ impl FunctionParam for &mut World {
         world: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         let Some(world) = world.take() else {
-            return Err(EvalError::Custom {
-                text: "world borrowed twice".into(),
-                span: 0..0,
-            });
+            return Err(Diagnostic::empty(EvalError::Custom(
+                "world borrowed twice".into(),
+            )));
         };
         Ok(Some(world))
     }
@@ -376,7 +368,7 @@ impl FunctionParam for &mut World {
 
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(guard.as_mut().map(|w| &mut **w).unwrap())
     }
 }
@@ -391,12 +383,11 @@ impl FunctionParam for &World {
         world: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         let Some(world) = world.take() else {
-            return Err(EvalError::Custom {
-                text: "world borrowed twice".into(),
-                span: 0..0,
-            });
+            return Err(Diagnostic::empty(EvalError::Custom(
+                "world borrowed twice".into(),
+            )));
         };
         Ok(Some(world))
     }
@@ -409,7 +400,7 @@ impl FunctionParam for &World {
 
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(guard.as_mut().map(|w| &**w).unwrap())
     }
 }
@@ -425,7 +416,7 @@ impl FunctionParam for &mut Environment {
         _: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(Some(environment.take().unwrap()))
     }
 
@@ -436,7 +427,7 @@ impl FunctionParam for &mut Environment {
     }
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(guard.as_mut().map(|e| &mut **e).unwrap())
     }
 }
@@ -451,7 +442,7 @@ impl FunctionParam for &Environment {
         _: &mut Option<&'world mut World>,
         environment: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(Some(environment.take().unwrap()))
     }
 
@@ -462,7 +453,7 @@ impl FunctionParam for &Environment {
     }
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(guard.as_mut().map(|e| &**e).unwrap())
     }
 }
@@ -478,7 +469,7 @@ impl FunctionParam for &[&TypeRegistration] {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         registrations: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(Some(registrations))
     }
     fn borrow<'val, 'world, 'env, 'reg>(
@@ -488,7 +479,7 @@ impl FunctionParam for &[&TypeRegistration] {
     }
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(guard.unwrap())
     }
 }
@@ -504,7 +495,7 @@ impl FunctionParam for Vec<Spanned<Value>> {
         _: &mut Option<&'world mut World>,
         _: &mut Option<&'env mut Environment>,
         _: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::State<'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(Some(values.into_vec()))
     }
     fn borrow<'val, 'world, 'env, 'reg>(
@@ -514,7 +505,7 @@ impl FunctionParam for Vec<Spanned<Value>> {
     }
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
-    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, EvalError> {
+    ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
         Ok(guard.take().unwrap())
     }
 }

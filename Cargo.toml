@@ -63,12 +63,17 @@ rustdoc-args = [
 
 ]
 
+
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(docsrs_dep)'] }
 # missing_docs = "warn"
 
 [lints.clippy]
-useless_format = "allow"
+type_complexity = "allow"
+must_use_candidate = "warn"
+too_many_arguments = "allow"
+str_to_string = "warn"
+
 
 # Required to make `cargo doc` scrape examples,
 # otherwise it will skip them as they require dev depenendencies

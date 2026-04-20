@@ -6,7 +6,7 @@ use bevy::reflect::{DynamicStruct, DynamicTuple, PartialReflect};
 use logos::Span;
 
 use crate::builtin_parser::number::Number;
-use crate::builtin_parser::{Spanned, UniqueRc};
+use crate::builtin_parser::{Diagnostic, SpanExtension, Spanned, UniqueRc};
 
 use super::error::EvalError;
 use super::reflection::IntoResource;
@@ -67,7 +67,11 @@ impl Value {
     /// Converts this value into a [`Box<dyn PartialReflect>`].
     ///
     /// `ty` is used for type inference.
-    pub fn reflect(self, span: Span, ty: &str) -> Result<Box<dyn PartialReflect>, EvalError> {
+    pub fn reflect(
+        self,
+        span: Span,
+        ty: &str,
+    ) -> Result<Box<dyn PartialReflect>, Diagnostic<EvalError>> {
         match self {
             Value::None => Ok(Box::new(())),
             Value::Number(number) => number
@@ -75,7 +79,7 @@ impl Value {
                 .map(PartialReflect::into_partial_reflect),
             Value::Boolean(boolean) => Ok(Box::new(boolean)),
             Value::String(string) => Ok(Box::new(string)),
-            Value::Reference(_reference) => Err(EvalError::CannotReflectReference(span)),
+            Value::Reference(_reference) => Err(span.diagnose(EvalError::CannotReflectReference)),
             Value::Object(object) | Value::StructObject { map: object, .. } => {
                 let mut dyn_struct = DynamicStruct::default();
 
@@ -94,7 +98,7 @@ impl Value {
 
                 Ok(Box::new(dyn_tuple))
             }
-            Value::Resource(_) => Err(EvalError::CannotReflectResource(span)),
+            Value::Resource(_) => Err(span.diagnose(EvalError::CannotReflectResource)),
         }
     }
 }

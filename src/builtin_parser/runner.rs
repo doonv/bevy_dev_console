@@ -26,16 +26,27 @@ pub use value::Value;
 /// Temporary macro that prevents panicking by replacing the [`todo!`] panic with an error message.
 macro_rules! todo_error {
     () => {
-        return Err($crate::builtin_parser::EvalError::Custom {
-            text: concat!("todo error invoked at ", file!(), ":", line!(), ":", column!()).into(),
-            span: 0..0
-        })
+        return Err($crate::builtin_parser::Diagnostic::empty($crate::builtin_parser::EvalError::Custom(
+            concat!("todo error invoked at ", file!(), ":", line!(), ":", column!()).into(),
+        )))
     };
     ($($arg:tt)+) => {
-        return Err($crate::builtin_parser::EvalError::Custom {
-            text: format!(concat!("todo error invoked at ", file!(), ":", line!(), ":", column!(), ": {}"), format_args!($($arg)+)).into(),
-            span: 0..0
-        })
+        return Err($crate::builtin_parser::Diagnostic::empty($crate::builtin_parser::EvalError::Custom(
+                format!(
+                    concat!(
+                        "todo error invoked at ",
+                        file!(),
+                        ":",
+                        line!(),
+                        ":",
+                        column!(),
+                        ": {}"
+                    ),
+                    format_args!($($arg)+)
+                )
+                .into(),
+            ),
+        ))
     };
 }
 pub(crate) use todo_error;
@@ -52,7 +63,7 @@ pub fn eval(
     world: &mut World,
     environment: &mut Environment,
     registry: &AppTypeRegistry,
-) -> Result<Option<String>, EvalError> {
+) -> Result<Option<String>, crate::builtin_parser::Diagnostic<EvalError>> {
     let registry_read = registry.read();
 
     let registrations: Vec<_> = registry_read

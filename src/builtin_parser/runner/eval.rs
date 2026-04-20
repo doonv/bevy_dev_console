@@ -9,7 +9,7 @@ use kinded::Kinded;
 use crate::builtin_parser::number::Number;
 use crate::builtin_parser::parser::{BinaryOperator, Expression, UnaryOperator};
 use crate::builtin_parser::runner::value::ValueKind;
-use crate::builtin_parser::{SpanExtension, Spanned};
+use crate::builtin_parser::{Diagnostic, ErrorExtension, SpanExtension, Spanned, StrongRef};
 
 use super::EvalParams;
 use super::error::EvalError;
@@ -25,7 +25,7 @@ pub fn eval_expression(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Value, EvalError> {
+) -> Result<Value, Diagnostic<EvalError>> {
     match expr.value {
         Expression::VarAssign {
             name,
@@ -53,10 +53,10 @@ pub fn eval_expression(
                 match variable.upgrade() {
                     Some(strong) => *strong.borrow_mut() = value,
                     None => {
-                        return Err(EvalError::Custom {
-                            text: "cannot assign to moved variable".into(),
-                            span: expr.span,
-                        });
+                        return Err(expr
+                            .span
+                            .wrap(EvalError::Custom("cannot assign to moved variable".into()))
+                            .into());
                     }
                 }
 
@@ -98,17 +98,18 @@ pub fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(EvalError::EnumVariantNotFound(
-                                            span.wrap(name),
-                                        ));
+                                        return Err(span
+                                            .wrap(EvalError::EnumVariantNotFound(name))
+                                            .into());
                                     }
                                 };
                                 let VariantInfo::Unit(_) = variant_info else {
-                                    return Err(EvalError::Custom {
-                                        text: format!("Enum variant {name} is not a unit variant")
-                                            .into(),
-                                        span,
-                                    });
+                                    return Err(span
+                                        .wrap(EvalError::Custom(
+                                            format!("Enum variant {name} is not a unit variant")
+                                                .into(),
+                                        ))
+                                        .into());
                                 };
 
                                 let new_enum = DynamicEnum::new(name, ());
@@ -119,19 +120,18 @@ pub fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(EvalError::EnumVariantNotFound(
-                                            span.wrap(name),
-                                        ));
+                                        return Err(span
+                                            .wrap(EvalError::EnumVariantNotFound(name))
+                                            .into());
                                     }
                                 };
                                 let VariantInfo::Struct(variant_info) = variant_info else {
-                                    return Err(EvalError::Custom {
-                                        text: format!(
-                                            "Enum variant {name} is not a struct variant"
-                                        )
-                                        .into(),
-                                        span,
-                                    });
+                                    return Err(span
+                                        .wrap(EvalError::Custom(
+                                            format!("Enum variant {name} is not a struct variant")
+                                                .into(),
+                                        ))
+                                        .into());
                                 };
 
                                 let map: HashMap<_, _> = map
@@ -139,13 +139,12 @@ pub fn eval_expression(
                                     .map(|(k, v)| {
                                         let ty = match variant_info.field(&k) {
                                             Some(field) => Ok(field.type_path_table().short_path()),
-                                            None => {
-                                                Err(EvalError::EnumVariantStructFieldNotFound {
+                                            None => Err(span.clone().diagnose(
+                                                EvalError::EnumVariantStructFieldNotFound {
                                                     field_name: k.clone(),
                                                     variant_name: name.clone(),
-                                                    span: span.clone(),
-                                                })
-                                            }
+                                                },
+                                            )),
                                         }?;
 
                                         let span = v.span.clone();
@@ -166,7 +165,7 @@ pub fn eval_expression(
                                             ),
                                         ))
                                     })
-                                    .collect::<Result<_, _>>()?;
+                                    .collect::<Result<_, Diagnostic<EvalError>>>()?;
 
                                 let new_enum =
                                     DynamicEnum::new(name, object_to_dynamic_struct(map)?);
@@ -184,17 +183,18 @@ pub fn eval_expression(
                                 let variant_info = match enum_info.variant(&name) {
                                     Some(variant_info) => variant_info,
                                     None => {
-                                        return Err(EvalError::EnumVariantNotFound(
-                                            span.wrap(name),
-                                        ));
+                                        return Err(span
+                                            .wrap(EvalError::EnumVariantNotFound(name))
+                                            .into());
                                     }
                                 };
                                 let VariantInfo::Tuple(variant_info) = variant_info else {
-                                    return Err(EvalError::Custom {
-                                        text: format!("Enum variant {name} is not a tuple variant")
-                                            .into(),
-                                        span,
-                                    });
+                                    return Err(span
+                                        .wrap(EvalError::Custom(
+                                            format!("Enum variant {name} is not a tuple variant")
+                                                .into(),
+                                        ))
+                                        .into());
                                 };
 
                                 let tuple = eval_tuple(
@@ -211,11 +211,12 @@ pub fn eval_expression(
                                 for (index, element) in tuple.into_vec().into_iter().enumerate() {
                                     let ty = match variant_info.field_at(index) {
                                         Some(field) => Ok(field.type_path_table().short_path()),
-                                        None => Err(EvalError::EnumVariantTupleFieldNotFound {
-                                            field_index: index,
-                                            variant_name: name.clone(),
-                                            span: span.clone(),
-                                        }),
+                                        None => Err(span.clone().diagnose(
+                                            EvalError::EnumVariantTupleFieldNotFound {
+                                                field_index: index,
+                                                variant_name: name.clone(),
+                                            },
+                                        )),
                                     }?;
 
                                     dynamic_tuple.insert_boxed(
@@ -239,10 +240,11 @@ pub fn eval_expression(
                                 dyn_enum.apply(&new_enum);
                             }
                             _ => {
-                                return Err(EvalError::Custom {
-                                    text: "Unsupported enum variant assignment".into(),
-                                    span,
-                                });
+                                return Err(span
+                                    .wrap(EvalError::Custom(
+                                        "Unsupported enum variant assignment".into(),
+                                    ))
+                                    .into());
                             }
                         }
                     }
@@ -267,7 +269,9 @@ pub fn eval_expression(
 
                         reflect
                             .try_apply(value_reflect.as_partial_reflect())
-                            .map_err(|apply_error| EvalError::ApplyError { apply_error, span })?;
+                            .map_err(|apply_error| {
+                                span.diagnose(EvalError::ApplyError(apply_error))
+                            })?;
                     }
                 }
 
@@ -281,10 +285,10 @@ pub fn eval_expression(
                 .iter()
                 .any(|v| v.type_info().type_path_table().short_path() == variable)
             {
-                Err(EvalError::CannotMoveOutOfResource(Spanned {
-                    span: expr.span,
-                    value: variable,
-                }))
+                Err(expr
+                    .span
+                    .wrap(EvalError::CannotMoveOutOfResource(variable))
+                    .into())
             } else {
                 environment.move_var(&variable, expr.span)
             }
@@ -366,24 +370,28 @@ pub fn eval_expression(
                     BinaryOperator::Xor => Number::xor(left, right, expr.span)?,
                     BinaryOperator::Or => Number::or(left, right, expr.span)?,
                 })),
-                (left, right) => Err(EvalError::Custom {
-                    text: format!("Unsupported binary operation between {left:?} and {right:?}")
-                        .into(),
-                    span: expr.span,
-                }),
+                (left, right) => Err(expr
+                    .span
+                    .wrap(EvalError::Custom(
+                        format!("Unsupported binary operation between {left:?} and {right:?}")
+                            .into(),
+                    ))
+                    .into()),
             }
         }
         Expression::ForLoop {
             index_name,
             loop_count,
             block,
-        } => Err(EvalError::Custom {
-            text: format!(
-                "For loops are not yet implemented: {index_name}, {loop_count}, {block:#?}"
-            )
-            .into(),
-            span: expr.span,
-        }),
+        } => Err(expr
+            .span
+            .wrap(EvalError::Custom(
+                format!(
+                    "For loops are not yet implemented: {index_name}, {loop_count}, {block:#?}"
+                )
+                .into(),
+            ))
+            .into()),
         Expression::Member { left, right } => eval_member_expression(
             *left,
             right,
@@ -405,45 +413,47 @@ pub fn eval_expression(
             match operator {
                 UnaryOperator::Minus => {
                     if let Value::Number(number) = value {
-                        Ok(Value::Number(number.neg(expr.span)?))
+                        Ok(Value::Number((-number).diagnosed(expr.span)?))
                     } else {
-                        Err(EvalError::InvalidUnaryOperation {
-                            span: expr.span,
+                        Err(expr.span.diagnose(EvalError::InvalidUnaryOperation {
                             operator,
                             operand: value.kind(),
                             accepted: &[ValueKind::AnyNumber],
-                        })
+                        }))
                     }
                 }
                 UnaryOperator::Not => match value {
                     Value::Boolean(boolean) => Ok(Value::Boolean(!boolean)),
-                    Value::Number(number) => Ok(Value::Number(number.not(expr.span)?)),
-                    _ => Err(EvalError::InvalidUnaryOperation {
-                        span: expr.span,
-                        operator,
-                        operand: value.kind(),
-                        accepted: &[ValueKind::Boolean, ValueKind::AnyInteger],
-                    }),
+                    Value::Number(number) => Ok(Value::Number((!number).diagnosed(expr.span)?)),
+                    _ => Err(expr
+                        .span
+                        .wrap(EvalError::InvalidUnaryOperation {
+                            operator,
+                            operand: value.kind(),
+                            accepted: &[ValueKind::Boolean, ValueKind::AnyInteger],
+                        })
+                        .into()),
                 },
             }
         }
         Expression::Dereference(inner) => {
             if let Expression::Variable(variable) = inner.value {
-                let var = environment.get(&variable, inner.span)?;
+                let var = environment.get_variable(&variable, inner.span)?;
                 match &*var.borrow_inner().borrow() {
                     Value::Reference(reference) => {
-                        let reference = reference
+                        let reference: StrongRef<Value> = reference
                             .upgrade()
-                            .ok_or(EvalError::ReferenceToMovedData(expr.span))?;
+                            .ok_or_else(|| expr.span.wrap(EvalError::ReferenceToMovedData))?;
                         let owned = reference.borrow().clone();
                         Ok(owned)
                     }
                     value => Ok(value.clone()),
                 }
             } else {
-                Err(EvalError::CannotDereferenceValueExpr(
-                    expr.span.wrap(inner.value.kind()),
-                ))
+                Err(expr
+                    .span
+                    .wrap(EvalError::CannotDereferenceValueExpr(inner.value.kind()))
+                    .into())
             }
         }
         Expression::Borrow(inner) => {
@@ -454,15 +464,16 @@ pub fn eval_expression(
                 {
                     Ok(Value::Resource(IntoResource::new(registration.type_id())))
                 } else {
-                    let rc = environment.get(&variable, inner.span)?;
+                    let rc = environment.get_variable(&variable, inner.span)?;
                     let weak = rc.borrow();
 
                     Ok(Value::Reference(weak))
                 }
             } else {
-                Err(EvalError::CannotBorrowValue(
-                    expr.span.wrap(inner.value.kind()),
-                ))
+                Err(expr
+                    .span
+                    .wrap(EvalError::CannotBorrowValue(inner.value.kind()))
+                    .into())
             }
         }
         Expression::None => Ok(Value::None),
@@ -483,7 +494,7 @@ pub fn eval_expression(
                         )?,
                     })
                 })
-                .collect::<Result<Vec<_>, EvalError>>()?;
+                .collect::<Result<Vec<_>, Diagnostic<EvalError>>>()?;
 
             environment.run_function(&name, args, world, registrations)
         }
@@ -497,11 +508,11 @@ pub fn eval_object(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<HashMap<String, UniqueRc<Value>>, EvalError> {
+) -> Result<HashMap<String, UniqueRc<Value>>, Diagnostic<EvalError>> {
     let map = map
         .into_iter()
         .map(
-            |(key, expr)| -> Result<(String, UniqueRc<Value>), EvalError> {
+            |(key, expr)| -> Result<(String, UniqueRc<Value>), Diagnostic<EvalError>> {
                 Ok((
                     key,
                     UniqueRc::new(eval_expression(
@@ -527,7 +538,7 @@ pub fn eval_tuple(
         environment,
         registrations,
     }: EvalParams,
-) -> Result<Box<[Spanned<UniqueRc<Value>>]>, EvalError> {
+) -> Result<Box<[Spanned<UniqueRc<Value>>]>, Diagnostic<EvalError>> {
     tuple
         .into_iter()
         .map(|expr| {

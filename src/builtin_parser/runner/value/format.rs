@@ -7,7 +7,9 @@ use bevy::reflect::{
     GetPath, PartialReflect, ReflectRef, TypeInfo, TypeRegistration, VariantInfo, VariantType,
 };
 
-use crate::builtin_parser::{BRIGHT_YELLOW, EvalError, GREEN, RED, YELLOW};
+use crate::builtin_parser::{
+    BRIGHT_YELLOW, Diagnostic, EvalError, GREEN, RED, SpanExtension, YELLOW,
+};
 
 use super::super::reflection::CreateRegistration;
 use super::Value;
@@ -23,16 +25,16 @@ impl Value {
         span: logos::Span,
         world: &World,
         registrations: &[&TypeRegistration],
-    ) -> Result<String, EvalError> {
+    ) -> Result<String, Diagnostic<EvalError>> {
         const TAB: &str = "    ";
         match self {
-            Value::None => Ok(format!("()")),
+            Value::None => Ok("()".to_owned()),
             Value::Number(number) => Ok(format!("{number}")),
             Value::Boolean(bool) => Ok(format!("{YELLOW}{bool}{YELLOW:#}")),
             Value::String(string) => Ok(format!("{GREEN}\"{string}\"{GREEN:#}")),
             Value::Reference(reference) => match reference.upgrade() {
                 Some(rc) => Ok(rc.borrow().try_format(span, world, registrations)?),
-                _ => Err(EvalError::ReferenceToMovedData(span)),
+                _ => Err(span.diagnose(EvalError::ReferenceToMovedData)),
             },
             Value::Object(map) => {
                 let mut string = String::new();
