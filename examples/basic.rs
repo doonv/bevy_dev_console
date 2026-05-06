@@ -17,6 +17,7 @@ fn main() {
             DevConsolePlugin,
         ))
         .add_systems(Startup, test)
+        .add_systems(Update, loopa)
         .run();
 }
 
@@ -28,4 +29,14 @@ fn test(mut commands: Commands) {
     info!("hello :)");
     warn!("spooky warning");
     error!("scary error");
+}
+
+fn loopa(time: Res<Time>, mut timer: Local<Option<Timer>>) {
+    if timer
+        .get_or_insert(Timer::from_seconds(0.5, TimerMode::Repeating))
+        .tick(time.delta())
+        .just_finished()
+    {
+        info!("a");
+    }
 }

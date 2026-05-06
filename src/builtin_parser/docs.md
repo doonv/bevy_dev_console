@@ -167,7 +167,11 @@ Custom native functions can be created and added, see the [`custom_functions` ex
 
 You can modify [`Resource`]s that implement the [`Reflect`] trait by their name. See the [`resources` example](https://github.com/doonv/bevy_dev_console/blob/master/examples/resources.rs) for some resources to play around with.
 
-**Warning:** Error handling for this is not finished, expect panics.
+<div class="warning" style="--warning-border-color: #1F6FEB">
+<b>Note</b>
+
+Error handling for this is not finished, expect panics.
+</div>
 
 ```rust,ignore
 MyStructResource.number1 = 100

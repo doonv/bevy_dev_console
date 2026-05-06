@@ -6,7 +6,6 @@ use bevy::log::tracing_subscriber::{Layer, fmt};
 use bevy::log::{BoxedFmtLayer, BoxedLayer, Level, LogPlugin, tracing_subscriber as subscriber};
 use bevy::prelude::*;
 use std::sync::mpsc;
-use web_time::SystemTime;
 
 /// Convince function for setting the [`custom_layer`](LogPlugin::custom_layer) and
 /// [`fmt_layer`](LogPlugin::fmt_layer) of a [`LogPlugin`] with [`console_log_layer`] and [`colored_fmt_layer`].
@@ -77,7 +76,7 @@ pub(crate) struct LogMessage {
     pub line: Option<u32>,
 
     /// The time the log occurred.
-    pub time: SystemTime,
+    pub time: chrono::DateTime<chrono::Utc>,
 }
 
 /// Transfers information from the [`CapturedLogEvents`] resource to [`Events<LogMessage>`](LogMessage).
@@ -115,7 +114,7 @@ impl<S: Subscriber> Layer<S> for LogCaptureLayer {
                     module_path: metadata.module_path(),
                     file: metadata.file(),
                     line: metadata.line(),
-                    time: SystemTime::now(),
+                    time: chrono::Utc::now(),
                 })
                 .expect("CapturedLogEvents resource no longer exists!");
         }

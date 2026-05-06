@@ -1,10 +1,10 @@
-//! `bevy_dev_console` is an experimental developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
+//! `bevy_dev_console` is an experimental developer console plugin for the [Bevy Game Engine](https://bevy.org).
 //!
 //! ![Image of the developer console](https://raw.githubusercontent.com/doonv/bevy_dev_console/master/doc/console.png)
 //!
 //! <div class="warning">
 //!     <b>Warning</b>
-//!
+//!     <br>
 //!     <code>bevy_dev_console</code> is currently in its early development stages. Expect breaking changes in the near future
 //!     (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
 //! </div>
@@ -18,7 +18,7 @@
 //!   - Variables
 //!     - Uses a simplified version of ownership and borrowing
 //!   - Standard library (Doesn't have much at the moment)
-//!   - - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) that work exactly like regular Rust functions ([`World`] access included!)
+//!   - - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) are written just like regular rust functions! ([`World`] access included!)
 //!   - [Many types](https://github.com/doonv/bevy_dev_console/wiki/Built%E2%80%90in-Parser#types)
 //!   - Resource viewing and modification
 //!     - Enums
@@ -74,6 +74,7 @@
 // #![allow(clippy::items_after_statements)]
 #![allow(internal_features)]
 #![cfg_attr(any(docsrs, docsrs_dep), feature(rustdoc_internals))]
+#![cfg_attr(test, feature(box_patterns))]
 
 use bevy::prelude::*;
 use bevy_egui::prelude::*;
@@ -109,12 +110,6 @@ pub mod ui;
 pub struct DevConsolePlugin;
 impl Plugin for DevConsolePlugin {
     fn build(&self, app: &mut App) {
-        debug_assert!(
-            app.world().contains_resource::<Messages<LogMessage>>(),
-            "`LogMessage` message not initialized. `DevConsolePlugin` requires `bevy::log::LogPlugin::custom_layer` be \
-            set to `bevy_dev_console::logging::console_log_layer`. See `bevy_dev_consoles`'s examples for more info."
-        );
-
         if !app.is_plugin_added::<EguiPlugin>() {
             app.add_plugins(EguiPlugin::default());
         }
@@ -123,6 +118,7 @@ impl Plugin for DevConsolePlugin {
         {
             app.init_non_send_resource::<builtin_parser::Environment>();
             app.init_resource::<command::DefaultCommandParser>();
+
             #[cfg(feature = "builtin-parser-completions")]
             app.init_resource::<builtin_parser::completions::EnvironmentCache>();
         }
@@ -137,6 +133,14 @@ impl Plugin for DevConsolePlugin {
                 EguiPrimaryContextPass,
                 ui::render_ui_system.run_if(toggle()),
             );
+    }
+
+    fn finish(&self, app: &mut App) {
+        debug_assert!(
+            app.world().contains_resource::<Messages<LogMessage>>(),
+            "`LogMessage` message not initialized. `DevConsolePlugin` requires `bevy::log::LogPlugin::custom_layer` be \
+            set to `bevy_dev_console::logging::console_log_layer`. See `bevy_dev_consoles`'s examples for more info."
+        );
     }
 }
 

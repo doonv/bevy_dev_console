@@ -1,12 +1,13 @@
 //! An example showing how to create custom functions
 
+use std::time;
+
 use bevy::prelude::*;
 use bevy_dev_console::builtin_parser::{
     Diagnostic, Environment, EvalError, Number, Spanned, Value,
 };
 use bevy_dev_console::prelude::*;
 use bevy_dev_console::register;
-use web_time as time;
 
 // Declare the functions we want to create:
 
@@ -30,7 +31,7 @@ fn add_generic(
     num1: Spanned<Number>,
     num2: Spanned<Number>,
 ) -> Result<Number, Diagnostic<EvalError>> {
-    num1 + num2
+    num1 + num2 // Adding two Spanned Numbers automatically returns the correct diagnostic for you.
 }
 
 /// Function with any value + span
@@ -66,7 +67,8 @@ fn count_args(args: Vec<Spanned<Value>>) -> usize {
 fn custom_environment() -> Environment {
     let mut environment = Environment::default();
 
-    // The register macro allows us to easily add functions to the environment.
+    // The register macro allows us to easily add functions to
+    // the environment without needing to specify the name twice.
     register!(&mut environment => {
         fn time_since_epoch;
         fn add;

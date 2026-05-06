@@ -93,6 +93,7 @@ fn alias(from: String, to: String, environment: &mut Environment) -> Result<(), 
     if environment.get_function(&from).is_none() {
         Err("Function doesn't exist")?;
     }
+    
     environment.register_fn(
         to,
         move |arguments: Vec<Spanned<Value>>,

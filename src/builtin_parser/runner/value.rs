@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use bevy::reflect::{DynamicStruct, DynamicTuple, PartialReflect};
 use logos::Span;
 
-use crate::builtin_parser::number::Number;
+use crate::builtin_parser::number::{Float, Integer, Number, SignedInteger, UnsignedInteger};
 use crate::builtin_parser::{Diagnostic, SpanExtension, Spanned, UniqueRc};
 
 use super::error::EvalError;
@@ -112,19 +112,28 @@ macro_rules! from_t {
         }
     };
 }
-macro_rules! from_number {
-    ($($number:ident),*$(,)?) => {
-        $(
-            from_t!(impl $number: number => Value::Number(Number::$number(number)));
-        )*
-    };
-}
 
 from_t!(impl (): () => Value::None);
-from_number!(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize, f32, f64);
+from_t!(impl u8: n => Value::Number(n.into()));
+from_t!(impl u16: n => Value::Number(n.into()));
+from_t!(impl u32: n => Value::Number(n.into()));
+from_t!(impl u64: n => Value::Number(n.into()));
+from_t!(impl usize: n => Value::Number(n.into()));
+from_t!(impl i8: n => Value::Number(n.into()));
+from_t!(impl i16: n => Value::Number(n.into()));
+from_t!(impl i32: n => Value::Number(n.into()));
+from_t!(impl i64: n => Value::Number(n.into()));
+from_t!(impl isize: n => Value::Number(n.into()));
+from_t!(impl f32: n => Value::Number(n.into()));
+from_t!(impl f64: n => Value::Number(n.into()));
+
 from_t!(impl String: string => Value::String(string));
 from_t!(impl bool: bool => Value::Boolean(bool));
 from_t!(impl Number: number => Value::Number(number));
+from_t!(impl Float: float => Value::Number(Number::Float(float)));
+from_t!(impl Integer: integer => Value::Number(Number::Integer(integer)));
+from_t!(impl UnsignedInteger: uint => Value::Number(Number::Integer(Integer::Unsigned(uint))));
+from_t!(impl SignedInteger: sint => Value::Number(Number::Integer(Integer::Signed(sint))));
 from_t!(impl HashMap<String, UniqueRc<Value>>: hashmap => Value::Object(hashmap));
 from_t!(impl HashMap<String, Value>: hashmap => Value::Object(
     hashmap

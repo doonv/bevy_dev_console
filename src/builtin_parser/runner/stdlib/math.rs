@@ -1,12 +1,14 @@
-use crate::builtin_parser::Environment;
+use crate::builtin_parser::{Environment, Float};
 use crate::register;
-
-// TODO: Add support for non-f64 ops
 
 macro_rules! float_calc_op {
     ($fn:ident, $name:expr) => {
-        fn $fn(number: f64) -> f64 {
-            number.$fn()
+        fn $fn(number: Float) -> Float {
+            match number {
+                Float::f32(number) => Float::f32(number.$fn()),
+                Float::f64(number) => Float::f64(number.$fn()),
+                Float::Unspecified(number) => Float::Unspecified(number.$fn()),
+            }
         }
     };
 }
@@ -23,10 +25,6 @@ float_calc_op!(floor, "rounded-down value");
 float_calc_op!(round, "rounded value");
 float_calc_op!(trunc, "truncuated value");
 
-fn pow(number: f64, power: f64) -> f64 {
-    number.powf(power)
-}
-
 pub fn register(env: &mut Environment) {
     register!(env => {
         fn sqrt;
@@ -40,8 +38,5 @@ pub fn register(env: &mut Environment) {
         fn floor;
         fn round;
         fn trunc;
-
-
-        fn pow;
     });
 }

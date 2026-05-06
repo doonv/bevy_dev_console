@@ -7,10 +7,14 @@ use bevy::reflect::TypeRegistration;
 use logos::Span;
 use smallvec::SmallVec;
 
-use crate::builtin_parser::number::{Number, NumberKind};
+use kinded::Kinded;
+
+use crate::builtin_parser::number::{
+    Float, FloatKind, Integer, IntegerKind, Number, NumberKind, SignedInteger, SignedIntegerKind,
+    UnsignedInteger, UnsignedIntegerKind,
+};
 use crate::builtin_parser::runner::function::ParamType;
 use crate::builtin_parser::{Diagnostic, Environment, SpanExtension, Spanned, StrongRef};
-use kinded::Kinded;
 
 use super::super::error::EvalError;
 use super::super::function::FunctionParam;
@@ -210,7 +214,141 @@ impl_function_param_for_value!(impl std::collections::HashMap<String, Value>: Ob
 });
 // impl_function_param_for_value!(impl StrongRef<Value>: Reference(reference) => reference.upgrade().unwrap());
 
+macro_rules! impl_function_param_for_group {
+    ($type:ty, $pattern:pat, $var:ident, $kind:ident) => {
+        impl FunctionParam for $type {
+            type State<'world, 'env, 'reg> = Option<Self>;
+            type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
+            type Item<'val, 'world, 'env, 'reg> = Self;
+            const PARAMETER_TYPE: ParamType = ParamType::Argument;
+
+            fn get<'world, 'env, 'reg>(
+                mut value: SmallVec<[Spanned<Value>; 1]>,
+                _: &mut Option<&'world mut World>,
+                _: &mut Option<&'env mut Environment>,
+                _: &'reg [&'reg TypeRegistration],
+            ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
+                let Spanned { span, value } = value.pop().unwrap();
+                if let Value::Number($pattern) = value {
+                    Ok(Some($var))
+                } else {
+                    Err(span
+                        .wrap(EvalError::IncorrectFunctionParameterType {
+                            expected: ValueKind::$kind,
+                            actual: value.kind(),
+                        })
+                        .into())
+                }
+            }
+            fn borrow<'val, 'world, 'env, 'reg>(
+                state: &'val mut Self::State<'world, 'env, 'reg>,
+            ) -> Self::Guard<'val, 'world, 'env, 'reg> {
+                state.take()
+            }
+            fn as_arg<'val, 'world, 'env, 'reg>(
+                guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
+            ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
+                Ok(guard.take().unwrap())
+            }
+        }
+        impl TryFrom<Spanned<Value>> for $type {
+            type Error = Diagnostic<EvalError>;
+            fn try_from(Spanned { span, value }: Spanned<Value>) -> Result<Self, Self::Error> {
+                if let Value::Number($pattern) = value {
+                    Ok($var)
+                } else {
+                    Err(span
+                        .wrap(EvalError::IncorrectFunctionParameterType {
+                            expected: ValueKind::$kind,
+                            actual: value.kind(),
+                        })
+                        .into())
+                }
+            }
+        }
+    };
+}
+
+impl_function_param_for_group!(Integer, Number::Integer(v), v, AnyInteger);
+impl_function_param_for_group!(
+    UnsignedInteger,
+    Number::Integer(Integer::Unsigned(v)),
+    v,
+    AnyUnsignedInteger
+);
+impl_function_param_for_group!(
+    SignedInteger,
+    Number::Integer(Integer::Signed(v)),
+    v,
+    AnySignedInteger
+);
+impl_function_param_for_group!(Float, Number::Float(v), v, AnyFloat);
+
 macro_rules! impl_function_param_for_numbers {
+    ($group_variant:ident, $variant:ident, $group:ident, $group_kind:ident, $generic:ident ($($number:ident),*$(,)?)) => {
+        $(
+            impl FunctionParam for $number {
+                type State<'world, 'env, 'reg> = Option<Self>;
+                type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
+                type Item<'val, 'world, 'env, 'reg> = Self;
+                const PARAMETER_TYPE: ParamType = ParamType::Argument;
+
+                fn get<'world, 'env, 'reg>(
+                    mut value: SmallVec<[Spanned<Value>; 1]>,
+                    _: &mut Option<&'world mut World>,
+                    _: &mut Option<&'env mut Environment>,
+                    _: &'reg [&'reg TypeRegistration],
+                ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
+                    let Spanned { span, value } = value.pop().unwrap();
+                    #[allow(unreachable_patterns)]
+                    match value {
+                        Value::Number(Number::Integer(Integer::$group_variant($group::$number(value)))) => Ok(Some(value)),
+                        Value::Number(Number::Integer(Integer::Signed(SignedInteger::Unspecified(value)))) if stringify!($group_variant) != "Signed" || stringify!($generic) != "Integer" => Ok(Some(value as $number)),
+                        Value::Number(Number::Integer(Integer::$group_variant($group::$generic(value)))) => Ok(Some(value as $number)),
+                        _ => Err(span.wrap(EvalError::IncorrectFunctionParameterType {
+                            expected: ValueKind::Number(NumberKind::Integer(IntegerKind::$group_variant($group_kind::$number))),
+                            actual: value.kind(),
+                        }).into())
+                    }
+                }
+                fn borrow<'val, 'world, 'env, 'reg>(state: &'val mut Self::State<'world, 'env, 'reg>) -> Self::Guard<'val, 'world, 'env, 'reg> { state.take() }
+                fn as_arg<'val, 'world, 'env, 'reg>(guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> { Ok(guard.take().unwrap()) }
+            }
+            impl TryFrom<Spanned<Value>> for $number {
+                type Error = Diagnostic<EvalError>;
+                fn try_from(Spanned {span, value}: Spanned<Value>) -> Result<Self, Self::Error> {
+                    #[allow(unreachable_patterns)]
+                    match value {
+                        Value::Number(Number::Integer(Integer::$group_variant($group::$number(value)))) => Ok(value),
+                        Value::Number(Number::Integer(Integer::Signed(SignedInteger::Unspecified(value)))) if stringify!($group_variant) != "Signed" || stringify!($generic) != "Integer" => Ok(value as $number),
+                        Value::Number(Number::Integer(Integer::$group_variant($group::$generic(value)))) => Ok(value as $number),
+                        _ => Err(span.wrap(EvalError::IncorrectFunctionParameterType {
+                            expected: ValueKind::Number(NumberKind::Integer(IntegerKind::$group_variant($group_kind::$number))),
+                            actual: value.kind(),
+                        }).into())
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_function_param_for_numbers!(
+    Unsigned,
+    Unsigned,
+    UnsignedInteger,
+    UnsignedIntegerKind,
+    u64(u8, u16, u32, u64, usize)
+);
+impl_function_param_for_numbers!(
+    Signed,
+    Signed,
+    SignedInteger,
+    SignedIntegerKind,
+    Unspecified(i8, i16, i32, i64, isize)
+);
+
+macro_rules! impl_function_param_for_floats {
     ($generic:ident ($($number:ident),*$(,)?)) => {
         $(
             impl FunctionParam for $number {
@@ -226,11 +364,12 @@ macro_rules! impl_function_param_for_numbers {
                     _: &'reg [&'reg TypeRegistration],
                 ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
                     let Spanned { span, value } = value.pop().unwrap();
+                    #[allow(unreachable_patterns)]
                     match value {
-                        Value::Number(Number::$number(value)) => Ok(Some(value)),
-                        Value::Number(Number::$generic(value)) => Ok(Some(value as $number)),
+                        Value::Number(Number::Float(Float::$number(value))) => Ok(Some(value)),
+                        Value::Number(Number::Float(Float::$generic(value))) => Ok(Some(value as $number)),
                         _ => Err(span.wrap(EvalError::IncorrectFunctionParameterType {
-                            expected: ValueKind::Number(NumberKind::$number),
+                            expected: ValueKind::Number(NumberKind::Float(FloatKind::$number)),
                             actual: value.kind(),
                         }).into())
                     }
@@ -241,11 +380,12 @@ macro_rules! impl_function_param_for_numbers {
             impl TryFrom<Spanned<Value>> for $number {
                 type Error = Diagnostic<EvalError>;
                 fn try_from(Spanned {span, value}: Spanned<Value>) -> Result<Self, Self::Error> {
+                    #[allow(unreachable_patterns)]
                     match value {
-                        Value::Number(Number::$number(value)) => Ok(value),
-                        Value::Number(Number::$generic(value)) => Ok(value as $number),
+                        Value::Number(Number::Float(Float::$number(value))) => Ok(value),
+                        Value::Number(Number::Float(Float::$generic(value))) => Ok(value as $number),
                         _ => Err(span.wrap(EvalError::IncorrectFunctionParameterType {
-                            expected: ValueKind::Number(NumberKind::$number),
+                            expected: ValueKind::Number(NumberKind::Float(FloatKind::$number)),
                             actual: value.kind(),
                         }).into())
                     }
@@ -254,9 +394,7 @@ macro_rules! impl_function_param_for_numbers {
         )*
     };
 }
-
-impl_function_param_for_numbers!(Float(f32, f64));
-impl_function_param_for_numbers!(Integer(u8, u16, u32, u64, usize, i8, i16, i32, i64, isize));
+impl_function_param_for_floats!(Unspecified(f32, f64));
 
 impl FunctionParam for &Value {
     type State<'world, 'env, 'reg> = StrongRef<Value>;

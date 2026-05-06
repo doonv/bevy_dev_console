@@ -6,12 +6,12 @@ use bevy::prelude::*;
 use bevy::reflect::{DynamicEnum, DynamicTuple, ReflectMut, TypeInfo, VariantInfo};
 use kinded::Kinded;
 
-use crate::builtin_parser::number::Number;
 use crate::builtin_parser::parser::{BinaryOperator, Expression, UnaryOperator};
 use crate::builtin_parser::runner::value::ValueKind;
 use crate::builtin_parser::{Diagnostic, ErrorExtension, SpanExtension, Spanned, StrongRef};
 
 use super::EvalParams;
+use super::environment::{RunFunctionError, VariableError};
 use super::error::EvalError;
 use super::member::{Path, eval_member_expression, eval_path};
 use super::reflection::{CreateRegistration, IntoResource, object_to_dynamic_struct};
@@ -290,7 +290,7 @@ pub fn eval_expression(
                     .wrap(EvalError::CannotMoveOutOfResource(variable))
                     .into())
             } else {
-                environment.move_var(&variable, expr.span)
+                environment.move_var(&variable).diagnosed(expr.span)
             }
         }
         Expression::StructObject { name, map } => {
@@ -361,14 +361,14 @@ pub fn eval_expression(
 
             match (left, right) {
                 (Value::Number(left), Value::Number(right)) => Ok(Value::Number(match operator {
-                    BinaryOperator::Add => Number::add(left, right, expr.span)?,
-                    BinaryOperator::Sub => Number::sub(left, right, expr.span)?,
-                    BinaryOperator::Mul => Number::mul(left, right, expr.span)?,
-                    BinaryOperator::Div => Number::div(left, right, expr.span)?,
-                    BinaryOperator::Mod => Number::rem(left, right, expr.span)?,
-                    BinaryOperator::And => Number::and(left, right, expr.span)?,
-                    BinaryOperator::Xor => Number::xor(left, right, expr.span)?,
-                    BinaryOperator::Or => Number::or(left, right, expr.span)?,
+                    BinaryOperator::Add => (left + right).diagnosed(expr.span)?,
+                    BinaryOperator::Sub => (left - right).diagnosed(expr.span)?,
+                    BinaryOperator::Mul => (left * right).diagnosed(expr.span)?,
+                    BinaryOperator::Div => (left / right).diagnosed(expr.span)?,
+                    BinaryOperator::Mod => (left % right).diagnosed(expr.span)?,
+                    BinaryOperator::And => (left & right).diagnosed(expr.span)?,
+                    BinaryOperator::Xor => (left ^ right).diagnosed(expr.span)?,
+                    BinaryOperator::Or => (left | right).diagnosed(expr.span)?,
                 })),
                 (left, right) => Err(expr
                     .span
@@ -438,7 +438,7 @@ pub fn eval_expression(
         }
         Expression::Dereference(inner) => {
             if let Expression::Variable(variable) = inner.value {
-                let var = environment.get_variable(&variable, inner.span)?;
+                let var = environment.get_variable(&variable).diagnosed(inner.span)?;
                 match &*var.borrow_inner().borrow() {
                     Value::Reference(reference) => {
                         let reference: StrongRef<Value> = reference
@@ -464,7 +464,7 @@ pub fn eval_expression(
                 {
                     Ok(Value::Resource(IntoResource::new(registration.type_id())))
                 } else {
-                    let rc = environment.get_variable(&variable, inner.span)?;
+                    let rc = environment.get_variable(&variable).diagnosed(inner.span)?;
                     let weak = rc.borrow();
 
                     Ok(Value::Reference(weak))
@@ -496,7 +496,14 @@ pub fn eval_expression(
                 })
                 .collect::<Result<Vec<_>, Diagnostic<EvalError>>>()?;
 
-            environment.run_function(&name, args, world, registrations)
+            environment
+                .run_function(&name, args, world, registrations)
+                .map_err(|e| match e {
+                    RunFunctionError::NotFound(name) => {
+                        expr.span.diagnose(VariableError::NotFound(name).into())
+                    }
+                    RunFunctionError::Eval(diag) => diag,
+                })
         }
     }
 }

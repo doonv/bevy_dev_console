@@ -6,7 +6,6 @@ use bevy::prelude::*;
 use bevy_egui::egui::text::LayoutJob;
 use bevy_egui::prelude::*;
 use chrono::prelude::*;
-use web_time::SystemTime;
 
 use crate::command::{COMMAND_MESSAGE_NAME, COMMAND_RESULT_NAME, ExecuteCommand};
 use crate::logging::LogMessage;
@@ -26,26 +25,19 @@ mod ansi;
 #[derive(Default, Resource)]
 pub(crate) struct ConsoleUiState {
     /// Whether we have set focus this open or not.
-    pub(crate) text_focus: bool,
+    pub text_focus: bool,
     /// A list of all log messages received plus an
     /// indicator indicating if the message is new.
-    pub(crate) log: Vec<(LogMessage, bool)>,
-    /// The command in the text bar.
-    pub(crate) command: String,
+    pub log: Vec<LogMessage>,
+    /// The command currently in the text bar.
+    pub command: String,
     #[cfg(feature = "completions")]
-    pub(crate) selected_completion: usize,
-}
-
-fn system_time_to_chrono_utc(t: SystemTime) -> chrono::DateTime<chrono::Utc> {
-    let dur = t.duration_since(web_time::SystemTime::UNIX_EPOCH).unwrap();
-    let (sec, nsec) = (dur.as_secs().cast_signed(), dur.subsec_nanos());
-
-    chrono::Utc.timestamp_opt(sec, nsec).unwrap()
+    pub selected_completion: usize,
 }
 
 pub(crate) fn read_logs(mut logs: MessageReader<LogMessage>, mut state: ResMut<ConsoleUiState>) {
     for log_message in logs.read() {
-        state.log.push((log_message.clone(), true));
+        state.log.push(log_message.clone());
     }
 }
 
@@ -104,8 +96,6 @@ pub(crate) fn render_ui(
 
             // We can use a right to left layout, so we can place the text input last and tell it to fill all remaining space
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                // ui.button is a shorthand command, a similar command exists for text edits, but this is how to manually construct a widget.
-                // doing this also allows access to more options of the widget, rather than being stuck with the default the shorthand picks.
                 if ui.button("Submit").clicked() {
                     submit_command(&mut state.command, commands);
 
@@ -144,33 +134,24 @@ pub(crate) fn render_ui(
     // Now we can fill the remaining minutespace with a scrollarea, which has only the vertical scrollbar enabled and expands to be as big as possible.
     egui::ScrollArea::new([false, true])
         .auto_shrink([false, true])
+        .stick_to_bottom(true)
         .show(ui, |ui| {
             ui.vertical(|ui| {
-                for (id, (message, is_new)) in state.log.iter_mut().enumerate() {
-                    add_log(ui, id, message, is_new, config);
+                for (id, message) in state.log.iter_mut().enumerate() {
+                    add_log(ui, id, message, config);
                 }
             });
         });
 }
 
-fn add_log(
-    ui: &mut egui::Ui,
-    id: usize,
-    event: &LogMessage,
-    is_new: &mut bool,
-    config: &ConsoleConfig,
-) {
+fn add_log(ui: &mut egui::Ui, id: usize, event: &LogMessage, config: &ConsoleConfig) {
     ui.push_id(id, |ui| {
-        let time_utc = system_time_to_chrono_utc(event.time);
+        let time_utc = event.time;
         let time: DateTime<chrono::Local> = time_utc.into();
 
-        let text = format_line(time, config, event, *is_new);
+        let text = format_line(time, config, event);
         let label = ui.label(text);
 
-        if *is_new {
-            label.scroll_to_me(Some(egui::Align::Max));
-            *is_new = false;
-        }
         label.on_hover_ui(|ui| {
             let mut text = LayoutJob::default();
             text.append("Time: ", 0.0, config.theme.format_text());
@@ -179,22 +160,27 @@ fn add_log(
                 0.0,
                 config.theme.format_dark(),
             );
+
             text.append("\nTime (UTC): ", 0.0, config.theme.format_text());
             text.append(
                 &time_utc.to_rfc3339_opts(chrono::SecondsFormat::Micros, true),
                 0.0,
                 config.theme.format_dark(),
             );
+
             text.append("\nName: ", 0.0, config.theme.format_text());
             text.append(event.name, 0.0, config.theme.format_dark());
+
             text.append("\nTarget: ", 0.0, config.theme.format_text());
             text.append(event.target, 0.0, config.theme.format_dark());
+
             text.append("\nModule Path: ", 0.0, config.theme.format_text());
             if let Some(module_path) = event.module_path {
                 text.append(module_path, 0.0, config.theme.format_dark());
             } else {
                 text.append("(Unknown)", 0.0, config.theme.format_dark());
             }
+
             text.append("\nFile: ", 0.0, config.theme.format_text());
             if let (Some(file), Some(line)) = (event.file, event.line) {
                 text.append(&format!("{file}:{line}"), 0.0, config.theme.format_dark());
@@ -216,7 +202,6 @@ fn format_line(
         level,
         ..
     }: &LogMessage,
-    _new: bool,
 ) -> LayoutJob {
     let mut text = LayoutJob::default();
     text.append(

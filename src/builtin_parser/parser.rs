@@ -6,7 +6,9 @@ use std::collections::HashMap;
 use std::fmt::Display;
 use std::num::IntErrorKind;
 
-use crate::builtin_parser::NumberKind;
+use crate::builtin_parser::number::{
+    Float, NumberKind, SignedInteger, SignedIntegerKind, UnsignedInteger, UnsignedIntegerKind,
+};
 
 use super::lexer::{FailedToLexCharacter, Token, TokenStream};
 use super::number::Number;
@@ -605,9 +607,15 @@ fn parse_value(
                         tokens.span().add(number.len()..0),
                         ParseError::IntegerSuffixOnFloat(suffix.to_owned()),
                     ))?,
-                    "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
-                    "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
-                    "" => Number::Float(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
+                    "f32" => {
+                        Number::Float(Float::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)))
+                    }
+                    "f64" => {
+                        Number::Float(Float::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)))
+                    }
+                    "" => Number::Float(Float::Unspecified(
+                        number.parse().expect(FLOAT_PARSE_EXPECT_REASON),
+                    )),
                     _ => {
                         return Err(tokens
                             .span()
@@ -676,7 +684,7 @@ fn parse_value(
                 let right = tokens.slice().parse().map_err(map_parseint_error(
                     tokens.span(),
                     tokens.slice(),
-                    crate::builtin_parser::number::NumberKind::usize,
+                    UnsignedIntegerKind::usize.into(),
                 ))?;
 
                 expr = Spanned {
@@ -731,21 +739,57 @@ fn map_parseint_error<'s>(
 
 fn parse_number(tokens: &mut TokenStream) -> Result<Spanned<Number>, Diagnostic<ParseError>> {
     let (number, suffix) = split_number(tokens);
-    let map = |s| map_parseint_error(tokens.span(), tokens.slice(), s);
+    let map = |s: NumberKind| map_parseint_error(tokens.span(), tokens.slice(), s);
 
     let number = match suffix {
-        "u8" => Number::u8(number.parse().map_err(map(NumberKind::u8))?),
-        "u16" => Number::u16(number.parse().map_err(map(NumberKind::u16))?),
-        "u32" => Number::u32(number.parse().map_err(map(NumberKind::u32))?),
-        "u64" => Number::u64(number.parse().map_err(map(NumberKind::u64))?),
-        "usize" => Number::usize(number.parse().map_err(map(NumberKind::usize))?),
-        "i8" => Number::i8(number.parse().map_err(map(NumberKind::i8))?),
-        "i16" => Number::i16(number.parse().map_err(map(NumberKind::i16))?),
-        "i32" => Number::i32(number.parse().map_err(map(NumberKind::i32))?),
-        "isize" => Number::isize(number.parse().map_err(map(NumberKind::isize))?),
-        "f32" => Number::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
-        "f64" => Number::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON)),
-        "" => Number::Integer(number.parse().unwrap()),
+        "u8" => UnsignedInteger::u8(
+            number
+                .parse()
+                .map_err(map(UnsignedIntegerKind::u8.into()))?,
+        )
+        .into(),
+        "u16" => UnsignedInteger::u16(
+            number
+                .parse()
+                .map_err(map(UnsignedIntegerKind::u16.into()))?,
+        )
+        .into(),
+        "u32" => UnsignedInteger::u32(
+            number
+                .parse()
+                .map_err(map(UnsignedIntegerKind::u32.into()))?,
+        )
+        .into(),
+        "u64" => UnsignedInteger::u64(
+            number
+                .parse()
+                .map_err(map(UnsignedIntegerKind::u64.into()))?,
+        )
+        .into(),
+        "usize" => UnsignedInteger::usize(
+            number
+                .parse()
+                .map_err(map(UnsignedIntegerKind::usize.into()))?,
+        )
+        .into(),
+        "i8" => {
+            SignedInteger::i8(number.parse().map_err(map(SignedIntegerKind::i8.into()))?).into()
+        }
+        "i16" => {
+            SignedInteger::i16(number.parse().map_err(map(SignedIntegerKind::i16.into()))?).into()
+        }
+        "i32" => {
+            SignedInteger::i32(number.parse().map_err(map(SignedIntegerKind::i32.into()))?).into()
+        }
+        "isize" => SignedInteger::isize(
+            number
+                .parse()
+                .map_err(map(SignedIntegerKind::isize.into()))?,
+        )
+        .into(),
+        "f32" => Number::Float(Float::f32(number.parse().expect(FLOAT_PARSE_EXPECT_REASON))),
+        "f64" => Number::Float(Float::f64(number.parse().expect(FLOAT_PARSE_EXPECT_REASON))),
+        "" => SignedInteger::Unspecified(number.parse().unwrap()).into(),
         _ => {
             return Err(tokens
                 .span()
@@ -822,19 +866,101 @@ fn parse_object(
 
 #[cfg(test)]
 mod tests {
+    use crate::builtin_parser::Spanned;
+    use crate::builtin_parser::parser::Expression;
+    use logos::Span;
+
     use super::super::Environment;
     use super::super::lexer::TokenStream;
+    use super::Expression::*;
     use super::parse;
+    use crate::builtin_parser::Integer::*;
+    use crate::builtin_parser::Number;
+    use crate::builtin_parser::SignedInteger::*;
+    use crate::builtin_parser::parser::BinaryOperator::*;
+    use std::assert_matches;
+
+    fn setup(src: &str) -> std::vec::IntoIter<Spanned<Expression>> {
+        let mut lexer = TokenStream::new(src);
+        let environment = Environment::default();
+
+        let ast = parse(&mut lexer, &environment).unwrap();
+
+        ast.into_iter()
+    }
 
     #[test]
     fn var_assign() {
-        let mut lexer = TokenStream::new("x = 1 + 2 - 30 + y");
-        let environment = Environment::default();
+        let mut stmts = setup("x = 1 + 2 - 30 + y");
 
-        let ast = parse(&mut lexer, &environment);
-
-        assert!(ast.is_ok());
-
-        // TODO: figure out how to assert ast
+        assert_matches!(
+            stmts.next(),
+            Some(Spanned {
+                span: Span { start: 0, end: 18 },
+                value:
+                    VarAssign {
+                        name:
+                            box Spanned {
+                                span: Span { start: 0, end: 1 },
+                                value: Variable(_),
+                            },
+                        value:
+                            box Spanned {
+                                span: Span { start: 4, end: 18 },
+                                value:
+                                    BinaryOp {
+                                        left:
+                                            box Spanned {
+                                                span: Span { start: 4, end: 14 },
+                                                value:
+                                                    BinaryOp {
+                                                        left:
+                                                            box Spanned {
+                                                                span: Span { start: 4, end: 9 },
+                                                                value:
+                                                                    BinaryOp {
+                                                                        left:
+                                                                            box Spanned {
+                                                                                span:
+                                                                                    Span {
+                                                                                        start: 4,
+                                                                                        end: 5,
+                                                                                    },
+                                                                                value:
+                                                                                    Number(Number::Integer(Signed(Unspecified(1)))),
+                                                                            },
+                                                                        operator: Add,
+                                                                        right:
+                                                                            box Spanned {
+                                                                                span:
+                                                                                    Span {
+                                                                                        start: 8,
+                                                                                        end: 9,
+                                                                                    },
+                                                                                value:
+                                                                                    Number(Number::Integer(Signed(Unspecified(2)))),
+                                                                            },
+                                                                    },
+                                                            },
+                                                        operator: Sub,
+                                                        right:
+                                                            box Spanned {
+                                                                span: Span { start: 12, end: 14 },
+                                                                value: Number(Number::Integer(Signed(Unspecified(30)))),
+                                                            },
+                                                    },
+                                            },
+                                        operator: Add,
+                                        right:
+                                            box Spanned {
+                                                span: Span { start: 17, end: 18 },
+                                                value: Variable(_),
+                                            },
+                                    },
+                            },
+                    },
+            })
+        );
+        assert!(stmts.next().is_none());
     }
 }

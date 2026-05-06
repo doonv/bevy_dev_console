@@ -7,6 +7,7 @@ use crate::builtin_parser::runner::todo_error;
 use crate::builtin_parser::{Diagnostic, EvalError, SpanExtension, Spanned, WeakRef};
 
 use super::reflection::IntoResource;
+use super::environment::VariableError;
 use super::{EvalParams, Value, eval_expression};
 
 /// Evaluate a member expression.
@@ -166,8 +167,9 @@ pub fn eval_path(
                     value: Path::Resource(IntoResource::new(registration.type_id())),
                 })
             } else {
-                match environment.get_variable(&variable, expr.span.clone()) {
-                    Ok(variable) => Ok(Spanned {
+               match environment.get_variable(&variable) {
+                   Ok(variable) => Ok(Spanned {
+
                         span: expr.span,
                         value: Path::Variable(variable.borrow()),
                     }),
@@ -239,7 +241,7 @@ pub fn eval_path(
                     })
                 }
                 Path::NewVariable(name) => {
-                    Err(left.span.diagnose(EvalError::VariableNotFound(name)))
+                    Err(left.span.diagnose(EvalError::from(VariableError::NotFound(name))))
                 }
             }
         }
