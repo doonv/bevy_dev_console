@@ -492,7 +492,9 @@ macro_rules! impl_signed_op {
                     (Self::i32(l), Self::i32(r)) => l.$checked(r).map(Self::i32),
                     (Self::i64(l), Self::i64(r)) => l.$checked(r).map(Self::i64),
                     (Self::isize(l), Self::isize(r)) => l.$checked(r).map(Self::isize),
-                    (Self::Unspecified(l), Self::Unspecified(r)) => l.$checked(r).map(Self::Unspecified),
+                    (Self::Unspecified(l), Self::Unspecified(r)) => {
+                        l.$checked(r).map(Self::Unspecified)
+                    }
                     _ => {
                         return Err(IncompatibleNumberTypes {
                             left: self.kind().into(),
@@ -531,7 +533,9 @@ macro_rules! impl_signed_bitwise_op {
                     (Self::i32(l), Self::i32(r)) => Ok(Self::i32(l.$method(r))),
                     (Self::i64(l), Self::i64(r)) => Ok(Self::i64(l.$method(r))),
                     (Self::isize(l), Self::isize(r)) => Ok(Self::isize(l.$method(r))),
-                    (Self::Unspecified(l), Self::Unspecified(r)) => Ok(Self::Unspecified(l.$method(r))),
+                    (Self::Unspecified(l), Self::Unspecified(r)) => {
+                        Ok(Self::Unspecified(l.$method(r)))
+                    }
                     _ => Err(IncompatibleNumberTypes {
                         left: self.kind().into(),
                         right: rhs.kind().into(),
@@ -839,7 +843,9 @@ macro_rules! impl_float_op {
                 match (self, rhs) {
                     (Self::f32(l), Self::f32(r)) => Ok(Self::f32(l.$method(r))),
                     (Self::f64(l), Self::f64(r)) => Ok(Self::f64(l.$method(r))),
-                    (Self::Unspecified(l), Self::Unspecified(r)) => Ok(Self::Unspecified(l.$method(r))),
+                    (Self::Unspecified(l), Self::Unspecified(r)) => {
+                        Ok(Self::Unspecified(l.$method(r)))
+                    }
                     (Self::Unspecified(l), Self::f32(r)) => Ok(Self::f32((l as f32).$method(r))),
                     (Self::Unspecified(l), Self::f64(r)) => Ok(Self::f64(l.$method(r))),
                     (Self::f32(l), Self::Unspecified(r)) => Ok(Self::f32(l.$method(r as f32))),

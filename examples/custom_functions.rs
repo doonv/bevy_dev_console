@@ -57,7 +57,7 @@ fn toggle_bool(value: &mut bool) {
 }
 
 // Variable argument function
-fn count_args(args: Vec<Spanned<Value>>) -> usize {
+fn count_args(args: Vec<i32>) -> usize {
     args.len()
 }
 

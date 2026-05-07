@@ -19,8 +19,7 @@ pub enum EvalError {
     Variable(#[from] VariableError),
 
     #[error(
-        "cannot apply unary operator `{operator}` to type `{operand}`. the supported types are: {}"
-,
+        "cannot apply unary operator `{operator}` to type `{operand}`. the supported types are: {}",
         FancyJoin(accepted)
     )]
     InvalidUnaryOperation {

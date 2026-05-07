@@ -622,28 +622,40 @@ impl FunctionParam for &[&TypeRegistration] {
     }
 }
 
-impl FunctionParam for Vec<Spanned<Value>> {
-    type State<'world, 'env, 'reg> = Option<Self>;
-    type Guard<'val, 'world, 'env, 'reg> = Option<Self>;
-    type Item<'val, 'world, 'env, 'reg> = Self;
+impl<T: FunctionParam> FunctionParam for Vec<T> {
+    type State<'world, 'env, 'reg> = Vec<T::State<'world, 'env, 'reg>>;
+    type Guard<'val, 'world, 'env, 'reg> = Vec<T::Guard<'val, 'world, 'env, 'reg>>;
+    type Item<'val, 'world, 'env, 'reg> = Vec<T::Item<'val, 'world, 'env, 'reg>>;
     const PARAMETER_TYPE: ParamType = ParamType::VarArg;
 
     fn get<'world, 'env, 'reg>(
         values: SmallVec<[Spanned<Value>; 1]>,
-        _: &mut Option<&'world mut World>,
-        _: &mut Option<&'env mut Environment>,
-        _: &'reg [&'reg TypeRegistration],
+        world: &mut Option<&'world mut World>,
+        environment: &mut Option<&'env mut Environment>,
+        registrations: &'reg [&'reg TypeRegistration],
     ) -> Result<Self::State<'world, 'env, 'reg>, Diagnostic<EvalError>> {
-        Ok(Some(values.into_vec()))
+        values
+            .into_iter()
+            .map(|value| {
+                T::get(
+                    SmallVec::from_buf([value]),
+                    world,
+                    environment,
+                    registrations,
+                )
+            })
+            .collect()
     }
+
     fn borrow<'val, 'world, 'env, 'reg>(
         state: &'val mut Self::State<'world, 'env, 'reg>,
     ) -> Self::Guard<'val, 'world, 'env, 'reg> {
-        state.take()
+        state.iter_mut().map(T::borrow).collect()
     }
+
     fn as_arg<'val, 'world, 'env, 'reg>(
         guard: &'val mut Self::Guard<'_, 'world, 'env, 'reg>,
     ) -> Result<Self::Item<'val, 'world, 'env, 'reg>, Diagnostic<EvalError>> {
-        Ok(guard.take().unwrap())
+        guard.iter_mut().map(T::as_arg).collect()
     }
 }

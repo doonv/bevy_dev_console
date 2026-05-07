@@ -103,6 +103,8 @@ pub enum ParamType {
     VarArg,
 }
 
+/// A builtin-parser `Function` is a function whose every parameter is a [`FunctionParam`],
+/// and whose return value is a [`FunctionReturn`].
 pub struct Function {
     /// The minimum amount of arguments this function requires.
     pub argument_count: usize,

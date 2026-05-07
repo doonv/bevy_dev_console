@@ -13,7 +13,7 @@ pub use super::function::{Function, IntoFunction};
 use super::unique_rc::UniqueRc;
 use super::{Value, stdlib};
 
-/// Macro for mass registering functions to an [`Environment`].
+/// Macro for mass registering [`Function`]s to an [`Environment`].
 ///
 /// ## Usage
 /// ```
@@ -184,7 +184,9 @@ impl Environment {
         match var {
             Variable::Unmoved(value) => Ok(value),
             Variable::Moved => Err(VariableError::Moved(name.to_owned())),
-            Variable::Function(_) => Err(VariableError::ExpectedVariableGotFunction(name.to_owned())),
+            Variable::Function(_) => {
+                Err(VariableError::ExpectedVariableGotFunction(name.to_owned()))
+            }
         }
     }
 
@@ -199,7 +201,9 @@ impl Environment {
 
         match var {
             Variable::Moved => Err(VariableError::Moved(name.to_owned())),
-            Variable::Function(_) => Err(VariableError::ExpectedVariableGotFunction(name.to_owned())),
+            Variable::Function(_) => {
+                Err(VariableError::ExpectedVariableGotFunction(name.to_owned()))
+            }
             variable_reference @ Variable::Unmoved(_) => {
                 let Variable::Unmoved(reference) = variable_reference else {
                     unreachable!()
