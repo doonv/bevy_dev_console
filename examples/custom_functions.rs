@@ -1,11 +1,13 @@
 //! An example showing how to create custom functions
 
-use bevy::log::LogPlugin;
+use std::time;
+
 use bevy::prelude::*;
-use bevy_dev_console::builtin_parser::{Environment, EvalError, Number, Spanned, StrongRef, Value};
+use bevy_dev_console::builtin_parser::{
+    Diagnostic, Environment, EvalError, Number, Spanned, Value,
+};
 use bevy_dev_console::prelude::*;
 use bevy_dev_console::register;
-use web_time as time;
 
 // Declare the functions we want to create:
 
@@ -24,54 +26,57 @@ fn add(num1: f64, num2: f64) -> f64 {
     num1 + num2
 }
 
+/// A "Generic" function that works with any [`Number`] type.
+fn add_generic(
+    num1: Spanned<Number>,
+    num2: Spanned<Number>,
+) -> Result<Number, Diagnostic<EvalError>> {
+    num1 + num2 // Adding two Spanned Numbers automatically returns the correct diagnostic for you.
+}
+
 /// Function with any value + span
-fn print_debug_info(value: Spanned<Value>) {
-    info!(
-        "Location in command: {:?}, Value: {:?}",
-        value.span, value.value
-    )
+fn print_debug_info(Spanned { span, value }: Spanned<Value>) {
+    info!("Location of command: {span:?}, Value: {value:?}");
 }
 
 #[derive(Resource)]
 struct MyCounter(u32);
 
 /// Function with [`World`]
-fn increment_global_counter(world: &mut World) -> u32 {
-    world.resource_scope(|_, mut counter: Mut<MyCounter>| {
-        counter.0 += 1;
+fn add_to_global_counter(num: u32, world: &mut World) -> u32 {
+    let mut counter = world.resource_mut::<MyCounter>();
 
-        counter.0
-    })
+    counter.0 += num;
+
+    counter.0
 }
 
-// Function with reference (Syntax subject to change soon)
-fn increment_number(number: Spanned<StrongRef<Value>>) -> Result<(), EvalError> {
-    let span = number.span;
-    let mut reference = number.value.borrow_mut();
-    if let Value::Number(number) = &mut *reference {
-        *number = Number::add(*number, Number::Integer(1), span).unwrap();
-        Ok(())
-    } else {
-        Err(EvalError::Custom {
-            text: "Oh nooo".into(),
-            span,
-        })
-    }
+// Function with reference
+fn toggle_bool(value: &mut bool) {
+    *value = !*value;
 }
 
-// For more examples take a look at the standard library.
+// Variable argument function
+fn count_args(args: Vec<i32>) -> usize {
+    args.len()
+}
+
+// For more examples take a look at the [standard library](https://github.com/doonv/bevy_dev_console/blob/master/src/builtin_parser/runner/stdlib.rs).
 
 // Register our functions by creating and inserting our own environment
 fn custom_environment() -> Environment {
     let mut environment = Environment::default();
 
-    // The register macro allows us to easily add functions to the environment.
+    // The register macro allows us to easily add functions to
+    // the environment without needing to specify the name twice.
     register!(&mut environment => {
         fn time_since_epoch;
         fn add;
+        fn add_generic;
         fn print_debug_info;
-        fn increment_global_counter;
-        fn increment_number;
+        fn add_to_global_counter;
+        fn toggle_bool;
+        fn count_args;
     });
 
     environment
@@ -82,12 +87,11 @@ fn main() {
         .insert_resource(MyCounter(0))
         // Insert our new environment
         .insert_non_send_resource(custom_environment())
-        .add_plugins((
-            DefaultPlugins.set(LogPlugin {
-                custom_layer: custom_log_layer,
-                ..default()
-            }),
-            DevConsolePlugin,
-        ))
+        .add_plugins((DefaultPlugins.set(console_log_plugin()), DevConsolePlugin))
+        .add_systems(Startup, spawn_camera)
         .run();
+}
+
+fn spawn_camera(mut commands: Commands) {
+    commands.spawn(Camera2d);
 }

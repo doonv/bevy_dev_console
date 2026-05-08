@@ -36,6 +36,11 @@ pub enum Token {
     #[token("%")]
     Modulo,
 
+    #[token("!")]
+    Not,
+    #[token("^")]
+    Xor,
+
     #[token(".", priority = 10)]
     Dot,
     #[token("&")]
@@ -47,6 +52,8 @@ pub enum Token {
     For,
     #[token("while")]
     While,
+    #[token("if")]
+    If,
 
     #[token("in")]
     In,
@@ -57,6 +64,8 @@ pub enum Token {
     SemiColon,
     #[token(",")]
     Comma,
+    #[token("|")]
+    Pipe,
 
     #[token("true")]
     True,
@@ -69,24 +78,10 @@ pub enum Token {
     #[regex("[a-zA-Z_][a-zA-Z0-9_]*")]
     Identifier,
 
-    #[regex(r#"[0-9]+"#)]
+    #[regex(r#"[0-9]+[A-Za-z0-9_]*"#)]
     IntegerNumber,
-    #[regex(r#"[0-9]+\.[0-9]*"#)]
+    #[regex(r#"[0-9]+\.[0-9]*[A-Za-z0-9_]*"#)]
     FloatNumber,
-
-    #[token("i8")]
-    #[token("i16")]
-    #[token("i32")]
-    #[token("i64")]
-    #[token("isize")]
-    #[token("u8")]
-    #[token("u16")]
-    #[token("u32")]
-    #[token("u64")]
-    #[token("usize")]
-    #[token("f32")]
-    #[token("f64")]
-    NumberType,
 }
 
 /// A wrapper for the lexer which provides token peeking and other helper functions
@@ -100,12 +95,16 @@ pub struct TokenStream<'a> {
 
 impl<'a> TokenStream<'a> {
     /// Creates a new [`TokenStream`] from `src`.
+    #[must_use]
     pub fn new(src: &'a str) -> Self {
         let mut lexer = Token::lexer(src);
 
-        let current_slice = lexer.slice();
-        let current_span = lexer.span();
         let next = lexer.next();
+        let (current_span, current_slice) = if let Some(Err(FailedToLexCharacter)) = next {
+            (0..1, &src[0..1])
+        } else {
+            (lexer.span(), lexer.slice())
+        };
 
         Self {
             lexer,
@@ -123,6 +122,12 @@ impl<'a> TokenStream<'a> {
         self.next = self.lexer.next();
 
         val
+    }
+
+    /// Returns advances the iterator and discards the [`Token`]
+    pub fn skip_one(&mut self) -> &mut Self {
+        self.next();
+        self
     }
 
     // pub fn next_pe(&mut self) -> Result<Token, ParseError> {
@@ -152,6 +157,24 @@ impl<'a> TokenStream<'a> {
     #[must_use]
     pub fn span(&self) -> Span {
         self.current_span.clone()
+    }
+
+    /// Advances the stream until a certain [`Token`] is reached and returns the entire span between now and that [`Token`].
+    #[must_use]
+    pub fn span_until(&mut self, token: Token) -> Span {
+        let start = self.current_span.start;
+        loop {
+            match self.next() {
+                Some(Ok(t)) if t == token => break,
+                Some(Err(_)) | None => break,
+                Some(Ok(_)) => {}
+            }
+        }
+
+        Span {
+            start,
+            end: self.current_span.end,
+        }
     }
 
     /// Get a [`str`] slice of the current [`Token`].

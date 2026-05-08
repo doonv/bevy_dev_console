@@ -1,1 +1,5 @@
 imports_granularity = "Module"
+use_field_init_shorthand = true
+newline_style = "Unix"
+normalize_comments = true
+style_edition = "2024"

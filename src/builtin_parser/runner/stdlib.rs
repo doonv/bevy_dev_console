@@ -1,9 +1,16 @@
+//! A "standard library" for the builtin parser, this is a collection of functions that could
+//! be useful for whatever you need to do with the builtin parser.
+
 use crate::builtin_parser::runner::environment::Variable;
+use crate::builtin_parser::runner::function::Function;
+use crate::builtin_parser::{Diagnostic, SpanExtension};
 use crate::register;
 use bevy::ecs::world::World;
 use bevy::log::info;
 use bevy::reflect::TypeRegistration;
+use kinded::Kinded;
 use std::cell::Ref;
+use std::fmt::Write;
 use std::ops::Range;
 
 mod math;
@@ -12,17 +19,19 @@ use super::error::EvalError;
 use super::{Environment, Spanned, Value};
 
 fn print(
-    value: Spanned<Value>,
+    values: Vec<Spanned<Value>>,
     world: &mut World,
     registrations: &[&TypeRegistration],
-) -> Result<(), EvalError> {
-    match value.value {
-        Value::String(string) => info!("{string}"),
-        _ => {
-            let string = value.value.try_format(value.span, world, registrations)?;
-            info!("{string}");
-        }
+) -> Result<(), Diagnostic<EvalError>> {
+    let mut output = String::new();
+    for Spanned { span, value } in values {
+        let string = match value {
+            Value::String(string) => string,
+            _ => value.try_format(span, world, registrations)?,
+        };
+        write!(output, "{string} ").unwrap();
     }
+    info!("{output}");
     Ok(())
 }
 
@@ -30,14 +39,17 @@ fn dbg(any: Value) {
     info!("Value::{any:?}");
 }
 
-fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, EvalError> {
-    fn ref_depth_reference(value: Ref<Value>, span: Range<usize>) -> Result<usize, EvalError> {
+fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, Diagnostic<EvalError>> {
+    fn ref_depth_reference(
+        value: Ref<Value>,
+        span: Range<usize>,
+    ) -> Result<usize, Diagnostic<EvalError>> {
         Ok(match &*value {
             Value::Reference(reference) => {
                 ref_depth_reference(
                     reference
                         .upgrade()
-                        .ok_or(EvalError::ReferenceToMovedData(span.clone()))?
+                        .ok_or_else(|| span.clone().diagnose(EvalError::ReferenceToMovedData))?
                         .borrow(),
                     span,
                 )? + 1
@@ -51,7 +63,7 @@ fn ref_depth(Spanned { span, value }: Spanned<Value>) -> Result<usize, EvalError
             ref_depth_reference(
                 reference
                     .upgrade()
-                    .ok_or(EvalError::ReferenceToMovedData(span.clone()))?
+                    .ok_or_else(|| span.clone().diagnose(EvalError::ReferenceToMovedData))?
                     .borrow(),
                 span,
             )? + 1
@@ -71,13 +83,52 @@ fn print_env(env: &mut Environment) {
 }
 
 fn typeof_value(value: Value) -> String {
-    value.kind().to_string()
+    value.kind().as_str().to_owned()
 }
 
 /// Disposes of a [`Value`].
 fn drop(_: Value) {}
 
-pub fn register(environment: &mut Environment) {
+fn alias(from: String, to: String, environment: &mut Environment) -> Result<(), &'static str> {
+    if environment.get_function(&from).is_none() {
+        Err("Function doesn't exist")?;
+    }
+
+    environment.register_fn(
+        to,
+        move |arguments: Vec<Spanned<Value>>,
+              environment: &mut Environment,
+              world: &mut World,
+              registrations: &[&TypeRegistration]| {
+            environment.run_function(&from, arguments, world, registrations)
+        },
+    );
+    Ok(())
+}
+
+fn help(environment: &Environment) {
+    struct Help<'e>(&'e Environment);
+    impl<'e> std::fmt::Display for Help<'e> {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            for (name, variable) in self.0 {
+                if let &Variable::Function(Function { argument_count, .. }) = variable {
+                    write!(
+                        f,
+                        "\n    {name} - {argument_count} arg{} - TODO",
+                        if argument_count == 1 { "" } else { "s" }
+                    )?;
+                }
+            }
+            Ok(())
+        }
+    }
+    info!(
+        "TODO: Add help text for functions and function signatures {}",
+        Help(environment)
+    );
+}
+
+pub(super) fn register(environment: &mut Environment) {
     math::register(environment);
 
     register!(environment => {
@@ -87,5 +138,7 @@ pub fn register(environment: &mut Environment) {
         fn drop;
         fn print_env;
         fn typeof_value as "typeof";
+        fn alias;
+        fn help;
     });
 }

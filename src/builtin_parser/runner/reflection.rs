@@ -5,7 +5,7 @@ use bevy::prelude::*;
 use bevy::reflect::{DynamicStruct, ReflectFromPtr, TypeRegistration};
 use logos::Span;
 
-use crate::builtin_parser::EvalError;
+use crate::builtin_parser::{Diagnostic, EvalError};
 
 use super::Value;
 
@@ -29,9 +29,8 @@ impl IntoResource {
         registration: impl CreateRegistration,
     ) -> &'a dyn Reflect {
         let registration = registration.create_registration(self.id);
-        let ref_dyn_reflect = ref_dyn_reflect(world, registration).unwrap();
 
-        ref_dyn_reflect
+        ref_dyn_reflect(world, registration).unwrap()
     }
     pub fn mut_dyn_reflect<'a>(
         &self,
@@ -39,15 +38,14 @@ impl IntoResource {
         registration: impl CreateRegistration,
     ) -> Mut<'a, dyn Reflect> {
         let registration = registration.create_registration(self.id);
-        let ref_dyn_reflect = mut_dyn_reflect(world, registration).unwrap();
 
-        ref_dyn_reflect
+        mut_dyn_reflect(world, registration).unwrap()
     }
 }
 
 pub fn object_to_dynamic_struct(
     hashmap: HashMap<String, (Value, Span, &'static str)>,
-) -> Result<DynamicStruct, EvalError> {
+) -> Result<DynamicStruct, Diagnostic<EvalError>> {
     let mut dynamic_struct = DynamicStruct::default();
 
     for (key, (value, span, reflect)) in hashmap {
@@ -61,15 +59,21 @@ pub fn mut_dyn_reflect<'a>(
     world: &'a mut World,
     registration: &TypeRegistration,
 ) -> Option<Mut<'a, dyn Reflect>> {
-    let Some(component_id) = world.components().get_resource_id(registration.type_id()) else {
+    if let Some(reflect_resource) = registration.data::<ReflectResource>() {
+        return reflect_resource.reflect_mut(world).ok();
+    }
+
+    // Fallback if #[reflect(Resource)] is missing but the resource exists and is reflected.
+    let component_id = world.components().get_resource_id(registration.type_id())?;
+    let resource = world.get_resource_mut_by_id(component_id)?;
+    let reflect_from_ptr = registration.data::<ReflectFromPtr>().or_else(|| {
         error!(
-            "Couldn't get the component id of the {} resource.",
+            "The {} type is not reflected (missing #[derive(Reflect)])",
             registration.type_info().type_path()
         );
-        return None;
-    };
-    let resource = world.get_resource_mut_by_id(component_id).unwrap();
-    let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
+        None
+    })?;
+
     // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
     let val: Mut<dyn Reflect> =
         resource.map_unchanged(|ptr| unsafe { reflect_from_ptr.as_reflect_mut(ptr) });
@@ -80,16 +84,22 @@ pub fn ref_dyn_reflect<'a>(
     world: &'a World,
     registration: &TypeRegistration,
 ) -> Option<&'a dyn Reflect> {
-    let Some(component_id) = world.components().get_resource_id(registration.type_id()) else {
+    if let Some(reflect_resource) = registration.data::<ReflectResource>() {
+        return reflect_resource.reflect(world).ok();
+    }
+
+    // Fallback if #[reflect(Resource)] is missing but the resource exists and is reflected.
+    let component_id = world.components().get_resource_id(registration.type_id())?;
+    let resource = world.get_resource_by_id(component_id)?;
+    let reflect_from_ptr = registration.data::<ReflectFromPtr>().or_else(|| {
         error!(
-            "Couldn't get the component id of the {} resource.",
+            "The {} type is not reflected (missing #[derive(Reflect)])",
             registration.type_info().type_path()
         );
-        return None;
-    };
-    let resource = world.get_resource_by_id(component_id).unwrap();
-    let reflect_from_ptr = registration.data::<ReflectFromPtr>().unwrap();
-    // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `MutUntyped`
+        None
+    })?;
+
+    // SAFETY: from the context it is known that `ReflectFromPtr` was made for the type of the `Ptr`
     let val: &dyn Reflect = unsafe { reflect_from_ptr.as_reflect(resource) };
     Some(val)
 }

@@ -1,39 +1,47 @@
-//! Environment and function registration
+//! Environment and variable storage
 
 use std::collections::HashMap;
-use std::fmt::Debug;
 
-use crate::builtin_parser::SpanExtension;
+use crate::builtin_parser::runner::EvalParams;
+use crate::builtin_parser::{Diagnostic, Spanned};
 use bevy::ecs::world::World;
 use bevy::log::warn;
 use bevy::reflect::TypeRegistration;
-use logos::Span;
 
-use super::super::parser::Expression;
-use super::super::Spanned;
 use super::error::EvalError;
+pub use super::function::{Function, IntoFunction};
 use super::unique_rc::UniqueRc;
-use super::{eval_expression, stdlib, EvalParams, Value};
+use super::{Value, stdlib};
 
-/// Macro for mass registering functions.
+/// Macro for mass registering [`Function`]s to an [`Environment`].
+///
+/// ## Usage
+/// ```
+/// fn my_func() {}
+///
+/// # use bevy_dev_console::register;
+/// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
+/// register!(environment => fn my_func);
+/// ```
 ///
 /// ```
-/// fn a() {}
-/// fn b() {}
-/// fn c() {}
+/// # use bevy::prelude::World;
+/// fn pow2(n: i32) -> i32 { n * n }
+/// fn add(a: f32, b: f32) -> f32 { a + b }
+/// fn toggle_debug(world: &mut World) { /* ... */ }
 ///
 /// # use bevy_dev_console::register;
 /// # let mut environment = bevy_dev_console::builtin_parser::Environment::default();
 /// register!(environment => {
-///     fn a;
-///     fn b;
-///     fn c;
+///     fn pow2;
+///     fn add;
+///     fn toggle_debug as "tdbg";
 /// });
 /// ```
 #[macro_export]
 macro_rules! register {
     {
-        $environment:expr => fn $fn_name:ident;
+        $environment:expr => fn $fn_name:ident
     } => {
         $environment
             .register_fn(stringify!($fn_name), $fn_name)
@@ -55,144 +63,6 @@ macro_rules! register {
     };
 }
 
-/// Get around implementation of Result causing stupid errors
-pub(super) struct ResultContainer<T, E>(pub Result<T, E>);
-
-impl<T: Into<Value>> From<T> for ResultContainer<Value, EvalError> {
-    fn from(value: T) -> Self {
-        ResultContainer(Ok(value.into()))
-    }
-}
-impl<T, E> From<ResultContainer<T, E>> for Result<T, E> {
-    fn from(ResultContainer(result): ResultContainer<T, E>) -> Self {
-        result
-    }
-}
-impl<T: Into<Value>, E> From<Result<T, E>> for ResultContainer<Value, E> {
-    fn from(result: Result<T, E>) -> Self {
-        ResultContainer(result.map(|v| v.into()))
-    }
-}
-/// A parameter in a [`Function`].
-pub trait FunctionParam: Sized {
-    /// TODO: Add `Self` as default when <https://github.com/rust-lang/rust/issues/29661> gets merged
-    type Item<'world, 'env, 'reg>;
-    /// Whether this parameter requires a [`Spanned<Value>`].
-    /// If `false` then `FunctionParam::get`'s `value` will be [`None`], and vice versa.
-    const USES_VALUE: bool;
-
-    fn get<'world, 'env, 'reg>(
-        value: Option<Spanned<Value>>,
-        world: &mut Option<&'world mut World>,
-        environment: &mut Option<&'env mut Environment>,
-        registrations: &'reg [&'reg TypeRegistration],
-    ) -> Result<Self::Item<'world, 'env, 'reg>, EvalError>;
-}
-
-pub type FunctionType = dyn FnMut(Vec<Spanned<Expression>>, EvalParams) -> Result<Value, EvalError>;
-pub struct Function {
-    pub argument_count: usize,
-    pub body: Box<FunctionType>,
-}
-impl Debug for Function {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Function")
-            .field("argument_count", &self.argument_count)
-            .finish_non_exhaustive()
-    }
-}
-
-/// Trait that represents a [`Fn`] that can be turned into a [`Function`].
-pub trait IntoFunction<T> {
-    fn into_function(self) -> Function;
-}
-
-macro_rules! impl_into_function {
-    (
-        $($(
-                $params:ident
-        ),+)?
-    ) => {
-        #[allow(non_snake_case)]
-        impl<F: 'static $(, $($params: FunctionParam),+ )?, R> IntoFunction<( $($($params,)+)? )> for F
-        where
-            for<'a, 'world, 'env, 'reg> &'a mut F:
-                FnMut( $($($params),*)? ) -> R +
-                FnMut( $($(<$params as FunctionParam>::Item<'world, 'env, 'reg>),*)? ) -> R,
-            R: Into<ResultContainer<Value, EvalError>>,
-        {
-            fn into_function(mut self) -> Function {
-                #[allow(unused_variables, unused_mut)]
-                let body = Box::new(move |args: Vec<Spanned<Expression>>, params: EvalParams| {
-                    let EvalParams {
-                        world,
-                        environment,
-                        registrations,
-                    } = params;
-                    let mut args = args.into_iter().map(|expr| {
-                        Ok(Spanned {
-                            span: expr.span.clone(),
-                            value: eval_expression(
-                                expr,
-                                EvalParams {
-                                    world,
-                                    environment,
-                                    registrations,
-                                }
-                            )?
-                        })
-                    }).collect::<Result<Vec<_>, EvalError>>()?.into_iter();
-                    let world = &mut Some(world);
-                    let environment = &mut Some(environment);
-
-                    #[allow(clippy::too_many_arguments)]
-                    fn call_inner<R: Into<ResultContainer<Value, EvalError>>, $($($params),*)?>(
-                        mut f: impl FnMut($($($params),*)?) -> R,
-                        $($($params: $params),*)?
-                    ) -> R {
-                        f($($($params),*)?)
-                    }
-                    call_inner(
-                        &mut self,
-                        $($({
-                            let arg = if $params::USES_VALUE {
-                                Some(args.next().unwrap())
-                            } else {
-                                None
-                            };
-
-                            let res = $params::get(
-                                arg,
-                                world,
-                                environment,
-                                registrations
-                            )?;
-
-                            res
-                        }),+)?
-                    )
-                    .into().into()
-                });
-
-                let argument_count = $($(
-                    $params::USES_VALUE as usize +
-                )+)? 0;
-
-                Function { body, argument_count }
-            }
-        }
-    }
-}
-impl_into_function!();
-impl_into_function!(T1);
-impl_into_function!(T1, T2);
-impl_into_function!(T1, T2, T3);
-impl_into_function!(T1, T2, T3, T4);
-impl_into_function!(T1, T2, T3, T4, T5);
-impl_into_function!(T1, T2, T3, T4, T5, T6);
-impl_into_function!(T1, T2, T3, T4, T5, T6, T7);
-impl_into_function!(T1, T2, T3, T4, T5, T6, T7, T8);
-
 /// A variable inside the [`Environment`].
 #[derive(Debug)]
 pub enum Variable {
@@ -201,17 +71,14 @@ pub enum Variable {
     Function(Function),
 }
 
-/// The environment stores all variables and functions.
+/// The environment stores all variables and functions for the builtin parser.
 pub struct Environment {
     pub(crate) parent: Option<Box<Environment>>,
     pub(crate) variables: HashMap<String, Variable>,
 }
 impl Default for Environment {
     fn default() -> Self {
-        let mut env = Self {
-            parent: None,
-            variables: HashMap::new(),
-        };
+        let mut env = Self::empty();
 
         stdlib::register(&mut env);
 
@@ -219,15 +86,61 @@ impl Default for Environment {
     }
 }
 
+/// An error that can occur when interacting with a variable in the [`Environment`].
+#[derive(Debug, thiserror::Error)]
+pub enum VariableError {
+    /// The variable was not found.
+    #[error("Variable `{0}` not found.")]
+    NotFound(String),
+    /// The variable was moved and is no longer available.
+    #[error("variable `{0}` was moved")]
+    Moved(String),
+    /// Expected a variable, but found a function.
+    #[error("expected `{0}` to be a variable, but got a function instead")]
+    ExpectedVariableGotFunction(String),
+}
+
+/// An error that can occur when running a function in the [`Environment`].
+#[derive(Debug, thiserror::Error)]
+pub enum RunFunctionError {
+    /// The function was not found.
+    #[error("Function `{0}` not found.")]
+    NotFound(String),
+    /// An error occurred while evaluating the function.
+    #[error(transparent)]
+    Eval(#[from] Diagnostic<EvalError>),
+}
+
+impl From<RunFunctionError> for Diagnostic<EvalError> {
+    fn from(value: RunFunctionError) -> Self {
+        match value {
+            RunFunctionError::NotFound(name) => {
+                Diagnostic::empty(VariableError::NotFound(name).into())
+            }
+            RunFunctionError::Eval(diag) => diag,
+        }
+    }
+}
+
 impl Environment {
+    /// A completely empty [`Environment`] without any standard library.
+    #[must_use]
+    pub fn empty() -> Self {
+        Self {
+            parent: None,
+            variables: HashMap::new(),
+        }
+    }
+
     /// Set a variable.
     pub fn set(&mut self, name: impl Into<String>, value: UniqueRc<Value>) {
         self.variables.insert(name.into(), Variable::Unmoved(value));
     }
 
     /// Returns a reference to a function if it exists.
+    #[must_use]
     pub fn get_function(&self, name: &str) -> Option<&Function> {
-        let (env, _) = self.resolve(name, 0..0).ok()?;
+        let env = self.resolve(name)?;
 
         match env.variables.get(name) {
             Some(Variable::Function(function)) => Some(function),
@@ -239,16 +152,13 @@ impl Environment {
         &mut self,
         name: &str,
         function: impl FnOnce(&mut Self, &mut Function) -> T,
-    ) -> T {
-        let (env, _) = self.resolve_mut(name, 0..0).unwrap();
-
-        let return_result;
+    ) -> Option<T> {
+        let env = self.resolve_mut(name)?;
         let var = env.variables.get_mut(name);
+        let return_result;
         let fn_obj = match var {
-            Some(Variable::Function(_)) => {
-                let Variable::Function(mut fn_obj) =
-                    std::mem::replace(var.unwrap(), Variable::Moved)
-                else {
+            Some(var @ Variable::Function(_)) => {
+                let Variable::Function(mut fn_obj) = std::mem::replace(var, Variable::Moved) else {
                     unreachable!()
                 };
 
@@ -256,25 +166,27 @@ impl Environment {
 
                 fn_obj
             }
-            _ => unreachable!(),
+            _ => return None,
         };
 
         let var = env.variables.get_mut(name);
         let _ = std::mem::replace(var.unwrap(), Variable::Function(fn_obj));
 
-        return_result
+        Some(return_result)
     }
-    /// Returns a reference to a variable.
-    pub fn get(&self, name: &str, span: Span) -> Result<&UniqueRc<Value>, EvalError> {
-        let (env, span) = self.resolve(name, span)?;
 
-        match env.variables.get(name) {
-            Some(Variable::Unmoved(value)) => Ok(value),
-            Some(Variable::Moved) => Err(EvalError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
-                span.wrap(name.to_owned()),
-            )),
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
+    /// Returns a reference to a variable.
+    pub fn get_variable(&self, name: &str) -> Result<&UniqueRc<Value>, VariableError> {
+        let Some(var) = self.get(name) else {
+            return Err(VariableError::NotFound(name.to_owned()));
+        };
+
+        match var {
+            Variable::Unmoved(value) => Ok(value),
+            Variable::Moved => Err(VariableError::Moved(name.to_owned())),
+            Variable::Function(_) => {
+                Err(VariableError::ExpectedVariableGotFunction(name.to_owned()))
+            }
         }
     }
 
@@ -282,15 +194,17 @@ impl Environment {
     ///
     /// However it will no longer be able to be used unless it's a [`Value::None`],
     /// [`Value::Boolean`], or [`Value::Number`] in which case it will be copied.  
-    pub fn move_var(&mut self, name: &str, span: Span) -> Result<Value, EvalError> {
-        let (env, span) = self.resolve_mut(name, span)?;
+    pub fn move_var(&mut self, name: &str) -> Result<Value, VariableError> {
+        let Some(var) = self.get_mut(name) else {
+            return Err(VariableError::NotFound(name.to_owned()));
+        };
 
-        match env.variables.get_mut(name) {
-            Some(Variable::Moved) => Err(EvalError::VariableMoved(span.wrap(name.to_string()))),
-            Some(Variable::Function(_)) => Err(EvalError::ExpectedVariableGotFunction(
-                span.wrap(name.to_owned()),
-            )),
-            Some(variable_reference) => {
+        match var {
+            Variable::Moved => Err(VariableError::Moved(name.to_owned())),
+            Variable::Function(_) => {
+                Err(VariableError::ExpectedVariableGotFunction(name.to_owned()))
+            }
+            variable_reference @ Variable::Unmoved(_) => {
                 let Variable::Unmoved(reference) = variable_reference else {
                     unreachable!()
                 };
@@ -308,39 +222,48 @@ impl Environment {
                 };
                 Ok(value.into_inner())
             }
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
         }
     }
 
-    fn resolve(&self, name: &str, span: Span) -> Result<(&Self, Span), EvalError> {
-        if self.variables.contains_key(name) {
-            return Ok((self, span));
+    fn get(&self, name: &str) -> Option<&Variable> {
+        if let Some(var) = self.variables.get(name) {
+            return Some(var);
         }
 
-        match &self.parent {
-            Some(parent) => parent.resolve(name, span),
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
-        }
+        self.parent.as_ref()?.get(name)
     }
-    fn resolve_mut(&mut self, name: &str, span: Span) -> Result<(&mut Self, Span), EvalError> {
-        if self.variables.contains_key(name) {
-            return Ok((self, span));
+    fn get_mut(&mut self, name: &str) -> Option<&mut Variable> {
+        if let Some(var) = self.variables.get_mut(name) {
+            return Some(var);
         }
 
-        match &mut self.parent {
-            Some(parent) => parent.resolve_mut(name, span),
-            None => Err(EvalError::VariableNotFound(span.wrap(name.to_string()))),
+        self.parent.as_mut()?.get_mut(name)
+    }
+    fn resolve(&self, name: &str) -> Option<&Self> {
+        if self.variables.contains_key(name) {
+            return Some(self);
         }
+
+        self.parent.as_ref()?.resolve(name)
+    }
+    fn resolve_mut(&mut self, name: &str) -> Option<&mut Self> {
+        if self.variables.contains_key(name) {
+            return Some(self);
+        }
+
+        self.parent.as_mut()?.resolve_mut(name)
     }
 
     /// Registers a function for use inside the language.
     ///
-    /// All parameters must implement [`FunctionParam`].
-    /// There is a limit of 8 parameters.
+    /// All parameters must implement [`FunctionParam`](super::function::FunctionParam).
+    /// There is a limit of 15 parameters.
     ///
     /// The return value of the function must implement [`Into<Value>`]
     ///
-    /// You should take a look at the [Standard Library](super::stdlib) for examples.
+    /// You should take a look at the [Standard Library] for examples.
+    ///
+    /// [Standard Library](https://github.com/doonv/bevy_dev_console/blob/master/src/builtin_parser/runner/stdlib.rs)
     pub fn register_fn<T>(
         &mut self,
         name: impl Into<String>,
@@ -355,10 +278,41 @@ impl Environment {
 
         self
     }
+
+    pub fn run_function(
+        &mut self,
+        name: &str,
+        arguments: Vec<Spanned<Value>>,
+        world: &mut World,
+        registrations: &[&TypeRegistration],
+    ) -> Result<Value, RunFunctionError> {
+        self.function_scope(name, move |environment, function| {
+            (function.body)(
+                arguments,
+                EvalParams {
+                    world,
+                    environment,
+                    registrations,
+                },
+            )
+        })
+        .ok_or_else(|| RunFunctionError::NotFound(name.to_owned()))?
+        .map_err(RunFunctionError::Eval)
+    }
+
     /// Iterate over all the variables and functions in the current scope of the environment.
     ///
     /// Does not include variables and functions from higher scopes.
-    pub fn iter(&self) -> std::collections::hash_map::Iter<String, Variable> {
+    #[must_use]
+    pub fn iter(&self) -> std::collections::hash_map::Iter<'_, String, Variable> {
         self.variables.iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a Environment {
+    type Item = (&'a String, &'a Variable);
+    type IntoIter = std::collections::hash_map::Iter<'a, String, Variable>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.iter()
     }
 }

@@ -1,0 +1,90 @@
+name: Deploy Docs
+# Based on https://github.com/bevyengine/bevy/blob/main/.github/workflows/docs.yml
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTDOCFLAGS: --html-in-header header.html
+  # If nightly is breaking CI, modify this variable to target a specific nightly version.
+  NIGHTLY_TOOLCHAIN: nightly
+
+# Sets the permissions to allow deploying to Github pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only allow one deployment to run at a time, however it will not cancel in-progress runs.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # Only run this job when on the main bevy_dev_console repository. Without this, it would also run on forks
+    # where developers work on the main branch but have not enabled Github Pages.
+    if: ${{ github.repository == 'doonv/bevy_dev_console' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9
+        with:
+          toolchain: ${{ env.NIGHTLY_TOOLCHAIN }}
+
+      - name: Install Linux dependencies
+        uses: ./.github/actions/install-linux-deps
+        with:
+          wayland: true
+          xkb: true
+          x264: true
+          fontconfig: true
+
+      #  This does the following:
+      #   - Adds a meta tag that forces Google not to index any page on the site.
+      - name: Pre-docs-build
+        run: |
+          echo "<meta name=\"robots\" content=\"noindex\">" > header.html
+
+      - name: Build docs
+        env:
+          # needs to be in sync with [package.metadata.docs.rs]
+          RUSTFLAGS: --cfg docsrs_dep
+          RUSTDOCFLAGS: -Zunstable-options --cfg=docsrs --generate-link-to-definition --generate-macro-expansion --html-after-content docs-rs/trait-tags.html
+        run: |
+          cargo doc \
+            -Zunstable-options \
+            -Zrustdoc-scrape-examples \
+            -Zrustdoc-map \
+            --all-features \
+            --no-deps \
+            --document-private-items
+
+      #  This adds the following:
+      #   - A top level redirect to the bevy_dev_console crate documentation
+      #   - A robots.txt file to forbid any crawling of the site (to defer to the docs.rs site on search engines).
+      - name: Finalize documentation
+        run: |
+          echo "<meta http-equiv=\"refresh\" content=\"0; url=bevy_dev_console/index.html\">" > target/doc/index.html
+          echo $'User-Agent: *\nDisallow: /' > target/doc/robots.txt
+          rm target/doc/.lock
+
+      - name: Upload site artifact
+        uses: actions/upload-pages-artifact@7b1f4a764d45c48632c6b24a0339c27f5614fb0b # v4.0.0
+        with:
+          path: target/doc
+
+      - name: Deploy to Github Pages
+        id: deployment
+        uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128 # v5.0.0

@@ -1,11 +1,10 @@
 # bevy_dev_console
 
-`bevy_dev_console` is a Source-inspired developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
+`bevy_dev_console` is a experimental developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
 
 ![Image of the developer console](doc/console.png)
 
-> [!WARNING]  
->
+> [!WARNING]
 > `bevy_dev_console` is currently in its early development stages. Expect breaking changes in the near future (especially when using the built-in command parser). For this reason its only available as a git package at the moment.
 
 ## Features
@@ -17,9 +16,9 @@
   - Variables
     - Uses a simplified version of ownership and borrowing
   - Standard library (Doesn't have much at the moment)
-  - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) (`World` access included!)
+  - [Custom native functions](https://github.com/doonv/bevy_dev_console/blob/master/examples/custom_functions.rs) that work exactly like regular Rust functions (`World` access included!)
   - [Many types](https://github.com/doonv/bevy_dev_console/wiki/Built%E2%80%90in-Parser#types)
-  - Resource viewing and modification
+  - Resource viewing and modification with Reflection
     - Enums
     - Structs
   - ~~Entity queries~~ [*Coming Soon...*](https://github.com/doonv/bevy_dev_console/issues/3) (Syntax suggestions would be appreciated!)
@@ -42,30 +41,25 @@
 3. Add the plugins.
 
     ```rust,no_run
-    use bevy::{prelude::*, log::LogPlugin};
+    use bevy::prelude::*;
     use bevy_dev_console::prelude::*;
 
     App::new()
         .add_plugins((
-            // Add the log plugin with the custom log layer
-            DefaultPlugins.set(LogPlugin {
-                custom_layer: custom_log_layer,
-                ..default()
-            }),
-            // Add the dev console plugin itself.
+            DefaultPlugins.set(console_log_plugin()), // Don't forget to set the LogPlugin
             DevConsolePlugin,
         ))
         .run();
     ```
 
-4. That should be it! You can now press the `` ` `` / `~` key on your keyboard and it should open the console!
+4. That should be it! You can now press the <kbd>\`</kbd> / <kbd>~</kbd> key on your keyboard and it should open the console!
 
-## Togglable Features
+## Toggleable Features
 
-**(default)** `builtin-parser` includes the default parser. Disabling this allows you to remove the built-in parser and replace it with your own (or you could do nothing and make the console into a log reader).
+`builtin-parser` **(default)** - Includes the default parser. Disabling this allows you to remove the built-in parser and replace it with your own (or you could do nothing and make the console into a log reader).
 
 ## Bevy Compatibility
 
 | bevy   | bevy_dev_console |
 | ------ | ---------------- |
-| 0.14.* | git (master)     |
+| 0.18.* | git (master)     |

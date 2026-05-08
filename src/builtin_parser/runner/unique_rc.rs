@@ -8,7 +8,7 @@ use std::rc::{Rc, Weak};
 /// This represents an [`Rc`] that is known to be uniquely owned -- that is, have exactly one strong
 /// reference.
 ///
-/// **TODO:** This is actually going to be a standard library feature. Use [`alloc::rc::UniqueRc`] when it is stabilized.
+/// **TODO:** This is actually going to be a standard library feature. Use [`std::rc::UniqueRc`] when it is stabilized.
 #[derive(Debug)]
 pub struct UniqueRc<T: ?Sized>(Rc<RefCell<T>>);
 impl<T: ?Sized> UniqueRc<T> {
@@ -25,6 +25,7 @@ impl<T: ?Sized> UniqueRc<T> {
         &self.0
     }
     /// Create a new weak pointer to this [`UniqueRc`].
+    #[must_use]
     pub fn borrow(&self) -> WeakRef<T> {
         WeakRef::new(self)
     }
@@ -35,6 +36,11 @@ impl<T> UniqueRc<T> {
         UniqueRc(Rc::new(RefCell::new(value)))
     }
     /// Get the inner value (`T`) of this [`UniqueRc<T>`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if there is more than one strong pointer to this [`UniqueRc`].
+    #[must_use]
     pub fn into_inner(self) -> T {
         Rc::try_unwrap(self.0)
             .unwrap_or_else(|rc| {
@@ -46,7 +52,7 @@ impl<T> UniqueRc<T> {
             .into_inner()
     }
 }
-impl<T: ?Sized + Clone> Clone for UniqueRc<T> {
+impl<T: Clone> Clone for UniqueRc<T> {
     fn clone(&self) -> Self {
         let t = self.borrow_inner().clone().into_inner();
 
@@ -54,13 +60,13 @@ impl<T: ?Sized + Clone> Clone for UniqueRc<T> {
     }
 }
 
-impl<T> Deref for UniqueRc<T> {
+impl<T: ?Sized> Deref for UniqueRc<T> {
     type Target = RefCell<T>;
     fn deref(&self) -> &Self::Target {
         self.0.as_ref()
     }
 }
-impl<T> DerefMut for UniqueRc<T> {
+impl<T: ?Sized> DerefMut for UniqueRc<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         Rc::get_mut(&mut self.0).unwrap()
     }
@@ -87,6 +93,7 @@ impl<T: ?Sized> WeakRef<T> {
         }
     }
     /// Converts this [`WeakRef`] into a [`StrongRef`] (may be unsafe, see [`StrongRef`]'s documentation).
+    #[must_use]
     pub fn upgrade(&self) -> Option<StrongRef<T>> {
         Some(StrongRef(self.reference.upgrade()?))
     }
@@ -114,11 +121,13 @@ impl<T: ?Sized> WeakRef<T> {
 pub struct StrongRef<T: ?Sized>(Rc<RefCell<T>>);
 impl<T: ?Sized> StrongRef<T> {
     /// Immutably borrows the wrapped value.
-    pub fn borrow(&self) -> Ref<T> {
+    #[must_use]
+    pub fn borrow(&'_ self) -> Ref<'_, T> {
         self.0.borrow()
     }
     /// Mutably borrows the wrapped value.
-    pub fn borrow_mut(&self) -> RefMut<T> {
+    #[must_use]
+    pub fn borrow_mut(&'_ self) -> RefMut<'_, T> {
         self.0.borrow_mut()
     }
 }
@@ -128,7 +137,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic]
+    #[should_panic = "There are 2 strong pointers to a UniqueRc!"]
     fn strong_ref_panic() {
         let rc = UniqueRc::new(0);
 
