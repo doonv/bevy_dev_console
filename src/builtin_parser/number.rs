@@ -8,7 +8,7 @@ use kinded::Kinded;
 use logos::Span;
 
 use crate::builtin_parser::parser::BinaryOperator;
-use crate::builtin_parser::{Diagnostic, ErrorExtension, YELLOW};
+use crate::builtin_parser::{Diagnostic, ErrorExtension, VALUE};
 
 use super::runner::error::EvalError;
 use super::{SpanExtension, Spanned};
@@ -169,11 +169,11 @@ impl Number {
 impl Display for UnsignedInteger {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UnsignedInteger::u8(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u8)"),
-            UnsignedInteger::u16(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u16)"),
-            UnsignedInteger::u32(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u32)"),
-            UnsignedInteger::u64(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (u64)"),
-            UnsignedInteger::usize(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (usize)"),
+            UnsignedInteger::u8(number) => write!(f, "{VALUE}{number}{VALUE:#} (u8)"),
+            UnsignedInteger::u16(number) => write!(f, "{VALUE}{number}{VALUE:#} (u16)"),
+            UnsignedInteger::u32(number) => write!(f, "{VALUE}{number}{VALUE:#} (u32)"),
+            UnsignedInteger::u64(number) => write!(f, "{VALUE}{number}{VALUE:#} (u64)"),
+            UnsignedInteger::usize(number) => write!(f, "{VALUE}{number}{VALUE:#} (usize)"),
         }
     }
 }
@@ -181,12 +181,14 @@ impl Display for UnsignedInteger {
 impl Display for SignedInteger {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SignedInteger::i8(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i8)"),
-            SignedInteger::i16(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i16)"),
-            SignedInteger::i32(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i32)"),
-            SignedInteger::i64(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (i64)"),
-            SignedInteger::isize(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (isize)"),
-            SignedInteger::Unspecified(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (integer)"),
+            SignedInteger::i8(number) => write!(f, "{VALUE}{number}{VALUE:#} (i8)"),
+            SignedInteger::i16(number) => write!(f, "{VALUE}{number}{VALUE:#} (i16)"),
+            SignedInteger::i32(number) => write!(f, "{VALUE}{number}{VALUE:#} (i32)"),
+            SignedInteger::i64(number) => write!(f, "{VALUE}{number}{VALUE:#} (i64)"),
+            SignedInteger::isize(number) => write!(f, "{VALUE}{number}{VALUE:#} (isize)"),
+            SignedInteger::Unspecified(number) => {
+                write!(f, "{VALUE}{number}{VALUE:#} (integer)")
+            }
         }
     }
 }
@@ -194,9 +196,9 @@ impl Display for SignedInteger {
 impl Display for Float {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Float::f32(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (f32)"),
-            Float::f64(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (f64)"),
-            Float::Unspecified(number) => write!(f, "{YELLOW}{number}{YELLOW:#} (float)"),
+            Float::f32(number) => write!(f, "{VALUE}{number}{VALUE:#} (f32)"),
+            Float::f64(number) => write!(f, "{VALUE}{number}{VALUE:#} (f64)"),
+            Float::Unspecified(number) => write!(f, "{VALUE}{number}{VALUE:#} (float)"),
         }
     }
 }
@@ -625,7 +627,7 @@ macro_rules! impl_integer_op {
                         self.$method(r_converted)
                     }
                     (Self::Signed(SignedInteger::Unspecified(l)), Self::Signed(r)) => match r {
-                        SignedInteger::Unspecified(r_val) => paste::paste! {
+                        SignedInteger::Unspecified(r_val) => pastey::paste! {
                             l.[<checked_ $method>](r_val)
                         }
                         .map(|v| Self::Signed(SignedInteger::Unspecified(v)))

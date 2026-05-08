@@ -109,11 +109,14 @@ const fn color(color: anstyle::AnsiColor) -> anstyle::Style {
     anstyle::Style::new().fg_color(Some(anstyle::Color::Ansi(color)))
 }
 
-const GRAY: anstyle::Style = color(anstyle::AnsiColor::BrightBlack);
-const RED: anstyle::Style = color(anstyle::AnsiColor::Red);
-const YELLOW: anstyle::Style = color(anstyle::AnsiColor::Yellow);
-const BRIGHT_YELLOW: anstyle::Style = color(anstyle::AnsiColor::BrightYellow);
-const GREEN: anstyle::Style = color(anstyle::AnsiColor::Green);
+pub(crate) const DARK: anstyle::Style = color(anstyle::AnsiColor::BrightBlack);
+pub(crate) const MEMBER: anstyle::Style = color(anstyle::AnsiColor::Red);
+pub(crate) const VALUE: anstyle::Style = color(anstyle::AnsiColor::Yellow);
+pub(crate) const TYPE: anstyle::Style = color(anstyle::AnsiColor::BrightYellow);
+pub(crate) const STRING: anstyle::Style = color(anstyle::AnsiColor::Green);
+pub(crate) const FUNCTION: anstyle::Style = color(anstyle::AnsiColor::Blue);
+pub(crate) const KEYWORD: anstyle::Style = color(anstyle::AnsiColor::Magenta);
+pub(crate) const VARIANT: anstyle::Style = color(anstyle::AnsiColor::Cyan);
 
 /// Additional methods for [`Span`].
 pub trait SpanExtension {
@@ -220,20 +223,20 @@ impl CommandParser for BuiltinCommandParser {
             match ast {
                 Ok(ast) => match runner::eval(ast, world, &mut environment, &registry) {
                     Ok(value) => {
-                        info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{command}");
+                        info!(name: COMMAND_MESSAGE_NAME, "{DARK}{COMMAND_MESSAGE_PREFIX}{DARK:#}{command}");
                         if let Some(value) = value {
-                            info!(name: COMMAND_RESULT_NAME, "{GRAY}{COMMAND_RESULT_PREFIX}{GRAY:#}{value}");
+                            info!(name: COMMAND_RESULT_NAME, "{DARK}{COMMAND_RESULT_PREFIX}{DARK:#}{value}");
                         }
                     }
                     Err(error) => {
                         let highlighted = format_command_with_hints(command, &error.spans);
-                        info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
+                        info!(name: COMMAND_MESSAGE_NAME, "{DARK}{COMMAND_MESSAGE_PREFIX}{DARK:#}{highlighted}");
                         error!("{error}");
                     }
                 },
                 Err(err) => {
                     let highlighted = format_command_with_hints(command, &err.spans);
-                    info!(name: COMMAND_MESSAGE_NAME, "{GRAY}{COMMAND_MESSAGE_PREFIX}{GRAY:#}{highlighted}");
+                    info!(name: COMMAND_MESSAGE_NAME, "{DARK}{COMMAND_MESSAGE_PREFIX}{DARK:#}{highlighted}");
                     error!("{err}");
                 }
             }

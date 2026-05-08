@@ -1,5 +1,4 @@
 use ansitok::{AnsiColor, ElementKind, Output, VisualAttribute};
-use bevy::color::Color;
 use bevy::log::error_once;
 use bevy_egui::egui::text::LayoutJob;
 use bevy_egui::egui::{Color32, Stroke};
@@ -12,16 +11,17 @@ pub fn ansi_to_layout_job(input: &str, config: &ConsoleConfig, job: &mut LayoutJ
     let mut current_format = theme.format_text();
     let color4bit = |c| {
         match c {
-            31 => theme.error,
-            32 => theme.info,
-            33 => theme.warning,
-            34 => theme.debug,
-            35 => theme.trace,
+            31 => theme.member,
+            32 => theme.string,
+            33 => theme.value,
+            34 => theme.function,
+            35 => theme.keyword,
+            36 => theme.variant,
 
             90 => theme.dark,
-            93 => Color::srgb(0.9, 0.75, 0.48),
+            93 => theme.type_name,
 
-            _ => todo!(),
+            _ => todo!("color for 4bit ansi color {c}"),
         }
         .to_color32()
     };

@@ -55,6 +55,20 @@ pub struct ConsoleTheme {
     ///
     /// Designates very low priority, often extremely verbose, information.
     pub trace: Color,
+    /// The color of keywords.
+    pub keyword: Color,
+    /// The color of strings.
+    pub string: Color,
+    /// The color of numbers and booleans.
+    pub value: Color,
+    /// The color of functions.
+    pub function: Color,
+    /// The color of type names.
+    pub type_name: Color,
+    /// The color of members.
+    pub member: Color,
+    /// The color of enum variants.
+    pub variant: Color,
 }
 
 /// Helper trait that allows conversion between [`bevy::Color`](Color) and [`egui::Color32`](bevy_egui::egui::Color32).
@@ -85,15 +99,19 @@ impl ToColor32 for Color {
     }
 }
 
-macro_rules! define_text_format_method {
-    ($name:ident, $color:ident) => {
-        #[doc = concat!("Returns a [`TextFormat`] colored with [`Self::", stringify!($color), "`]")]
-        pub fn $name(&self) -> TextFormat {
-            TextFormat {
-                color: self.$color.to_color32(),
-                ..self.format_text()
-            }
-        }
+macro_rules! define_text_format_methods {
+    ($($color:ident),+ $(,)?) => {
+        $(
+            pastey::paste!(
+                #[doc = concat!("Returns a [`TextFormat`] colored with [`Self::", stringify!($color), "`]")]
+                pub fn [<format_ $color>](&self) -> TextFormat {
+                    TextFormat {
+                        color: self.$color.to_color32(),
+                        ..self.format_text()
+                    }
+                }
+            );
+        )+
     };
 }
 
@@ -108,7 +126,15 @@ impl ConsoleTheme {
         info: Color::srgb(0.55, 0.76, 0.4),
         debug: Color::srgb(0.29, 0.65, 0.94),
         trace: Color::srgb(0.76, 0.38, 0.87),
+        keyword: Color::srgb(0.76, 0.38, 0.87),
+        string: Color::srgb(0.55, 0.76, 0.4),
+        value: Color::srgb(0.82, 0.56, 0.32),
+        function: Color::srgb(0.29, 0.65, 0.94),
+        type_name: Color::srgb(0.9, 0.75, 0.48),
+        member: Color::srgb(0.88, 0.42, 0.46),
+        variant: Color::srgb(0.34, 0.71, 0.76),
     };
+
     /// High contrast theme, might help some people.
     pub const HIGH_CONTRAST: Self = Self {
         font: FontId::monospace(14.0),
@@ -119,6 +145,13 @@ impl ConsoleTheme {
         info: Color::srgb(0.0, 1.0, 0.0),
         debug: Color::srgb(0.5, 0.5, 1.0),
         trace: Color::srgb(1.0, 0.0, 1.0),
+        keyword: Color::srgb(1.0, 0.0, 1.0),
+        string: Color::srgb(0.0, 1.0, 0.0),
+        value: Color::srgb(1.0, 1.0, 0.0),
+        function: Color::srgb(0.5, 0.5, 1.0),
+        type_name: Color::srgb(1.0, 0.8, 0.0),
+        member: Color::srgb(1.0, 0.0, 0.0),
+        variant: Color::srgb(0.0, 1.0, 1.0),
     };
 
     /// Returns a [`Color32`] based on the `level`
@@ -162,10 +195,8 @@ impl ConsoleTheme {
         }
     }
 
-    define_text_format_method!(format_dark, dark);
-    define_text_format_method!(format_error, error);
-    define_text_format_method!(format_warning, warning);
-    define_text_format_method!(format_info, info);
-    define_text_format_method!(format_debug, debug);
-    define_text_format_method!(format_trace, trace);
+    define_text_format_methods!(
+        dark, error, warning, info, debug, trace, keyword, string, value, function, type_name,
+        member
+    );
 }

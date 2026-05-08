@@ -26,7 +26,7 @@ builtin-parser = [
     "dep:kinded",
     "dep:thiserror",
     "dep:smallvec",
-    "dep:paste",
+    "dep:pastey",
 ]
 
 [dependencies]
@@ -40,7 +40,7 @@ ansitok = "0.3.0"
 anstyle = "1.0.14"
 
 # builtin-parser features
-paste = { version = "1", optional = true }
+pastey = { version = "*", optional = true }
 logos = { version = "0.16.0", optional = true }
 fuzzy-matcher = { version = "0.3.7", optional = true }
 variadics_please = { version = "2.0.0", optional = true }

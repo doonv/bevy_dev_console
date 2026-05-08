@@ -9,7 +9,7 @@ fn main() {
         .add_plugins((
             // Add the log plugin with the custom log layer
             DefaultPlugins.set(LogPlugin {
-                // Add a filter to the log plugin that shows all log levels from this example
+                // Change the filter of the log plugin that shows all log levels from this example
                 filter: format!("{DEFAULT_FILTER},{}=trace", module_path!()),
                 ..console_log_plugin()
             }),
