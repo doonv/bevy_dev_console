@@ -1,3 +1,35 @@
+
+<div align="right">
+  <details>
+    <summary >🌐 Language</summary>
+    <div>
+      <div align="center">
+        <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=en">English</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=zh-CN">简体中文</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=zh-TW">繁體中文</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=ja">日本語</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=ko">한국어</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=hi">हिन्दी</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=th">ไทย</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=fr">Français</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=de">Deutsch</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=es">Español</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=it">Italiano</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=ru">Русский</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=pt">Português</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=nl">Nederlands</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=pl">Polski</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=ar">العربية</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=fa">فارسی</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=tr">Türkçe</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=vi">Tiếng Việt</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=id">Bahasa Indonesia</a>
+        | <a href="https://openaitx.github.io/view.html?user=doonv&project=bevy_dev_console&lang=as">অসমীয়া</
+      </div>
+    </div>
+  </details>
+</div>
+
 # bevy_dev_console
 
 `bevy_dev_console` is a Source-inspired developer console plugin for the [Bevy Game Engine](https://github.com/bevyengine/bevy).
